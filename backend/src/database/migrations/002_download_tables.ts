@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { logger } from '../src/utils/logger';
+import { logger } from '../../utils/logger';
 
 export async function up(pool: Pool): Promise<void> {
   try {

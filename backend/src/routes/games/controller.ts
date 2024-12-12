@@ -1,21 +1,27 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
-import { validateGameData } from './validation';
-import { Game, CreateGameRequest, UpdateGameRequest } from '../../types/database';
+import { handleError } from '@/utils/error';
+import {CreateGameRequest, Game, UpdateGameRequest} from '../../types/database';
+import {validateGameData} from "@/routes/games/validation";
+
 
 export class GamesController {
   constructor(private pool: Pool) {}
 
-  async getAllGames = async (req: Request, res: Response) => {
+  getAllGames = async (req: Request, res: Response): Promise<void> => {
+    const client = await this.pool.connect();
     try {
-      const result = await this.pool.query<Game>(
+      const result = await client.query<Game>(
         'SELECT * FROM tracked_games ORDER BY created_at DESC'
       );
       res.json(result.rows);
     } catch (error) {
-      logger.error('Error fetching games:', error);
+      const appError = handleError(error);
+      logger.error('Error fetching games:', appError);
       res.status(500).json({ error: 'Failed to fetch games' });
+    } finally {
+      client.release();
     }
   };
 

@@ -4,16 +4,15 @@
   "description": "Backend service for TwitchSync - Twitch VOD and game tracking system",
   "main": "dist/index.js",
   "scripts": {
-    "setup": "ts-node scripts/setup.ts",
-    "predev": "npm run setup",
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "test": "jest",
-    "migrate": "ts-node src/scripts/migrate.ts",
-    "migrate:rollback": "ts-node src/scripts/migrate.ts rollback"
+    "migrate": "ts-node scripts/migrate.ts",
+    "migrate:rollback": "ts-node scripts/migrate.ts rollback",
+    "db:reset": "psql -U $DB_USER -d $DB_NAME -f scripts/reset-db.sql"
   },
   "dependencies": {
     "axios": "^1.4.0",
@@ -22,13 +21,13 @@
     "express": "^4.21.2",
     "node-cron": "^3.0.2",
     "pg": "^8.11.0",
+    "uuid": "^11.0.3",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.1",
-    "@types/node": "^18.19.68",
     "@types/pg": "^8.6.6",
     "@typescript-eslint/eslint-plugin": "^5.59.2",
     "@typescript-eslint/parser": "^5.59.2",
@@ -37,6 +36,7 @@
     "nodemon": "^2.0.22",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
-    "typescript": "^5.0.4"
+    "typescript": "^5.0.4",
+    "@types/node": "^18.19.68"
   }
 }

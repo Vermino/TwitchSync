@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { logger } from '../../utils/logger';
 import { mediaServer } from '../media/server';
+import { handleError, AppError } from '../../utils/error';
 
 interface DownloadTask {
   id: number;
@@ -50,6 +51,21 @@ class VODDownloader {
       VODDownloader.instance = new VODDownloader(pool, config);
     }
     return VODDownloader.instance;
+  }
+
+  private async handleDownloadError(error: unknown, vodId: number): Promise<void> {
+    const appError = handleError(error);
+    logger.error(`Error downloading VOD ${vodId}:`, appError);
+
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        'UPDATE vod_downloads SET error_message = $1, status = $2 WHERE vod_id = $3',
+        [appError.message, 'failed', vodId]
+      );
+    } finally {
+      client.release();
+    }
   }
 
   async addToQueue(vodId: number, chapterId: number | null = null, priority: number = 1): Promise<void> {

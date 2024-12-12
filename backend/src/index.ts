@@ -8,16 +8,25 @@ import { setupChannelRoutes } from './routes/channels';
 import { setupGameRoutes } from './routes/games';
 import { setupVODRoutes } from './routes/vods';
 import { setupDashboardRoutes } from './routes/dashboard';
-import { setupVODAnalysisRoutes } from './routes/vodAnalysis';
+import { setupWatchRoutes } from './routes/watch';
+import { setupAuthRoutes } from './routes/auth';
+import { setupSystemRoutes } from './routes/system';
+import { setupDownloadsRoutes } from './routes/downloads';
+import { setupSettingsRoutes } from './routes/settings';
+import { authenticate } from './middleware/auth';
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'development'
+    ? ['http://localhost:3000', 'http://localhost:3001']
+    : process.env.FRONTEND_URL,
+  credentials: true
+}));
 app.use(express.json());
 
 // API Documentation HTML
@@ -77,6 +86,25 @@ const apiDocsHtml = `<!DOCTYPE html>
 <body>
     <h1>TwitchSync API Documentation</h1>
     
+    <h2>Authentication</h2>
+    <div class="endpoint">
+        <span class="method post">POST</span>
+        <code>/auth/twitch/login</code>
+        <p>Initiate Twitch OAuth login</p>
+    </div>
+    
+    <div class="endpoint">
+        <span class="method get">GET</span>
+        <code>/auth/twitch/callback</code>
+        <p>OAuth callback endpoint</p>
+    </div>
+
+    <div class="endpoint">
+        <span class="method post">POST</span>
+        <code>/auth/logout</code>
+        <p>Logout current user</p>
+    </div>
+
     <h2>Channels</h2>
     <div class="endpoint">
         <span class="method get">GET</span>
@@ -149,6 +177,7 @@ const apiDocsHtml = `<!DOCTYPE html>
         <p>Get VODs for a specific channel</p>
         <pre>Invoke-WebRequest -Uri "http://localhost:3000/api/vods/channel/1"</pre>
     </div>
+
     <h2>Dashboard</h2>
     <div class="endpoint">
         <span class="method get">GET</span>
@@ -159,43 +188,107 @@ const apiDocsHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// Routes
-app.use('/api/channels', setupChannelRoutes(pool));
-app.use('/api/games', setupGameRoutes(pool));
-app.use('/api/vods', setupVODRoutes(pool));
-app.use('/api/dashboard', setupDashboardRoutes(pool));
-app.use('/api/vods', setupVODAnalysisRoutes(pool));
-
-// Serve API documentation at root
-app.get('/', (req, res) => {
-    res.send(apiDocsHtml);
-});
-
-// Basic health check endpoint
+// Public routes
+app.use('/auth', setupAuthRoutes());  // Removed pool parameter
 app.get('/health', (req, res) => {
-    res.json({ status: 'healthy' });
+  res.json({ status: 'healthy' });
+});
+app.get('/', (req, res) => {
+  res.send(apiDocsHtml);
 });
 
-// Database setup
-setupDatabase()
-    .then(() => {
-        // Start server only after database is ready
-        app.listen(port, () => {
-            logger.info(`Server is running on port ${port}`);
-        });
-    })
-    .catch((error) => {
-        logger.error('Database connection failed:', error);
-        process.exit(1);
+// Protected routes - require authentication
+app.use('/api/channels', authenticate(pool), setupChannelRoutes(pool));
+app.use('/api/games', authenticate(pool), setupGameRoutes(pool));
+app.use('/api/vods', authenticate(pool), setupVODRoutes(pool));
+app.use('/api/dashboard', authenticate(pool), setupDashboardRoutes(pool));
+app.use('/api/watch', authenticate(pool), setupWatchRoutes(pool));
+app.use('/api/system', authenticate(pool), setupSystemRoutes(pool));
+app.use('/api/downloads', authenticate(pool), setupDownloadsRoutes(pool));
+app.use('/api/settings', authenticate(pool), setupSettingsRoutes(pool));
+
+let server: any;
+
+const startServer = async () => {
+  try {
+    // Check if port is in use
+    await new Promise((resolve, reject) => {
+      const testServer = require('http').createServer();
+      testServer.once('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          reject(new Error(`Port ${port} is already in use`));
+        } else {
+          reject(err);
+        }
+      });
+      testServer.once('listening', () => {
+        testServer.close();
+        resolve(true);
+      });
+      testServer.listen(port);
     });
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-    logger.error('Uncaught Exception:', error);
+    // Setup database
+    await setupDatabase();
+
+    // Start server
+    server = app.listen(port, () => {
+      logger.info(`Server is running on port ${port}`);
+      if (process.env.NODE_ENV === 'development') {
+        logger.info(`API Documentation available at http://localhost:${port}`);
+      }
+    });
+
+  } catch (error: any) {
+    if (error.message.includes('EADDRINUSE')) {
+      logger.error(`Port ${port} is already in use. Please either:
+        1. Close the application using port ${port}
+        2. Set a different port in your .env file
+        3. Use: PORT=3001 npm run dev`);
+    } else {
+      logger.error('Failed to start server:', error);
+    }
     process.exit(1);
+  }
+};
+
+// Graceful shutdown
+const shutdownGracefully = async (signal: string) => {
+  logger.info(`${signal} received. Shutting down gracefully...`);
+
+  if (server) {
+    server.close(() => {
+      logger.info('HTTP server closed');
+      pool.end(() => {
+        logger.info('Database pool closed');
+        process.exit(0);
+      });
+    });
+
+    // Force shutdown after 10 seconds
+    setTimeout(() => {
+      logger.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  } else {
+    process.exit(0);
+  }
+};
+
+// Error handling
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  shutdownGracefully('UNCAUGHT_EXCEPTION');
 });
 
 process.on('unhandledRejection', (error) => {
-    logger.error('Unhandled Rejection:', error);
-    process.exit(1);
+  logger.error('Unhandled Rejection:', error);
+  shutdownGracefully('UNHANDLED_REJECTION');
 });
+
+process.on('SIGTERM', () => shutdownGracefully('SIGTERM'));
+process.on('SIGINT', () => shutdownGracefully('SIGINT'));
+
+startServer();
+
+export { app, pool };

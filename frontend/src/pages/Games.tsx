@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import GameSearchModal from '../components/GameSearchModal';
 
 interface Game {
   id: number;
@@ -14,11 +15,15 @@ const Games = () => {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newGame, setNewGame] = useState({ twitch_game_id: '', name: '' });
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+
+  useEffect(() => {
+    fetchGames();
+  }, []);
 
   const fetchGames = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/games');
+      const response = await fetch('/api/games');
       const data = await response.json();
       setGames(data);
       setError(null);
@@ -30,32 +35,41 @@ const Games = () => {
     }
   };
 
-  const addGame = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddGames = async (selectedGames: Array<{ id: string, name: string }>) => {
     try {
-      const response = await fetch('http://localhost:3000/api/games', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newGame),
-      });
+      const responses = await Promise.all(
+        selectedGames.map(game =>
+          fetch('/api/games', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              twitch_game_id: game.id,
+              name: game.name
+            }),
+          })
+        )
+      );
 
-      if (!response.ok) throw new Error('Failed to add game');
+      const newGames = await Promise.all(
+        responses.map(response => {
+          if (!response.ok) throw new Error('Failed to add game');
+          return response.json();
+        })
+      );
 
-      const data = await response.json();
-      setGames([...games, data]);
-      setNewGame({ twitch_game_id: '', name: '' });
+      setGames(prevGames => [...prevGames, ...newGames]);
       setError(null);
     } catch (err) {
-      setError('Failed to add game');
-      console.error('Error adding game:', err);
+      setError('Failed to add games');
+      console.error('Error adding games:', err);
     }
   };
 
   const deleteGame = async (id: number) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/games/${id}`, {
+      const response = await fetch(`/api/games/${id}`, {
         method: 'DELETE',
       });
 
@@ -71,7 +85,7 @@ const Games = () => {
 
   const toggleGameStatus = async (id: number, currentStatus: boolean) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/games/${id}`, {
+      const response = await fetch(`/api/games/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -92,16 +106,12 @@ const Games = () => {
     }
   };
 
-  useEffect(() => {
-    fetchGames();
-  }, []);
-
   if (loading) {
     return (
       <div className="p-4">
         <h1 className="text-2xl font-bold mb-4">Games</h1>
         <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading games...</div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
         </div>
       </div>
     );
@@ -109,7 +119,16 @@ const Games = () => {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Games</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Games</h1>
+        <button
+          onClick={() => setIsSearchModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+        >
+          <PlusCircle className="w-5 h-5" />
+          Add Games
+        </button>
+      </div>
 
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -117,36 +136,7 @@ const Games = () => {
         </div>
       )}
 
-      {/* Add new game form */}
-      <form onSubmit={addGame} className="mb-6 bg-white p-4 rounded-lg shadow">
-        <div className="flex flex-wrap gap-4">
-          <input
-            type="text"
-            placeholder="Twitch Game ID"
-            value={newGame.twitch_game_id}
-            onChange={(e) => setNewGame({ ...newGame, twitch_game_id: e.target.value })}
-            className="flex-1 p-2 border rounded"
-            required
-          />
-          <input
-            type="text"
-            placeholder="Game Name"
-            value={newGame.name}
-            onChange={(e) => setNewGame({ ...newGame, name: e.target.value })}
-            className="flex-1 p-2 border rounded"
-            required
-          />
-          <button
-            type="submit"
-            className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 flex items-center gap-2"
-          >
-            <PlusCircle className="w-5 h-5" />
-            Add Game
-          </button>
-        </div>
-      </form>
-
-      {/* Games list */}
+      {/* Games Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full">
           <thead className="bg-gray-50">
@@ -202,13 +192,21 @@ const Games = () => {
             {games.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                  No games added yet. Add your first game above!
+                  No games added yet. Click "Add Games" to start tracking games!
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Game Search Modal */}
+      <GameSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelect={handleAddGames}
+        allowMultiple={true}
+      />
     </div>
   );
 };

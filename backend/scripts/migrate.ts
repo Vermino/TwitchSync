@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
-import { runMigrations, rollbackMigration } from '../database/migrations/runner';
-import { logger } from '../utils/logger';
+import { runMigrations, rollbackMigration } from '../src/database/migrations/runner';
+import { logger } from '../src/utils/logger';
 
 dotenv.config();
 

@@ -12,6 +12,7 @@ export interface Channel {
 
 export interface Game {
   id: number;
+  game_id: string;
   twitch_game_id: string;
   name: string;
   is_active: boolean;
@@ -85,4 +86,24 @@ export interface CreateGameRequest {
 export interface UpdateGameRequest {
   is_active?: boolean;
   name?: string;
+}
+
+export interface Channel {
+    id: number;
+    twitch_id: string;
+    username: string;
+    is_active: boolean;
+    last_vod_check: Date | null;
+    last_game_check: Date | null;
+    current_game_id: string | null;
+    created_at: Date;
+}
+
+export interface ChannelQueries {
+    getAllChannels: (pool: any) => Promise<Channel[]>;
+    getChannelById: (pool: any, id: number) => Promise<Channel | null>;
+    createChannel: (pool: any, data: Omit<Channel, 'id' | 'created_at'>) => Promise<Channel>;
+    updateChannel: (pool: any, id: number, data: Partial<Channel>) => Promise<Channel | null>;
+    deleteChannel: (pool: any, id: number) => Promise<boolean>;
+    updateLastChecks: (pool: any, id: number, type: 'vod' | 'game') => Promise<void>;
 }

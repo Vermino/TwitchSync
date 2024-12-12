@@ -1,18 +1,25 @@
 import { Pool } from 'pg';
-import { logger } from '../src/utils/logger';  // Updated path
+import { logger } from '../../utils/logger';
 import * as initialSchema from './001_initial_schema';
 import * as downloadTables from './002_download_tables';
 import * as vodFileHandling from './003_vod_file_handling';
+import * as vodSegments from './004_vod_segments';
+import * as syncHistory from './005_sync_history';
+import * as downloadProgress from './006_download_progress';
+import * as settingTable from './007_settings_table';
 
 const migrations = [
   { name: '001_initial_schema', up: initialSchema.up, down: initialSchema.down },
   { name: '002_download_tables', up: downloadTables.up, down: downloadTables.down },
-  { name: '003_vod_file_handling', up: vodFileHandling.up, down: vodFileHandling.down }
+  { name: '003_vod_file_handling', up: vodFileHandling.up, down: vodFileHandling.down },
+  { name: '004_vod_segments', up: vodSegments.up, down: vodSegments.down },
+  { name: '005_sync_history', up: syncHistory.up, down: syncHistory.down },
+  { name: '006_download_progress', up: downloadProgress.up, down: downloadProgress.down },
+  { name: '007_settings_table', up: settingTable.up, down: settingTable.down }
 ];
 
 export async function runMigrations(pool: Pool): Promise<void> {
   try {
-    // Create migrations table if it doesn't exist
     await pool.query(`
       CREATE TABLE IF NOT EXISTS migrations (
         id SERIAL PRIMARY KEY,
@@ -52,7 +59,6 @@ export async function runMigrations(pool: Pool): Promise<void> {
 
 export async function rollbackMigration(pool: Pool): Promise<void> {
   try {
-    // Get last executed migration
     const result = await pool.query(
       'SELECT name FROM migrations ORDER BY id DESC LIMIT 1'
     );
@@ -69,7 +75,6 @@ export async function rollbackMigration(pool: Pool): Promise<void> {
       logger.info(`Rolling back migration: ${lastMigration}`);
       await migration.down(pool);
 
-      // Remove migration record
       await pool.query(
         'DELETE FROM migrations WHERE name = $1',
         [lastMigration]

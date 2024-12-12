@@ -1,143 +1,121 @@
-import { useState, useEffect } from 'react';
-import { Users, GamepadIcon, Video, Activity } from 'lucide-react';
-import { api } from '@/lib/api';
-import type { DashboardStats } from '@/types';
+import React from 'react';
+import { Users, Gamepad, Video, Activity } from 'lucide-react';
+import { useQuery } from 'react-query';
 
-const initialStats: DashboardStats = {
-  channels: { total: 0, active: 0 },
-  games: { total: 0, active: 0 },
-  vods: { total: 0, totalViews: 0 },
-  downloads: { active: 0, pending: 0, completed: 0, failed: 0 }
-};
+interface DashboardStats {
+  channels: {
+    total: number;
+    active: number;
+  };
+  games: {
+    total: number;
+    active: number;
+  };
+  vods: {
+    total: number;
+    totalViews: number;
+  };
+  downloads: {
+    active: number;
+    pending: number;
+    completed: number;
+    failed: number;
+  };
+}
 
-const Dashboard = () => {
-  const [stats, setStats] = useState<DashboardStats>(initialStats);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        setLoading(true);
-        const data = await api.getDashboardStats();
-        console.log('Fetched stats:', data); // Debug log
-        setStats(data || initialStats);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching stats:', err); // Debug log
-        setError(api.handleError(err));
-        setStats(initialStats);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStats();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="p-4">
-        <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading dashboard...</div>
+const StatCard: React.FC<{
+  title: string;
+  total: number;
+  active?: number;
+  subtitle?: string;
+  icon: React.FC<any>;
+  items?: Array<{ label: string; value: number; color?: string }>;
+}> = ({ title, total, active, subtitle, icon: Icon, items }) => (
+  <div className="bg-white rounded-lg shadow p-6">
+    <div className="flex justify-between items-start mb-4">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-700">{title}</h3>
+        <div className="flex items-baseline gap-2">
+          <span className="text-3xl font-bold">{total}</span>
+          {active !== undefined && (
+            <span className="text-green-500">{active} Active</span>
+          )}
         </div>
+        {subtitle && <p className="text-gray-500 text-sm">{subtitle}</p>}
+      </div>
+      <Icon className="w-8 h-8 text-purple-600" />
+    </div>
+    {items && (
+      <div className="space-y-1">
+        {items.map((item, index) => (
+          <div key={index} className="flex justify-between text-sm">
+            <span className="text-gray-600">{item.label}</span>
+            <span className={item.color || 'text-gray-900'}>{item.value}</span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
+const Dashboard: React.FC = () => {
+  const { data: stats, isLoading } = useQuery<DashboardStats>('dashboardStats', async () => {
+    const response = await fetch('/api/dashboard/stats');
+    if (!response.ok) throw new Error('Failed to fetch stats');
+    return response.json();
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="p-4">
+    <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
 
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Channels Card */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-700">Channels</h3>
-            <Users className="w-6 h-6 text-purple-600" />
-          </div>
-          <div className="flex justify-between items-end">
-            <div>
-              <p className="text-3xl font-bold text-gray-900">{stats.channels.total}</p>
-              <p className="text-sm text-gray-500">Total Channels</p>
-            </div>
-            <div className="text-right">
-              <p className="text-3xl font-bold text-green-600">{stats.channels.active}</p>
-              <p className="text-sm text-gray-500">Active</p>
-            </div>
-          </div>
-        </div>
+        <StatCard
+          title="Channels"
+          total={stats?.channels.total || 0}
+          active={stats?.channels.active || 0}
+          subtitle="Total Channels"
+          icon={Users}
+        />
 
         {/* Games Card */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-700">Games</h3>
-            <GamepadIcon className="w-6 h-6 text-purple-600" />
-          </div>
-          <div className="flex justify-between items-end">
-            <div>
-              <p className="text-3xl font-bold text-gray-900">{stats.games.total}</p>
-              <p className="text-sm text-gray-500">Total Games</p>
-            </div>
-            <div className="text-right">
-              <p className="text-3xl font-bold text-green-600">{stats.games.active}</p>
-              <p className="text-sm text-gray-500">Active</p>
-            </div>
-          </div>
-        </div>
+        <StatCard
+          title="Games"
+          total={stats?.games.total || 0}
+          active={stats?.games.active || 0}
+          subtitle="Total Games"
+          icon={Gamepad}
+        />
 
         {/* VODs Card */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-700">VODs</h3>
-            <Video className="w-6 h-6 text-purple-600" />
-          </div>
-          <div className="flex justify-between items-end">
-            <div>
-              <p className="text-3xl font-bold text-gray-900">{stats.vods.total}</p>
-              <p className="text-sm text-gray-500">Total VODs</p>
-            </div>
-            <div className="text-right">
-              <p className="text-3xl font-bold text-purple-600">
-                {stats.vods.totalViews.toLocaleString()}
-              </p>
-              <p className="text-sm text-gray-500">Total Views</p>
-            </div>
-          </div>
-        </div>
+        <StatCard
+          title="VODs"
+          total={stats?.vods.total || 0}
+          subtitle="Total Views"
+          icon={Video}
+        />
 
         {/* Downloads Card */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-700">Downloads</h3>
-            <Activity className="w-6 h-6 text-purple-600" />
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-500">Active</span>
-              <span className="font-medium text-purple-600">{stats.downloads.active}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-500">Pending</span>
-              <span className="font-medium text-blue-600">{stats.downloads.pending}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-500">Completed</span>
-              <span className="font-medium text-green-600">{stats.downloads.completed}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-500">Failed</span>
-              <span className="font-medium text-red-600">{stats.downloads.failed}</span>
-            </div>
-          </div>
-        </div>
+        <StatCard
+          title="Downloads"
+          total={stats?.downloads.active || 0}
+          icon={Activity}
+          items={[
+            { label: 'Active', value: stats?.downloads.active || 0, color: 'text-purple-600' },
+            { label: 'Pending', value: stats?.downloads.pending || 0, color: 'text-blue-600' },
+            { label: 'Completed', value: stats?.downloads.completed || 0, color: 'text-green-600' },
+            { label: 'Failed', value: stats?.downloads.failed || 0, color: 'text-red-600' }
+          ]}
+        />
       </div>
     </div>
   );

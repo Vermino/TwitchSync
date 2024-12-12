@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
-import { runMigrations } from '../../migrations/runner';  // Updated path to match actual structure
+import { runMigrations } from '../database/migrations/runner';
 import { logger } from '../utils/logger';
 
 dotenv.config();

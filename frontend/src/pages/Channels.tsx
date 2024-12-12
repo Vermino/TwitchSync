@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import ChannelSearchModal from '../components/ChannelSearchModal';
 
 interface Channel {
   id: number;
@@ -16,12 +17,15 @@ const Channels = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newChannel, setNewChannel] = useState({ twitch_id: '', username: '' });
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
-  // Fetch channels
+  useEffect(() => {
+    fetchChannels();
+  }, []);
+
   const fetchChannels = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/channels');
+      const response = await fetch('/api/channels');
       const data = await response.json();
       setChannels(data);
       setError(null);
@@ -33,34 +37,41 @@ const Channels = () => {
     }
   };
 
-  // Add new channel
-  const addChannel = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddChannels = async (selectedChannels: Array<{ id: string, display_name: string, login: string }>) => {
     try {
-      const response = await fetch('http://localhost:3000/api/channels', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newChannel),
-      });
+      const responses = await Promise.all(
+        selectedChannels.map(channel =>
+          fetch('/api/channels', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              twitch_id: channel.id,
+              username: channel.login
+            }),
+          })
+        )
+      );
 
-      if (!response.ok) throw new Error('Failed to add channel');
+      const newChannels = await Promise.all(
+        responses.map(response => {
+          if (!response.ok) throw new Error('Failed to add channel');
+          return response.json();
+        })
+      );
 
-      const data = await response.json();
-      setChannels([...channels, data]);
-      setNewChannel({ twitch_id: '', username: '' });
+      setChannels(prevChannels => [...prevChannels, ...newChannels]);
       setError(null);
     } catch (err) {
-      setError('Failed to add channel');
-      console.error('Error adding channel:', err);
+      setError('Failed to add channels');
+      console.error('Error adding channels:', err);
     }
   };
 
-  // Delete channel
   const deleteChannel = async (id: number) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/channels/${id}`, {
+      const response = await fetch(`/api/channels/${id}`, {
         method: 'DELETE',
       });
 
@@ -74,10 +85,9 @@ const Channels = () => {
     }
   };
 
-  // Toggle channel active status
   const toggleChannelStatus = async (id: number, currentStatus: boolean) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/channels/${id}`, {
+      const response = await fetch(`/api/channels/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -98,16 +108,12 @@ const Channels = () => {
     }
   };
 
-  useEffect(() => {
-    fetchChannels();
-  }, []);
-
   if (loading) {
     return (
       <div className="p-4">
         <h1 className="text-2xl font-bold mb-4">Channels</h1>
         <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading channels...</div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
         </div>
       </div>
     );
@@ -115,7 +121,16 @@ const Channels = () => {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Channels</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Channels</h1>
+        <button
+          onClick={() => setIsSearchModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+        >
+          <PlusCircle className="w-5 h-5" />
+          Add Channels
+        </button>
+      </div>
 
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -123,36 +138,7 @@ const Channels = () => {
         </div>
       )}
 
-      {/* Add new channel form */}
-      <form onSubmit={addChannel} className="mb-6 bg-white p-4 rounded-lg shadow">
-        <div className="flex flex-wrap gap-4">
-          <input
-            type="text"
-            placeholder="Twitch ID"
-            value={newChannel.twitch_id}
-            onChange={(e) => setNewChannel({ ...newChannel, twitch_id: e.target.value })}
-            className="flex-1 p-2 border rounded"
-            required
-          />
-          <input
-            type="text"
-            placeholder="Username"
-            value={newChannel.username}
-            onChange={(e) => setNewChannel({ ...newChannel, username: e.target.value })}
-            className="flex-1 p-2 border rounded"
-            required
-          />
-          <button
-            type="submit"
-            className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 flex items-center gap-2"
-          >
-            <PlusCircle className="w-5 h-5" />
-            Add Channel
-          </button>
-        </div>
-      </form>
-
-      {/* Channels list */}
+      {/* Channels Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full">
           <thead className="bg-gray-50">
@@ -208,13 +194,21 @@ const Channels = () => {
             {channels.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                  No channels added yet. Add your first channel above!
+                  No channels added yet. Click "Add Channels" to start tracking channels!
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Channel Search Modal */}
+      <ChannelSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelect={handleAddChannels}
+        allowMultiple={true}
+      />
     </div>
   );
 };

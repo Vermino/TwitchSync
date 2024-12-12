@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { logger } from '../src/utils/logger';
+import { logger } from '../../utils/logger';
 
 export async function up(pool: Pool): Promise<void> {
   try {
@@ -17,6 +17,21 @@ export async function up(pool: Pool): Promise<void> {
 
         -- Create index for status queries
         CREATE INDEX IF NOT EXISTS idx_vods_status ON vods(status);
+      `);
+
+      // Create VOD chapters table
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS vod_chapters (
+          id SERIAL PRIMARY KEY,
+          vod_id INTEGER REFERENCES vods(id) ON DELETE CASCADE,
+          game_id VARCHAR(50),
+          title VARCHAR(200),
+          start_time INTEGER,
+          end_time INTEGER,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_vod_chapters_vod_id ON vod_chapters(vod_id);
       `);
 
       // Create VOD processing history table
@@ -56,13 +71,14 @@ export async function down(pool: Pool): Promise<void> {
 
     try {
       await client.query(`
+        DROP TABLE IF EXISTS vod_processing_history;
+        DROP TABLE IF EXISTS vod_chapters;
+        
         ALTER TABLE vods
         DROP COLUMN file_path,
         DROP COLUMN status,
         DROP COLUMN file_size,
         DROP COLUMN duration_seconds;
-
-        DROP TABLE IF EXISTS vod_processing_history;
       `);
 
       await client.query('COMMIT');
