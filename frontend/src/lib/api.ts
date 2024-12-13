@@ -1,25 +1,64 @@
 import axios from 'axios';
-import type {
-  DashboardStats,
-  Channel,
-  Game,
-  VOD,
-  CreateChannelRequest,
-  UpdateChannelRequest,
-  CreateGameRequest,
-  UpdateGameRequest,
-  PaginatedResponse,
-  Chapter
-} from '../types';
-
-const BASE_URL = 'http://localhost:3000/api';
+import type { Channel, Game } from '@/types';
 
 class ApiClient {
   private static instance: ApiClient;
+  private baseURL = 'http://localhost:3001/api';
+
+    // Twitch Search
+  async searchTwitchChannels(query: string) {
+    try {
+      const response = await axios.get(`${this.baseURL}/twitch/channels/search`, {
+        params: { query },
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error searching Twitch channels:', error);
+      throw error;
+    }
+  }
+
+  async searchTwitchGames(query: string) {
+    try {
+      const response = await axios.get(`${this.baseURL}/twitch/games/search`, {
+        params: { query },
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error searching Twitch games:', error);
+      throw error;
+    }
+  }
 
   private constructor() {
-    // Initialize axios defaults if needed
-    axios.defaults.headers.common['Content-Type'] = 'application/json';
+    // Add request interceptor for auth token
+    axios.interceptors.request.use(
+      (config) => {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+
+    // Add response interceptor for error handling
+    axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          // Handle unauthorized access
+          localStorage.removeItem('auth_token');
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      }
+    );
   }
 
   public static getInstance(): ApiClient {
@@ -29,21 +68,12 @@ class ApiClient {
     return ApiClient.instance;
   }
 
-  // Dashboard
-  async getDashboardStats(): Promise<DashboardStats> {
-    try {
-      const response = await axios.get<DashboardStats>(`${BASE_URL}/dashboard/stats`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-      throw error;
-    }
-  }
-
   // Channels
   async getChannels(): Promise<Channel[]> {
     try {
-      const response = await axios.get<Channel[]>(`${BASE_URL}/channels`);
+      const response = await axios.get(`${this.baseURL}/channels`, {
+        headers: this.getHeaders()
+      });
       return response.data;
     } catch (error) {
       console.error('Error fetching channels:', error);
@@ -51,9 +81,11 @@ class ApiClient {
     }
   }
 
-  async createChannel(data: CreateChannelRequest): Promise<Channel> {
+  async createChannel(data: { twitch_id: string; username: string }): Promise<Channel> {
     try {
-      const response = await axios.post<Channel>(`${BASE_URL}/channels`, data);
+      const response = await axios.post(`${this.baseURL}/channels`, data, {
+        headers: this.getHeaders()
+      });
       return response.data;
     } catch (error) {
       console.error('Error creating channel:', error);
@@ -61,9 +93,11 @@ class ApiClient {
     }
   }
 
-  async updateChannel(id: number, data: UpdateChannelRequest): Promise<Channel> {
+  async updateChannel(id: number, data: { is_active?: boolean }): Promise<Channel> {
     try {
-      const response = await axios.put<Channel>(`${BASE_URL}/channels/${id}`, data);
+      const response = await axios.put(`${this.baseURL}/channels/${id}`, data, {
+        headers: this.getHeaders()
+      });
       return response.data;
     } catch (error) {
       console.error('Error updating channel:', error);
@@ -73,7 +107,9 @@ class ApiClient {
 
   async deleteChannel(id: number): Promise<void> {
     try {
-      await axios.delete(`${BASE_URL}/channels/${id}`);
+      await axios.delete(`${this.baseURL}/channels/${id}`, {
+        headers: this.getHeaders()
+      });
     } catch (error) {
       console.error('Error deleting channel:', error);
       throw error;
@@ -83,7 +119,9 @@ class ApiClient {
   // Games
   async getGames(): Promise<Game[]> {
     try {
-      const response = await axios.get<Game[]>(`${BASE_URL}/games`);
+      const response = await axios.get(`${this.baseURL}/games`, {
+        headers: this.getHeaders()
+      });
       return response.data;
     } catch (error) {
       console.error('Error fetching games:', error);
@@ -91,9 +129,11 @@ class ApiClient {
     }
   }
 
-  async createGame(data: CreateGameRequest): Promise<Game> {
+  async createGame(data: { twitch_game_id: string; name: string }): Promise<Game> {
     try {
-      const response = await axios.post<Game>(`${BASE_URL}/games`, data);
+      const response = await axios.post(`${this.baseURL}/games`, data, {
+        headers: this.getHeaders()
+      });
       return response.data;
     } catch (error) {
       console.error('Error creating game:', error);
@@ -101,9 +141,11 @@ class ApiClient {
     }
   }
 
-  async updateGame(id: number, data: UpdateGameRequest): Promise<Game> {
+  async updateGame(id: number, data: { is_active?: boolean }): Promise<Game> {
     try {
-      const response = await axios.put<Game>(`${BASE_URL}/games/${id}`, data);
+      const response = await axios.put(`${this.baseURL}/games/${id}`, data, {
+        headers: this.getHeaders()
+      });
       return response.data;
     } catch (error) {
       console.error('Error updating game:', error);
@@ -113,86 +155,38 @@ class ApiClient {
 
   async deleteGame(id: number): Promise<void> {
     try {
-      await axios.delete(`${BASE_URL}/games/${id}`);
+      await axios.delete(`${this.baseURL}/games/${id}`, {
+        headers: this.getHeaders()
+      });
     } catch (error) {
       console.error('Error deleting game:', error);
       throw error;
     }
   }
 
-  // VODs
-  async getVODs(page: number = 1, limit: number = 20): Promise<PaginatedResponse<VOD>> {
+  // Helper method for headers
+  private getHeaders() {
+    const token = localStorage.getItem('auth_token');
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : ''
+    };
+  }
+
+  // Dashboard stats
+  async getDashboardStats() {
     try {
-      const response = await axios.get<PaginatedResponse<VOD>>(`${BASE_URL}/vods`, {
-        params: { page, limit }
+      const response = await axios.get(`${this.baseURL}/dashboard/stats`, {
+        headers: this.getHeaders()
       });
       return response.data;
     } catch (error) {
-      console.error('Error fetching VODs:', error);
+      console.error('Error fetching dashboard stats:', error);
       throw error;
     }
-  }
-
-  async getVOD(id: number): Promise<VOD> {
-    try {
-      const response = await axios.get<VOD>(`${BASE_URL}/vods/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching VOD:', error);
-      throw error;
-    }
-  }
-
-  async getChannelVODs(channelId: number): Promise<VOD[]> {
-    try {
-      const response = await axios.get<VOD[]>(`${BASE_URL}/vods/channel/${channelId}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching channel VODs:', error);
-      throw error;
-    }
-  }
-
-  // Chapters
-  async getVODChapters(vodId: number): Promise<Chapter[]> {
-    try {
-      const response = await axios.get<Chapter[]>(`${BASE_URL}/vods/${vodId}/chapters`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching VOD chapters:', error);
-      throw error;
-    }
-  }
-
-  async analyzeVOD(vodId: number): Promise<void> {
-    try {
-      await axios.post(`${BASE_URL}/vods/${vodId}/analyze`);
-    } catch (error) {
-      console.error('Error analyzing VOD:', error);
-      throw error;
-    }
-  }
-
-  async reanalyzeVOD(vodId: number): Promise<void> {
-    try {
-      await axios.post(`${BASE_URL}/vods/${vodId}/reanalyze`);
-    } catch (error) {
-      console.error('Error reanalyzing VOD:', error);
-      throw error;
-    }
-  }
-
-  handleError(error: unknown): string {
-    if (axios.isAxiosError(error)) {
-      return error.response?.data?.message || 'An unexpected error occurred';
-    }
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return 'An unexpected error occurred';
   }
 }
 
-// Export a singleton instance
+
 export const api = ApiClient.getInstance();
 export default api;

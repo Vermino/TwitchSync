@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from 'react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -12,7 +13,18 @@ import VODs from './pages/VODs';
 import Settings from './pages/Settings';
 import CallbackHandler from './components/CallbackHandler';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      retryDelay: 1000,
+      staleTime: 30000,
+      cacheTime: 60000,
+      refetchOnWindowFocus: false,
+      suspense: false
+    }
+  }
+});
 
 function App() {
   return (
@@ -24,14 +36,8 @@ function App() {
             <Route path="/connect-twitch" element={<ConnectTwitch />} />
             <Route path="/auth/callback" element={<CallbackHandler />} />
 
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Layout />
-                </ProtectedRoute>
-              }
-            >
+            {/* Protected routes */}
+            <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="channels" element={<Channels />} />
               <Route path="games" element={<Games />} />
@@ -41,6 +47,7 @@ function App() {
           </Routes>
         </AuthProvider>
       </Router>
+      <ReactQueryDevtools />
     </QueryClientProvider>
   );
 }

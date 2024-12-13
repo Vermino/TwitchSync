@@ -27,7 +27,7 @@ FILE_TYPES = [".py", ".txt", ".md", ".js", ".html", ".css", ".cs", ".sln", ".csp
 EXCLUDE_DIRS = {"External", "venv", ".venv", "build", ".git", ".idea", "node_modules", "__pycache__", "dist", "bin", "obj"}
 
 # File exclusions
-EXCLUDE_FILES = {"package-lock.json", "content2.py", "README.md", ".DS_Store", "Thumbs.db", ".env", "requirements.txt"}
+EXCLUDE_FILES = {"package-lock.json", "content2.py", "README.md", ".DS_Store", "Thumbs.db", "requirements.txt"}
 
 # Maximum file size for content extraction (1MB)
 MAX_FILE_SIZE = 1000000  # 1MB

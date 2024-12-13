@@ -5,9 +5,9 @@ import {
   Check,
   X,
   Loader2,
-  Users,
   Video
 } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface Channel {
   id: string;
@@ -17,12 +17,6 @@ interface Channel {
   broadcaster_type: string;
   description: string;
   view_count: number;
-}
-
-interface ChannelStats {
-  followers: number;
-  totalViews: number;
-  lastStreamDate: string;
 }
 
 interface ChannelSearchModalProps {
@@ -41,7 +35,6 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Channel[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<Channel[]>([]);
-  const [channelStats, setChannelStats] = useState<Record<string, ChannelStats>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,31 +49,8 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
       setError(null);
 
       try {
-        const response = await fetch(`/api/twitch/channels/search?query=${encodeURIComponent(searchTerm)}`, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to search channels');
-        }
-
-        const data = await response.json();
+        const data = await api.searchTwitchChannels(searchTerm);
         setSearchResults(data);
-
-        // Fetch stats for each channel
-        const statsPromises = data.map((channel: Channel) =>
-          fetch(`/api/twitch/channels/${channel.id}/stats`).then(res => res.json())
-        );
-
-        const stats = await Promise.all(statsPromises);
-        const statsMap = data.reduce((acc: Record<string, ChannelStats>, channel: Channel, index: number) => {
-          acc[channel.id] = stats[index];
-          return acc;
-        }, {});
-
-        setChannelStats(statsMap);
       } catch (err) {
         setError('Failed to search channels. Please try again.');
         console.error('Channel search error:', err);
@@ -120,26 +90,6 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
       return (num / 1000).toFixed(1) + 'K';
     }
     return num.toString();
-  };
-
-  const formatLastStreamDate = (date: string): string => {
-    const streamDate = new Date(date);
-    const now = new Date();
-    const diff = now.getTime() - streamDate.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) {
-      return 'Today';
-    } else if (days === 1) {
-      return 'Yesterday';
-    } else if (days < 7) {
-      return `${days} days ago`;
-    } else if (days < 30) {
-      const weeks = Math.floor(days / 7);
-      return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
-    } else {
-      return streamDate.toLocaleDateString();
-    }
   };
 
   const handleSubmit = () => {
@@ -221,21 +171,12 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
                       {channel.description || 'No channel description'}
                     </p>
 
-                    {channelStats[channel.id] && (
-                      <div className="flex items-center gap-6 mt-2 text-sm text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <Users className="w-4 h-4" />
-                          {formatNumber(channelStats[channel.id].followers)} followers
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Video className="w-4 h-4" />
-                          {formatNumber(channelStats[channel.id].totalViews)} views
-                        </div>
-                        <div>
-                          Last streamed: {formatLastStreamDate(channelStats[channel.id].lastStreamDate)}
-                        </div>
+                    <div className="flex items-center gap-6 mt-2 text-sm text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <Video className="w-4 h-4" />
+                        {formatNumber(channel.view_count)} views
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               ))}

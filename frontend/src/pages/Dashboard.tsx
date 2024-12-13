@@ -1,27 +1,8 @@
 import React from 'react';
 import { Users, Gamepad, Video, Activity } from 'lucide-react';
-import { useQuery } from 'react-query';
-
-interface DashboardStats {
-  channels: {
-    total: number;
-    active: number;
-  };
-  games: {
-    total: number;
-    active: number;
-  };
-  vods: {
-    total: number;
-    totalViews: number;
-  };
-  downloads: {
-    active: number;
-    pending: number;
-    completed: number;
-    failed: number;
-  };
-}
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import { ErrorBoundary } from 'react-error-boundary';
 
 const StatCard: React.FC<{
   title: string;
@@ -58,62 +39,79 @@ const StatCard: React.FC<{
   </div>
 );
 
+const DashboardError: React.FC<{ error: Error }> = ({ error }) => (
+  <div className="p-4">
+    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+      {error.message || 'Failed to load dashboard stats'}
+    </div>
+  </div>
+);
+
+const LoadingSpinner: React.FC = () => (
+  <div className="flex justify-center items-center min-h-[200px]">
+    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600"></div>
+  </div>
+);
+
 const Dashboard: React.FC = () => {
-  const { data: stats, isLoading } = useQuery<DashboardStats>('dashboardStats', async () => {
-    const response = await fetch('/api/dashboard/stats');
-    if (!response.ok) throw new Error('Failed to fetch stats');
-    return response.json();
+  const { data: stats, isLoading, error } = useQuery({
+    queryKey: ['dashboardStats'],
+    queryFn: () => api.getDashboardStats(),
+    staleTime: 30000,
+    cacheTime: 60000,
+    retry: 2,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false
   });
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600"></div>
-      </div>
-    );
+    return <LoadingSpinner />;
+  }
+
+  if (error instanceof Error) {
+    return <DashboardError error={error} />;
+  }
+
+  if (!stats) {
+    return null;
   }
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Channels Card */}
         <StatCard
           title="Channels"
-          total={stats?.channels.total || 0}
-          active={stats?.channels.active || 0}
+          total={stats.channels.total}
+          active={stats.channels.active}
           subtitle="Total Channels"
           icon={Users}
         />
 
-        {/* Games Card */}
         <StatCard
           title="Games"
-          total={stats?.games.total || 0}
-          active={stats?.games.active || 0}
+          total={stats.games.total}
+          active={stats.games.active}
           subtitle="Total Games"
           icon={Gamepad}
         />
 
-        {/* VODs Card */}
         <StatCard
           title="VODs"
-          total={stats?.vods.total || 0}
-          subtitle="Total Views"
+          total={stats.vods.total}
+          subtitle={`${stats.vods.totalViews.toLocaleString()} Views`}
           icon={Video}
         />
 
-        {/* Downloads Card */}
         <StatCard
           title="Downloads"
-          total={stats?.downloads.active || 0}
+          total={stats.downloads.active}
           icon={Activity}
           items={[
-            { label: 'Active', value: stats?.downloads.active || 0, color: 'text-purple-600' },
-            { label: 'Pending', value: stats?.downloads.pending || 0, color: 'text-blue-600' },
-            { label: 'Completed', value: stats?.downloads.completed || 0, color: 'text-green-600' },
-            { label: 'Failed', value: stats?.downloads.failed || 0, color: 'text-red-600' }
+            { label: 'Active', value: stats.downloads.active, color: 'text-purple-600' },
+            { label: 'Pending', value: stats.downloads.pending, color: 'text-blue-600' },
+            { label: 'Completed', value: stats.downloads.completed, color: 'text-green-600' },
+            { label: 'Failed', value: stats.downloads.failed, color: 'text-red-600' }
           ]}
         />
       </div>
@@ -121,4 +119,10 @@ const Dashboard: React.FC = () => {
   );
 };
 
-export default Dashboard;
+export default function DashboardWrapper() {
+  return (
+    <ErrorBoundary FallbackComponent={DashboardError}>
+      <Dashboard />
+    </ErrorBoundary>
+  );
+}

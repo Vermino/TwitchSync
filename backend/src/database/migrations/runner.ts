@@ -7,6 +7,10 @@ import * as vodSegments from './004_vod_segments';
 import * as syncHistory from './005_sync_history';
 import * as downloadProgress from './006_download_progress';
 import * as settingTable from './007_settings_table';
+import * as authTable from './008_auth_tables';
+import * as createUsersTable from './009_create_users_table';
+import * as updateUsersTable from './010_update_users_table';
+import * as ensureUsersTable from './011_ensure_users_table';
 
 const migrations = [
   { name: '001_initial_schema', up: initialSchema.up, down: initialSchema.down },
@@ -15,7 +19,15 @@ const migrations = [
   { name: '004_vod_segments', up: vodSegments.up, down: vodSegments.down },
   { name: '005_sync_history', up: syncHistory.up, down: syncHistory.down },
   { name: '006_download_progress', up: downloadProgress.up, down: downloadProgress.down },
-  { name: '007_settings_table', up: settingTable.up, down: settingTable.down }
+  { name: '007_settings_table', up: settingTable.up, down: settingTable.down },
+  { name: '008_auth_tables', up: authTable.up, down: authTable.down },
+  { name: '009_create_users_table', up: createUsersTable.up, down: createUsersTable.down },
+  { name: '010_update_users_table', up: updateUsersTable.up, down: updateUsersTable.down },
+  {
+    name: '011_ensure_users_table',
+    up: ensureUsersTable.up,
+    down: ensureUsersTable.down
+  }
 ];
 
 export async function runMigrations(pool: Pool): Promise<void> {

@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Trash2, CheckCircle, XCircle } from 'lucide-react';
 import GameSearchModal from '../components/GameSearchModal';
+import { api } from '@/lib/api';
+import { ErrorBoundary } from 'react-error-boundary';
 
 interface Game {
   id: number;
@@ -11,111 +14,64 @@ interface Game {
   created_at: string;
 }
 
+const LoadingSpinner = () => (
+  <div className="flex justify-center items-center h-64">
+    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
+  </div>
+);
+
+const ErrorDisplay: React.FC<{ error: Error }> = ({ error }) => (
+  <div className="p-4">
+    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+      {error.message}
+    </div>
+  </div>
+);
+
 const Games = () => {
-  const [games, setGames] = useState<Game[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    fetchGames();
-  }, []);
+  // Fetch games
+  const { data: games, isLoading, error } = useQuery({
+    queryKey: ['games'],
+    queryFn: () => api.getGames(),
+  });
 
-  const fetchGames = async () => {
-    try {
-      const response = await fetch('/api/games');
-      const data = await response.json();
-      setGames(data);
-      setError(null);
-    } catch (err) {
-      setError('Failed to fetch games');
-      console.error('Error fetching games:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAddGames = async (selectedGames: Array<{ id: string, name: string }>) => {
-    try {
-      const responses = await Promise.all(
-        selectedGames.map(game =>
-          fetch('/api/games', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              twitch_game_id: game.id,
-              name: game.name
-            }),
-          })
-        )
-      );
-
-      const newGames = await Promise.all(
-        responses.map(response => {
-          if (!response.ok) throw new Error('Failed to add game');
-          return response.json();
+  // Add game mutation
+  const addGameMutation = useMutation({
+    mutationFn: (selectedGames: Array<{ id: string, name: string }>) =>
+      Promise.all(selectedGames.map(game =>
+        api.createGame({
+          twitch_game_id: game.id,
+          name: game.name
         })
-      );
+      )),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] });
+      setIsSearchModalOpen(false);
+    },
+  });
 
-      setGames(prevGames => [...prevGames, ...newGames]);
-      setError(null);
-    } catch (err) {
-      setError('Failed to add games');
-      console.error('Error adding games:', err);
-    }
-  };
+  // Delete game mutation
+  const deleteGameMutation = useMutation({
+    mutationFn: (id: number) => api.deleteGame(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] });
+    },
+  });
 
-  const deleteGame = async (id: number) => {
-    try {
-      const response = await fetch(`/api/games/${id}`, {
-        method: 'DELETE',
-      });
+  // Toggle game status mutation
+  const toggleGameMutation = useMutation({
+    mutationFn: ({ id, currentStatus }: { id: number; currentStatus: boolean }) =>
+      api.updateGame(id, { is_active: !currentStatus }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] });
+    },
+  });
 
-      if (!response.ok) throw new Error('Failed to delete game');
-
-      setGames(games.filter(game => game.id !== id));
-      setError(null);
-    } catch (err) {
-      setError('Failed to delete game');
-      console.error('Error deleting game:', err);
-    }
-  };
-
-  const toggleGameStatus = async (id: number, currentStatus: boolean) => {
-    try {
-      const response = await fetch(`/api/games/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ is_active: !currentStatus }),
-      });
-
-      if (!response.ok) throw new Error('Failed to update game');
-
-      const updatedGame = await response.json();
-      setGames(games.map(game =>
-        game.id === id ? updatedGame : game
-      ));
-      setError(null);
-    } catch (err) {
-      setError('Failed to update game');
-      console.error('Error updating game:', err);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="p-4">
-        <h1 className="text-2xl font-bold mb-4">Games</h1>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorDisplay error={error as Error} />;
 
   return (
     <div className="p-4">
@@ -130,12 +86,6 @@ const Games = () => {
         </button>
       </div>
 
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
-      )}
-
       {/* Games Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full">
@@ -149,47 +99,51 @@ const Games = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {games.map((game) => (
-              <tr key={game.id}>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">{game.name}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-500">{game.twitch_game_id}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <button
-                    onClick={() => toggleGameStatus(game.id, game.is_active)}
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      game.is_active
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {game.is_active ? (
-                      <CheckCircle className="w-4 h-4 mr-1" />
-                    ) : (
-                      <XCircle className="w-4 h-4 mr-1" />
-                    )}
-                    {game.is_active ? 'Active' : 'Inactive'}
-                  </button>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-500">
-                    {new Date(game.created_at).toLocaleDateString()}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <button
-                    onClick={() => deleteGame(game.id)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {games.length === 0 && (
+            {games && games.length > 0 ? (
+              games.map((game) => (
+                <tr key={game.id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{game.name}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">{game.twitch_game_id}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <button
+                      onClick={() => toggleGameMutation.mutate({
+                        id: game.id,
+                        currentStatus: game.is_active
+                      })}
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        game.is_active
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {game.is_active ? (
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                      ) : (
+                        <XCircle className="w-4 h-4 mr-1" />
+                      )}
+                      {game.is_active ? 'Active' : 'Inactive'}
+                    </button>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">
+                      {new Date(game.created_at).toLocaleDateString()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <button
+                      onClick={() => deleteGameMutation.mutate(game.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                   No games added yet. Click "Add Games" to start tracking games!
@@ -204,11 +158,18 @@ const Games = () => {
       <GameSearchModal
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
-        onSelect={handleAddGames}
+        onSelect={(selectedGames) => addGameMutation.mutate(selectedGames)}
         allowMultiple={true}
       />
     </div>
   );
 };
 
-export default Games;
+// Wrap with error boundary
+export default function GamesWrapper() {
+  return (
+      <ErrorBoundary FallbackComponent={ErrorDisplay}>
+        <Games/>
+      </ErrorBoundary>
+  );
+}

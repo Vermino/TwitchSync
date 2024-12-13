@@ -6,6 +6,7 @@ import {
   X,
   Loader2
 } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface Game {
   id: string;
@@ -43,17 +44,7 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
       setError(null);
 
       try {
-        const response = await fetch(`/api/twitch/games/search?query=${encodeURIComponent(searchTerm)}`, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to search games');
-        }
-
-        const data = await response.json();
+        const data = await api.searchTwitchGames(searchTerm);
         setSearchResults(data);
       } catch (err) {
         setError('Failed to search games. Please try again.');
