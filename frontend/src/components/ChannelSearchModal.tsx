@@ -16,7 +16,7 @@ interface Channel {
   profile_image_url: string;
   broadcaster_type: string;
   description: string;
-  view_count: number;
+  view_count?: number;
 }
 
 interface ChannelSearchModalProps {
@@ -50,7 +50,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
 
       try {
         const data = await api.searchTwitchChannels(searchTerm);
-        setSearchResults(data);
+        setSearchResults(Array.isArray(data) ? data : []); // Ensure data is an array
       } catch (err) {
         setError('Failed to search channels. Please try again.');
         console.error('Channel search error:', err);
@@ -83,7 +83,9 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
     }
   };
 
-  const formatNumber = (num: number): string => {
+  const formatNumber = (num?: number): string => {
+    if (num === undefined || num === null) return '0';
+
     if (num >= 1000000) {
       return (num / 1000000).toFixed(1) + 'M';
     } else if (num >= 1000) {
