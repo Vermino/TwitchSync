@@ -81,11 +81,29 @@ class ApiClient {
     }
   }
 
-  async createChannel(data: { twitch_id: string; username: string }): Promise<Channel> {
+async createChannel(data: {
+    twitch_id: string;
+    username: string;
+    display_name?: string;
+    profile_image_url?: string;
+    description?: string;
+    follower_count?: number;
+  }): Promise<any> {
     try {
-      const response = await axios.post(`${this.baseURL}/channels`, data, {
-        headers: this.getHeaders()
-      });
+      const response = await axios.post(
+        `${this.baseURL}/channels`,
+        {
+          twitch_id: data.twitch_id,
+          username: data.username,
+          display_name: data.display_name || data.username,
+          profile_image_url: data.profile_image_url || null,
+          description: data.description || null,
+          follower_count: data.follower_count || 0
+        },
+        {
+          headers: this.getHeaders()
+        }
+      );
       return response.data;
     } catch (error) {
       console.error('Error creating channel:', error);
@@ -185,7 +203,69 @@ class ApiClient {
       throw error;
     }
   }
+    // Task Management Methods
+  async getTasks(): Promise<any[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/tasks`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      throw error;
+    }
+  }
+
+  async createTask(data: any): Promise<any> {
+    try {
+      const response = await axios.post(`${this.baseURL}/tasks`, data, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error creating task:', error);
+      throw error;
+    }
+  }
+
+  async updateTask(id: number, data: any): Promise<any> {
+    try {
+      const response = await axios.put(`${this.baseURL}/tasks/${id}`, data, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error updating task:', error);
+      throw error;
+    }
+  }
+
+  async deleteTask(id: number): Promise<void> {
+    try {
+      await axios.delete(`${this.baseURL}/tasks/${id}`, {
+        headers: this.getHeaders()
+      });
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      throw error;
+    }
+  }
+
+  async runTask(id: number): Promise<any> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/tasks/${id}/run`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error running task:', error);
+      throw error;
+    }
+  }
 }
+
 
 
 export const api = ApiClient.getInstance();

@@ -1,3 +1,5 @@
+// backend/src/index.ts
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -13,6 +15,7 @@ import { setupAuthRoutes } from './routes/auth';
 import { setupSystemRoutes } from './routes/system';
 import { setupDownloadsRoutes } from './routes/downloads';
 import { setupSettingsRoutes } from './routes/settings';
+import { setupTaskRoutes } from './routes/tasks';
 import { authenticate } from "./middleware/auth";
 import { loggingMiddleware } from './middleware/logging';
 import { setupTwitchSearchRoutes } from './routes/twitch/search';
@@ -24,7 +27,8 @@ const port = process.env.PORT || 3001;
 
 // Add security headers middleware
 app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy',
+  res.setHeader(
+    'Content-Security-Policy',
     "default-src 'self'; font-src 'self' https: data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:;"
   );
   next();
@@ -37,7 +41,6 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.use(express.json());
 app.use(loggingMiddleware);
 
@@ -74,6 +77,7 @@ app.use('/api/watch', authenticate(pool), setupWatchRoutes(pool));
 app.use('/api/system', authenticate(pool), setupSystemRoutes(pool));
 app.use('/api/downloads', authenticate(pool), setupDownloadsRoutes(pool));
 app.use('/api/settings', authenticate(pool), setupSettingsRoutes(pool));
+app.use('/api/tasks', authenticate(pool), setupTaskRoutes(pool));
 app.use('/api/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));
 
 // Error handling
@@ -86,7 +90,6 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 const startServer = async () => {
   try {
     await setupDatabase();
-
     app.listen(port, () => {
       logger.info(`Server is running at http://localhost:${port}`);
       logger.info('Environment:', process.env.NODE_ENV);

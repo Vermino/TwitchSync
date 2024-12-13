@@ -1,5 +1,8 @@
+// frontend/src/App.tsx
+
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
@@ -11,6 +14,7 @@ import Channels from './pages/Channels';
 import Games from './pages/Games';
 import VODs from './pages/VODs';
 import Settings from './pages/Settings';
+import TaskManager from './pages/TaskManager';
 import CallbackHandler from './components/CallbackHandler';
 
 const queryClient = new QueryClient({
@@ -28,27 +32,30 @@ const queryClient = new QueryClient({
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Router>
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/connect-twitch" element={<ConnectTwitch />} />
-            <Route path="/auth/callback" element={<CallbackHandler />} />
+    <TooltipProvider>
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/connect-twitch" element={<ConnectTwitch />} />
+              <Route path="/auth/callback" element={<CallbackHandler />} />
 
-            {/* Protected routes */}
-            <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-              <Route index element={<Dashboard />} />
-              <Route path="channels" element={<Channels />} />
-              <Route path="games" element={<Games />} />
-              <Route path="vods" element={<VODs />} />
-              <Route path="settings" element={<Settings />} />
-            </Route>
-          </Routes>
-        </AuthProvider>
-      </Router>
-      <ReactQueryDevtools />
-    </QueryClientProvider>
+              {/* Protected routes */}
+              <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+                <Route index element={<Dashboard />} />
+                <Route path="channels" element={<Channels />} />
+                <Route path="games" element={<Games />} />
+                <Route path="vods" element={<VODs />} />
+                <Route path="tasks" element={<TaskManager />} />
+                <Route path="settings" element={<Settings />} />
+              </Route>
+            </Routes>
+          </AuthProvider>
+        </Router>
+        <ReactQueryDevtools />
+      </QueryClientProvider>
+    </TooltipProvider>
   );
 }
 

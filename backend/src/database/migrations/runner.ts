@@ -11,6 +11,8 @@ import * as authTable from './008_auth_tables';
 import * as createUsersTable from './009_create_users_table';
 import * as updateUsersTable from './010_update_users_table';
 import * as ensureUsersTable from './011_ensure_users_table';
+import * as updateChannelsMetadata from './012_update_channels_metadata';
+import * as createTasksTables from './013_create_tasks_tables';
 
 const migrations = [
   { name: '001_initial_schema', up: initialSchema.up, down: initialSchema.down },
@@ -23,11 +25,9 @@ const migrations = [
   { name: '008_auth_tables', up: authTable.up, down: authTable.down },
   { name: '009_create_users_table', up: createUsersTable.up, down: createUsersTable.down },
   { name: '010_update_users_table', up: updateUsersTable.up, down: updateUsersTable.down },
-  {
-    name: '011_ensure_users_table',
-    up: ensureUsersTable.up,
-    down: ensureUsersTable.down
-  }
+  { name: '011_ensure_users_table', up: ensureUsersTable.up, down: ensureUsersTable.down },
+  { name: '012_update_channels_metadata', up: updateChannelsMetadata.up, down: updateChannelsMetadata.down },
+  { name: '013_create_tasks_tables', up: createTasksTables.up, down: createTasksTables.down }
 ];
 
 export async function runMigrations(pool: Pool): Promise<void> {

@@ -1,89 +1,78 @@
-import { useState } from 'react';
+// frontend/src/components/Navbar.tsx
+
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, GamepadIcon, Video, Menu, X } from 'lucide-react';
+import {
+  Users,
+  GamepadIcon,
+  Video,
+  CalendarClock,
+  Settings,
+  Menu
+} from 'lucide-react';
 
 const Navbar = () => {
-  const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
-
-  const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Channels', href: '/channels', icon: Users },
-    { name: 'Games', href: '/games', icon: GamepadIcon },
-    { name: 'VODs', href: '/vods', icon: Video },
-  ];
 
   const isActive = (path: string) => {
     return location.pathname === path;
   };
 
-  return (
-    <nav className="bg-purple-600">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <Link to="/" className="text-white font-bold text-xl">
-                TwitchSync
-              </Link>
-            </div>
-            <div className="hidden md:block">
-              <div className="ml-10 flex items-baseline space-x-4">
-                {navigation.map((item) => (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium ${
-                      isActive(item.href)
-                        ? 'bg-purple-700 text-white'
-                        : 'text-white hover:bg-purple-700'
-                    }`}
-                  >
-                    <item.icon className="w-4 h-4" />
-                    {item.name}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
+  const navItems = [
+    { path: '/channels', icon: Users, text: 'Channels' },
+    { path: '/games', icon: GamepadIcon, text: 'Games' },
+    { path: '/vods', icon: Video, text: 'VODs' },
+    { path: '/tasks', icon: CalendarClock, text: 'Task Manager' },
+    { path: '/settings', icon: Settings, text: 'Settings' }
+  ];
 
-          {/* Mobile menu button */}
-          <div className="md:hidden">
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="text-white hover:bg-purple-700 p-2 rounded-md"
-            >
-              {isOpen ? (
-                <X className="h-6 w-6" />
-              ) : (
-                <Menu className="h-6 w-6" />
-              )}
-            </button>
+  return (
+    <nav className="bg-purple-900 text-white p-4">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="flex items-center space-x-8">
+          <Link to="/" className="text-xl font-bold">TwitchSync</Link>
+
+          <div className="hidden md:flex items-center space-x-6">
+            {navItems.map(({ path, icon: Icon, text }) => (
+              <Link
+                key={path}
+                to={path}
+                className={`flex items-center space-x-2 py-2 px-3 rounded-lg transition-colors ${
+                  isActive(path)
+                    ? 'bg-purple-800 text-white'
+                    : 'text-purple-200 hover:bg-purple-800 hover:text-white'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span>{text}</span>
+              </Link>
+            ))}
           </div>
         </div>
 
-        {/* Mobile menu */}
-        {isOpen && (
-          <div className="md:hidden">
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              {navigation.map((item) => (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium ${
-                    isActive(item.href)
-                      ? 'bg-purple-700 text-white'
-                      : 'text-white hover:bg-purple-700'
-                  }`}
-                  onClick={() => setIsOpen(false)}
-                >
-                  <item.icon className="w-4 h-4" />
-                  {item.name}
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        <button className="md:hidden">
+          <Menu className="w-6 h-6" />
+        </button>
+      </div>
+
+      {/* Mobile Navigation */}
+      <div className="md:hidden">
+        <div className="px-2 pt-2 pb-3 space-y-1">
+          {navItems.map(({ path, icon: Icon, text }) => (
+            <Link
+              key={path}
+              to={path}
+              className={`flex items-center space-x-2 py-2 px-3 rounded-lg transition-colors ${
+                isActive(path)
+                  ? 'bg-purple-800 text-white'
+                  : 'text-purple-200 hover:bg-purple-800 hover:text-white'
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span>{text}</span>
+            </Link>
+          ))}
+        </div>
       </div>
     </nav>
   );

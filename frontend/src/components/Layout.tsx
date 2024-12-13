@@ -1,23 +1,20 @@
+// frontend/src/components/Layout.tsx
+
 import React from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import {
-  Users,
-  Gamepad,
-  Video,
-  LayoutDashboard
-} from 'lucide-react';
+import { Users, Gamepad, Video, LayoutDashboard, CalendarClock } from 'lucide-react';
 import UserMenu from './UserMenu';
 
 const Layout = () => {
   const location = useLocation();
-
   const isActive = (path: string) => location.pathname === path;
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/channels', label: 'Channels', icon: Users },
     { path: '/games', label: 'Games', icon: Gamepad },
-    { path: '/vods', label: 'VODs', icon: Video }
+    { path: '/vods', label: 'VODs', icon: Video },
+    { path: '/tasks', label: 'Task Manager', icon: CalendarClock }
   ];
 
   return (
@@ -43,7 +40,6 @@ const Layout = () => {
           </div>
         </div>
       </nav>
-
       <main className="max-w-7xl mx-auto p-6">
         <Outlet />
       </main>

@@ -1,3 +1,5 @@
+// frontend/src/components/ChannelSearchModal.tsx
+
 import React, { useState, useEffect } from 'react';
 import {
   Search,
@@ -5,9 +7,13 @@ import {
   Check,
   X,
   Loader2,
-  Video
+  Video,
+  Users,
+  Info
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface Channel {
   id: string;
@@ -17,6 +23,7 @@ interface Channel {
   broadcaster_type: string;
   description: string;
   view_count?: number;
+  follower_count?: number;
 }
 
 interface ChannelSearchModalProps {
@@ -37,6 +44,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
   const [selectedChannels, setSelectedChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const searchChannels = async () => {
@@ -50,7 +58,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
 
       try {
         const data = await api.searchTwitchChannels(searchTerm);
-        setSearchResults(Array.isArray(data) ? data : []); // Ensure data is an array
+        setSearchResults(Array.isArray(data) ? data : []);
       } catch (err) {
         setError('Failed to search channels. Please try again.');
         console.error('Channel search error:', err);
@@ -94,9 +102,17 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
     return num.toString();
   };
 
-  const handleSubmit = () => {
-    onSelect(selectedChannels);
-    onClose();
+  const handleSubmit = async () => {
+    try {
+      setIsSubmitting(true);
+      await onSelect(selectedChannels);
+      onClose();
+    } catch (error) {
+      console.error('Error saving channels:', error);
+      setError('Failed to save channels. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -129,82 +145,124 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
           </div>
         </div>
 
-        {/* Results */}
-        <div className="overflow-y-auto max-h-[60vh]">
-          {loading ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
-            </div>
-          ) : error ? (
-            <div className="p-4 text-red-600 text-center">{error}</div>
-          ) : searchResults.length === 0 ? (
-            <div className="p-4 text-gray-500 text-center">
-              {searchTerm ? 'No channels found' : 'Start typing to search for channels'}
-            </div>
-          ) : (
-            <div className="divide-y">
-              {searchResults.map(channel => (
-                <div
-                  key={channel.id}
-                  onClick={() => handleSelectChannel(channel)}
-                  className={`flex items-start gap-4 p-4 cursor-pointer transition-colors ${
-                    selectedChannels.some(c => c.id === channel.id)
-                      ? 'bg-purple-50'
-                      : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <img
+      {/* Results section with updated stats display */}
+      <div className="overflow-y-auto max-h-[60vh]">
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+          </div>
+        ) : error ? (
+          <div className="p-4 text-red-600 text-center">{error}</div>
+        ) : searchResults.length === 0 ? (
+          <div className="p-4 text-gray-500 text-center">
+            {searchTerm ? 'No channels found' : 'Start typing to search for channels'}
+          </div>
+        ) : (
+          <div className="divide-y">
+            {searchResults.map(channel => (
+              <div
+                key={channel.id}
+                onClick={() => handleSelectChannel(channel)}
+                className={`flex items-start gap-4 p-4 cursor-pointer transition-colors ${
+                  selectedChannels.some(c => c.id === channel.id)
+                    ? 'bg-purple-50'
+                    : 'hover:bg-gray-50'
+                }`}
+              >
+                <Avatar className="w-16 h-16">
+                  <AvatarImage
                     src={channel.profile_image_url}
                     alt={channel.display_name}
-                    className="w-16 h-16 rounded-full"
                   />
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-semibold text-lg">{channel.display_name}</h3>
-                        <p className="text-gray-500">@{channel.login}</p>
-                      </div>
-                      {selectedChannels.some(c => c.id === channel.id) && (
-                        <Check className="w-6 h-6 text-purple-600" />
-                      )}
+                  <AvatarFallback>
+                    {channel.display_name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-lg">{channel.display_name}</h3>
+                      <p className="text-gray-500">@{channel.login}</p>
                     </div>
+                    {selectedChannels.some(c => c.id === channel.id) && (
+                      <Check className="w-6 h-6 text-purple-600" />
+                    )}
+                  </div>
 
-                    <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                      {channel.description || 'No channel description'}
-                    </p>
+                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                    {channel.description || 'No channel description'}
+                  </p>
 
-                    <div className="flex items-center gap-6 mt-2 text-sm text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <Video className="w-4 h-4" />
-                        {formatNumber(channel.view_count)} views
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-6 mt-2 text-sm text-gray-500">
+                    {/* Only show views if available */}
+                    {typeof channel.view_count !== 'undefined' && (
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <div className="flex items-center gap-1">
+                            <Video className="w-4 h-4" />
+                            {formatNumber(channel.view_count)} views
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>Total channel views</TooltipContent>
+                      </Tooltip>
+                    )}
+
+                    {/* Only show followers if available */}
+                    {typeof channel.follower_count !== 'undefined' && (
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <div className="flex items-center gap-1">
+                            <Users className="w-4 h-4" />
+                            {formatNumber(channel.follower_count)} followers
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>Follower count</TooltipContent>
+                      </Tooltip>
+                    )}
+
+                    {channel.broadcaster_type && (
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <div className="flex items-center gap-1">
+                            <Info className="w-4 h-4" />
+                            {channel.broadcaster_type}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>Broadcaster type</TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={selectedChannels.length === 0}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
+      {/* Footer */}
+      <div className="p-4 border-t flex justify-end gap-3">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+          disabled={isSubmitting}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={selectedChannels.length === 0 || isSubmitting}
+          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {isSubmitting ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
             <Plus className="w-5 h-5" />
-            Add {selectedChannels.length} {selectedChannels.length === 1 ? 'Channel' : 'Channels'}
-          </button>
-        </div>
+          )}
+          Add {selectedChannels.length} {selectedChannels.length === 1 ? 'Channel' : 'Channels'}
+        </button>
       </div>
     </div>
+  </div>
   );
 };
 

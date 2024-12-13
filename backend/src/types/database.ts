@@ -36,37 +36,6 @@ export interface VOD {
   processed_at: Date;
 }
 
-export interface VODDownload {
-  id: number;
-  vod_id: number;
-  download_path: string | null;
-  metadata_path: string | null;
-  download_status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled';
-  started_at: Date;
-  completed_at: Date | null;
-  file_size: number | null;
-  error_message: string | null;
-}
-
-export interface DownloadQueue {
-  id: number;
-  vod_id: number;
-  chapter_id: number | null;
-  priority: number;
-  status: string;
-  error_message: string | null;
-  retry_count: number;
-  created_at: Date;
-}
-
-export interface GameChange {
-  id: number;
-  channel_id: number;
-  previous_game_id: string | null;
-  new_game_id: string | null;
-  changed_at: Date;
-}
-
 // Request types
 export interface CreateChannelRequest {
   twitch_id: string;
@@ -99,11 +68,101 @@ export interface Channel {
     created_at: Date;
 }
 
-export interface ChannelQueries {
-    getAllChannels: (pool: any) => Promise<Channel[]>;
-    getChannelById: (pool: any, id: number) => Promise<Channel | null>;
-    createChannel: (pool: any, data: Omit<Channel, 'id' | 'created_at'>) => Promise<Channel>;
-    updateChannel: (pool: any, id: number, data: Partial<Channel>) => Promise<Channel | null>;
-    deleteChannel: (pool: any, id: number) => Promise<boolean>;
-    updateLastChecks: (pool: any, id: number, type: 'vod' | 'game') => Promise<void>;
+export interface Task {
+  id: number;
+  name: string;
+  description: string | null;
+  task_type: 'channel' | 'game' | 'combined';
+  channel_ids: number[];
+  game_ids: number[];
+  schedule_type: 'interval' | 'cron' | 'manual';
+  schedule_value: string;
+  storage_limit_gb: number | null;
+  retention_days: number | null;
+  auto_delete: boolean;
+  is_active: boolean;
+  priority: number;
+  last_run: Date | null;
+  next_run: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export type CreateTaskDTO = Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_run' | 'next_run'>;
+
+export interface TaskHistory {
+    id: number;
+    task_id: number;
+    status: 'success' | 'failed' | 'cancelled';
+    start_time: Date;
+    end_time: Date | null;
+    error_message: string | null;
+    details: Record<string, unknown> | null;
+    created_at: Date;
+}
+
+export interface Channel {
+    id: number;
+    twitch_id: string;
+    username: string;
+    display_name?: string;
+    profile_image_url?: string;
+    description?: string;
+    follower_count?: number;
+    is_active: boolean;
+    last_vod_check: Date | null;
+    last_game_check: Date | null;
+    current_game_id: string | null;
+    created_at: Date;
+}
+
+export interface Game {
+    id: number;
+    twitch_game_id: string;
+    name: string;
+    is_active: boolean;
+    last_check: Date | null;
+    created_at: Date;
+}
+
+export interface CreateTaskRequest {
+    name: string;
+    description?: string;
+    task_type: 'channel' | 'game' | 'combined';
+    channel_ids?: number[];
+    game_ids?: number[];
+    schedule_type: 'interval' | 'cron' | 'manual';
+    schedule_value: string;
+    storage_limit_gb?: number;
+    retention_days?: number;
+    auto_delete?: boolean;
+    priority?: number;
+}
+
+export interface UpdateTaskRequest {
+    name?: string;
+    description?: string;
+    channel_ids?: number[];
+    game_ids?: number[];
+    schedule_type?: 'interval' | 'cron' | 'manual';
+    schedule_value?: string;
+    storage_limit_gb?: number;
+    retention_days?: number;
+    auto_delete?: boolean;
+    is_active?: boolean;
+    priority?: number;
+}
+
+export interface CreateChannelRequest {
+    twitch_id: string;
+    username: string;
+    display_name?: string;
+    profile_image_url?: string;
+    description?: string;
+    follower_count?: number;
+}
+
+export interface UpdateChannelRequest {
+    is_active?: boolean;
+    current_game_id?: string | null;
 }

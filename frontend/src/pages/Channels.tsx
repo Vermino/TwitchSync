@@ -40,19 +40,36 @@ const Channels = () => {
     queryFn: () => api.getChannels(),
   });
 
-  // Add channel mutation
+ // Add channel mutation
   const addChannelMutation = useMutation({
-    mutationFn: (selectedChannels: Array<{ id: string, login: string }>) =>
-      Promise.all(selectedChannels.map(channel =>
-        api.createChannel({
-          twitch_id: channel.id,
-          username: channel.login
-        })
-      )),
+    mutationFn: (selectedChannels: Array<{
+      id: string;
+      login: string;
+      display_name: string;
+      profile_image_url?: string;
+      description?: string;
+      follower_count?: number;
+    }>) =>
+      Promise.all(
+        selectedChannels.map(channel =>
+          api.createChannel({
+            twitch_id: channel.id,
+            username: channel.login,
+            display_name: channel.display_name,
+            profile_image_url: channel.profile_image_url,
+            description: channel.description,
+            follower_count: channel.follower_count
+          })
+        )
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
       setIsSearchModalOpen(false);
     },
+    onError: (error: any) => {
+      console.error('Error adding channels:', error);
+      // You could add a toast notification here
+    }
   });
 
   // Delete channel mutation
@@ -148,7 +165,7 @@ const Channels = () => {
             ) : (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                  No channels added yet. Click "Add Channels" to start tracking channels!
+                  No channels added yet. Click &#34;Add Channels&#34; to start tracking channels!
                 </td>
               </tr>
             )}

@@ -1,3 +1,5 @@
+// backend/src/services/twitch/api.ts
+
 import axios, { AxiosResponse } from 'axios';
 import { logger } from '../../utils/logger';
 
@@ -5,6 +7,18 @@ interface TwitchCredentials {
   accessToken: string;
   expiresIn: number;
   obtainedAt: number;
+}
+
+interface TwitchChannel {
+  id: string;
+  display_name: string;
+  login: string;
+  profile_image_url: string;
+  offline_image_url: string;
+  description: string;
+  view_count: number;
+  broadcaster_type: string;
+  follower_count?: number;
 }
 
 interface TwitchResponse<T> {
@@ -85,7 +99,40 @@ export class TwitchAPI {
     }
   }
 
-  // Raw API Endpoints
+  // Enhanced channel search with followers count
+  async searchChannels(query: string): Promise<TwitchChannel[]> {
+    try {
+      // First, search for channels
+      const searchResponse = await this.makeRequest<TwitchChannel>('/search/channels', {
+        query,
+        first: '10'
+      });
+
+      // Get broadcaster IDs for follower count lookup
+      const broadcasterIds = searchResponse.data.data.map(channel => channel.id);
+
+      // Get follower counts for each channel
+      const followerCounts = await Promise.all(
+        broadcasterIds.map(async (id) => {
+          const response = await this.makeRequest<{ total: number }>('/users/follows', {
+            to_id: id
+          });
+          return { id, count: response.data.data.length };
+        })
+      );
+
+      // Merge follower counts with channel data
+      return searchResponse.data.data.map(channel => ({
+        ...channel,
+        follower_count: followerCounts.find(fc => fc.id === channel.id)?.count || 0
+      }));
+    } catch (error) {
+      logger.error('Error searching channels:', error);
+      throw error;
+    }
+  }
+
+  // Other existing methods...
   async getChannel(userId: string) {
     return this.makeRequest('/channels', { broadcaster_id: userId });
   }
