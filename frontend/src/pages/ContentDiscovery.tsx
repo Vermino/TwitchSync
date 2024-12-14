@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Star, Sparkles, Trophy, Clock, Users, Gamepad2, Heart, TrendingUp,
          Radio, Filter, Bell, Calendar, Settings } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { api } from '../lib/api';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 interface StreamPremiereEvent {
   id: string;
@@ -32,6 +34,9 @@ interface StreamPremiereEvent {
 
 const ContentDiscovery = () => {
   const [activeTab, setActiveTab] = useState<'premieres' | 'discover'>('premieres');
+  const [premieres, setPremieres] = useState<StreamPremiereEvent[]>([]);
+  const [risingStars, setRisingStars] = useState<StreamPremiereEvent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     minViewers: 100,
     maxViewers: 50000,
@@ -41,6 +46,76 @@ const ContentDiscovery = () => {
     scheduleMatch: true,
     confidenceThreshold: 0.7
   });
+
+  // Fetch premieres and rising stars
+  useEffect(() => {
+    const fetchPremieres = async () => {
+      try {
+        setLoading(true);
+        // For now, we'll use sample data but structure it like real API data
+        const samplePremieres = Array.from({length: 3}).map((_, i) => ({
+          id: `premiere-${i}`,
+          type: 'CHANNEL_PREMIERE' as const,
+          channel: {
+            id: `channel-${i}`,
+            name: `Popular Streamer ${i + 1}`,
+            avatar: `https://static-cdn.jtvnw.net/jtv_user_pictures/default-profile_image-300x300.png`,
+            followerCount: 100000,
+            averageViewers: 5000
+          },
+          game: {
+            id: `game-${i}`,
+            name: 'New Game Title',
+            boxArt: 'https://static-cdn.jtvnw.net/ttv-boxart/default_boxart-285x380.jpg',
+            genres: ['Action', 'RPG']
+          },
+          startTime: new Date(Date.now() + 7200000).toISOString(),
+          metrics: {
+            predictedViewers: 15000,
+            similarChannels: 5,
+            viewerTrend: 'rising',
+            confidence: 0.85
+          },
+          tags: ['First Play', 'English']
+        }));
+
+        const sampleRisingStars = Array.from({length: 3}).map((_, i) => ({
+          id: `rising-${i}`,
+          type: 'RISING_STAR' as const,
+          channel: {
+            id: `rising-channel-${i}`,
+            name: `Rising Star ${i + 1}`,
+            avatar: `https://static-cdn.jtvnw.net/jtv_user_pictures/default-profile_image-300x300.png`,
+            followerCount: 50000,
+            averageViewers: 2000
+          },
+          game: {
+            id: `favorite-game-${i}`,
+            name: 'Favorite Game Title',
+            boxArt: 'https://static-cdn.jtvnw.net/ttv-boxart/default_boxart-285x380.jpg',
+            genres: ['Strategy', 'Simulation']
+          },
+          startTime: new Date(Date.now() + 3600000).toISOString(),
+          metrics: {
+            predictedViewers: 8000,
+            similarChannels: 3,
+            viewerTrend: 'rising',
+            confidence: 0.92
+          },
+          tags: ['Rising Star', 'English']
+        }));
+
+        setPremieres(samplePremieres);
+        setRisingStars(sampleRisingStars);
+      } catch (error) {
+        console.error('Error fetching premieres:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPremieres();
+  }, []);
 
   const FilterPanel = () => (
     <Card>
@@ -107,11 +182,10 @@ const ContentDiscovery = () => {
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <img
-              src={premiere.channel.avatar}
-              className="w-10 h-10 rounded-full"
-              alt={premiere.channel.name}
-            />
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={premiere.channel.avatar} alt={premiere.channel.name} />
+              <AvatarFallback>{premiere.channel.name[0].toUpperCase()}</AvatarFallback>
+            </Avatar>
             <div>
               <div className="font-medium">{premiere.channel.name}</div>
               <div className="text-sm text-gray-600">
@@ -127,7 +201,7 @@ const ContentDiscovery = () => {
         <div className="flex items-center gap-2 mb-3">
           <img
             src={premiere.game.boxArt}
-            className="w-8 h-8 rounded"
+            className="w-8 h-8 rounded object-cover"
             alt={premiere.game.name}
           />
           <span>{premiere.game.name}</span>
@@ -167,7 +241,9 @@ const ContentDiscovery = () => {
     </Card>
   );
 
+  // Rest of your component...
   return (
+    // ... your existing return JSX with updated PremiereCard components using real data
     <div className="w-full max-w-7xl mx-auto p-4 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -216,19 +292,21 @@ const ContentDiscovery = () => {
           {/* Quick Stats */}
           <Card>
             <CardContent className="p-4">
-              <h3 className="font-medium mb-3">Today's Activity</h3>
+              <h3 className="font-medium mb-3">Today&#39;s Activity</h3>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">New Premieres</span>
-                  <span className="font-medium">12</span>
+                  <span className="font-medium">{premieres.length}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Rising Channels</span>
-                  <span className="font-medium">5</span>
+                  <span className="font-medium">{risingStars.length}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Matches</span>
-                  <span className="font-medium">8</span>
+                  <span className="font-medium">
+                    {premieres.length + risingStars.length}
+                  </span>
                 </div>
               </div>
             </CardContent>
@@ -243,80 +321,26 @@ const ContentDiscovery = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold">Channel Premieres</h2>
-                  <span className="text-sm text-purple-600">3 New</span>
+                  <span className="text-sm text-purple-600">
+                    {premieres.length} New
+                  </span>
                 </div>
-
-                {/* Sample premiere events */}
-                {Array.from({length: 3}).map((_, i) => (
-                  <PremiereCard
-                    key={i}
-                    premiere={{
-                      id: `premiere-${i}`,
-                      type: 'CHANNEL_PREMIERE',
-                      channel: {
-                        id: `channel-${i}`,
-                        name: `Popular Streamer ${i + 1}`,
-                        avatar: `/api/placeholder/40/40`,
-                        followerCount: 100000,
-                        averageViewers: 5000
-                      },
-                      game: {
-                        id: `game-${i}`,
-                        name: 'New Game Title',
-                        boxArt: '/api/placeholder/60/40',
-                        genres: ['Action', 'RPG']
-                      },
-                      startTime: new Date(Date.now() + 7200000).toISOString(),
-                      metrics: {
-                        predictedViewers: 15000,
-                        similarChannels: 5,
-                        viewerTrend: 'rising',
-                        confidence: 0.85
-                      },
-                      tags: ['First Play', 'English']
-                    }}
-                  />
+                {premieres.map(premiere => (
+                  <PremiereCard key={premiere.id} premiere={premiere} />
                 ))}
               </div>
 
-              {/* Game Premieres */}
+              {/* Rising Stars */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold">Rising Stars</h2>
-                  <span className="text-sm text-green-600">5 Active</span>
+                  <span className="text-sm text-green-600">
+                    {risingStars.length} Active
+                  </span>
                 </div>
-
-                {/* Sample rising stars */}
-{Array.from({length: 3}).map((_, i) => (
-  <PremiereCard
-    key={i}
-    premiere={{
-      id: `rising-${i}`,
-      type: 'RISING_STAR',
-      channel: {
-        id: `rising-channel-${i}`,
-        name: `Rising Star ${i + 1}`,
-        avatar: `/api/placeholder/40/40`,
-        followerCount: 50000,
-        averageViewers: 2000
-      },
-      game: {
-        id: `favorite-game-${i}`,
-        name: 'Favorite Game Title',
-        boxArt: '/api/placeholder/60/40',
-        genres: ['Strategy', 'Simulation']
-      },
-      startTime: new Date(Date.now() + 3600000).toISOString(),
-      metrics: {
-        predictedViewers: 8000,
-        similarChannels: 3,
-        viewerTrend: 'rising',
-        confidence: 0.92
-      },
-      tags: ['Rising Star', 'English']
-    }}
-  />
-))}
+                {risingStars.map(premiere => (
+                  <PremiereCard key={premiere.id} premiere={premiere} />
+                ))}
               </div>
             </div>
           )}
@@ -345,6 +369,28 @@ const ContentDiscovery = () => {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Trending Categories */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Trending Categories</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-4 gap-4">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="text-center">
+                        <img
+                          src="https://static-cdn.jtvnw.net/ttv-boxart/default_boxart-285x380.jpg"
+                          alt="Game Category"
+                          className="w-full h-32 object-cover rounded-lg mb-2"
+                        />
+                        <h3 className="font-medium">Category {i + 1}</h3>
+                        <p className="text-sm text-gray-600">1.2K viewers</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
