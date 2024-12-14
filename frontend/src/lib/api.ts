@@ -1,36 +1,11 @@
+// frontend/src/lib/api.ts
+
 import axios from 'axios';
-import type { Channel, Game } from '@/types';
+import type { Channel, Game, Task } from '@/types';
 
 class ApiClient {
   private static instance: ApiClient;
   private baseURL = 'http://localhost:3001/api';
-
-    // Twitch Search
-  async searchTwitchChannels(query: string) {
-    try {
-      const response = await axios.get(`${this.baseURL}/twitch/channels/search`, {
-        params: { query },
-        headers: this.getHeaders()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error searching Twitch channels:', error);
-      throw error;
-    }
-  }
-
-  async searchTwitchGames(query: string) {
-    try {
-      const response = await axios.get(`${this.baseURL}/twitch/games/search`, {
-        params: { query },
-        headers: this.getHeaders()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error searching Twitch games:', error);
-      throw error;
-    }
-  }
 
   private constructor() {
     // Add request interceptor for auth token
@@ -68,6 +43,33 @@ class ApiClient {
     return ApiClient.instance;
   }
 
+  // Twitch Search
+  async searchTwitchChannels(query: string) {
+    try {
+      const response = await axios.get(`${this.baseURL}/twitch/channels/search`, {
+        params: { query },
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error searching Twitch channels:', error);
+      throw error;
+    }
+  }
+
+  async searchTwitchGames(query: string) {
+    try {
+      const response = await axios.get(`${this.baseURL}/twitch/games/search`, {
+        params: { query },
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error searching Twitch games:', error);
+      throw error;
+    }
+  }
+
   // Channels
   async getChannels(): Promise<Channel[]> {
     try {
@@ -81,14 +83,14 @@ class ApiClient {
     }
   }
 
-async createChannel(data: {
+  async createChannel(data: {
     twitch_id: string;
     username: string;
     display_name?: string;
     profile_image_url?: string;
     description?: string;
     follower_count?: number;
-  }): Promise<any> {
+  }): Promise<Channel> {
     try {
       const response = await axios.post(
         `${this.baseURL}/channels`,
@@ -182,29 +184,8 @@ async createChannel(data: {
     }
   }
 
-  // Helper method for headers
-  private getHeaders() {
-    const token = localStorage.getItem('auth_token');
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : ''
-    };
-  }
-
-  // Dashboard stats
-  async getDashboardStats() {
-    try {
-      const response = await axios.get(`${this.baseURL}/dashboard/stats`, {
-        headers: this.getHeaders()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-      throw error;
-    }
-  }
-    // Task Management Methods
-  async getTasks(): Promise<any[]> {
+  // Tasks
+  async getTasks(): Promise<Task[]> {
     try {
       const response = await axios.get(`${this.baseURL}/tasks`, {
         headers: this.getHeaders()
@@ -216,7 +197,10 @@ async createChannel(data: {
     }
   }
 
-  async createTask(data: any): Promise<any> {
+  async createTask(data: {
+    type: string;
+    config: Record<string, any>;
+  }): Promise<Task> {
     try {
       const response = await axios.post(`${this.baseURL}/tasks`, data, {
         headers: this.getHeaders()
@@ -228,7 +212,7 @@ async createChannel(data: {
     }
   }
 
-  async updateTask(id: number, data: any): Promise<any> {
+  async updateTask(id: number, data: Partial<Task>): Promise<Task> {
     try {
       const response = await axios.put(`${this.baseURL}/tasks/${id}`, data, {
         headers: this.getHeaders()
@@ -251,22 +235,98 @@ async createChannel(data: {
     }
   }
 
-  async runTask(id: number): Promise<any> {
+  // Dashboard stats
+  async getDashboardStats() {
     try {
-      const response = await axios.post(
-        `${this.baseURL}/tasks/${id}/run`,
-        {},
+      const response = await axios.get(`${this.baseURL}/dashboard/stats`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      throw error;
+    }
+  }
+
+  // Helper method for headers
+  private getHeaders() {
+    const token = localStorage.getItem('auth_token');
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : ''
+    };
+  }
+
+  // Discovery Methods
+  async getDiscoveryFeed() {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/feed`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching discovery feed:', error);
+      throw error;
+    }
+  }
+
+  async updateDiscoveryPreferences(preferences: {
+    minConfidence: number;
+    autoTrack: boolean;
+    preferredLanguages: string[];
+  }) {
+    try {
+      const response = await axios.put(
+        `${this.baseURL}/discovery/preferences`,
+        preferences,
         { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
-      console.error('Error running task:', error);
+      console.error('Error updating discovery preferences:', error);
       throw error;
     }
   }
+
+  // Settings Methods
+  async getUserSettings() {
+    try {
+      const response = await axios.get(`${this.baseURL}/settings`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching user settings:', error);
+      throw error;
+    }
+  }
+
+  async updateUserSettings(settings: {
+    notifications?: Record<string, boolean>;
+    discovery?: Record<string, any>;
+    schedule?: Record<string, any>;
+  }) {
+    try {
+      const response = await axios.put(
+        `${this.baseURL}/settings`,
+        settings,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error updating user settings:', error);
+      throw error;
+    }
+  }
+
+  // Error Handling Helper
+  handleError(error: any): string {
+    if (axios.isAxiosError(error)) {
+      return error.response?.data?.message || error.message;
+    }
+    return error instanceof Error ? error.message : 'An unknown error occurred';
+  }
 }
-
-
 
 export const api = ApiClient.getInstance();
 export default api;

@@ -19,9 +19,9 @@ const Navbar = () => {
   };
 
   const navItems = [
+    { path: '/discovery', icon: Video, text: 'Discovery Content' },
     { path: '/channels', icon: Users, text: 'Channels' },
     { path: '/games', icon: GamepadIcon, text: 'Games' },
-    { path: '/vods', icon: Video, text: 'VODs' },
     { path: '/tasks', icon: CalendarClock, text: 'Task Manager' },
     { path: '/settings', icon: Settings, text: 'Settings' }
   ];

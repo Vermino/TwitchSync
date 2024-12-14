@@ -12,7 +12,7 @@ import ConnectTwitch from './pages/ConnectTwitch';
 import Dashboard from './pages/Dashboard';
 import Channels from './pages/Channels';
 import Games from './pages/Games';
-import VODs from './pages/VODs';
+import ContentDiscovery from './pages/ContentDiscovery';
 import Settings from './pages/Settings';
 import TaskManager from './pages/TaskManager';
 import CallbackHandler from './components/CallbackHandler';
@@ -46,7 +46,7 @@ function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="channels" element={<Channels />} />
                 <Route path="games" element={<Games />} />
-                <Route path="vods" element={<VODs />} />
+                <Route path="discovery" element={<ContentDiscovery />} />
                 <Route path="tasks" element={<TaskManager />} />
                 <Route path="settings" element={<Settings />} />
               </Route>

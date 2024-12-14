@@ -86,6 +86,7 @@ export class TasksController {
         }
       }
 
+      // Add missing properties user_id and status
       const taskToCreate: CreateTaskDTO = {
         name: taskData.name,
         description: taskData.description || null,
@@ -98,7 +99,9 @@ export class TasksController {
         retention_days: taskData.retention_days || null,
         auto_delete: taskData.auto_delete || false,
         is_active: true,
-        priority: taskData.priority || 1
+        priority: taskData.priority || 1,
+        user_id: taskData.user_id,
+        status: taskData.status || 'pending'
       };
 
       const task = await taskQueries.createTask(this.pool, taskToCreate);

@@ -1,3 +1,5 @@
+// frontend/src/types/api.ts
+
 // API Response Types
 export interface ApiResponse<T> {
   data: T;
@@ -34,11 +36,6 @@ export interface UpdateGameRequest {
   name?: string;
 }
 
-export interface AnalyzeVODRequest {
-  force?: boolean;
-  priority?: number;
-}
-
 // Response Types
 export interface DashboardStats {
   channels: {
@@ -49,11 +46,7 @@ export interface DashboardStats {
     total: number;
     active: number;
   };
-  vods: {
-    total: number;
-    totalViews: number;
-  };
-  downloads: {
+  tasks: {
     active: number;
     pending: number;
     completed: number;
@@ -71,11 +64,6 @@ export interface GameListResponse {
   totalGames: number;
 }
 
-export interface VODListResponse {
-  vods: VOD[];
-  totalVODs: number;
-}
-
 // Error Types
 export interface ApiError {
   message: string;
@@ -83,17 +71,9 @@ export interface ApiError {
   details?: Record<string, unknown>;
 }
 
-// Status Types
-export interface VODAnalysisStatus {
-  status: 'pending' | 'analyzing' | 'completed' | 'failed';
+// Task Types
+export interface TaskStatus {
+  status: 'pending' | 'active' | 'completed' | 'failed';
   error?: string;
   progress?: number;
-}
-
-export interface DownloadStatus {
-  status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled';
-  progress?: number;
-  error?: string;
-  started_at: string;
-  completed_at?: string;
 }

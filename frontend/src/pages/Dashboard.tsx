@@ -1,5 +1,7 @@
+// frontend/src/pages/Dashboard.tsx
+
 import React from 'react';
-import { Users, Gamepad, Video, Activity } from 'lucide-react';
+import { Users, Gamepad, ListChecks } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -79,7 +81,7 @@ const Dashboard: React.FC = () => {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard
           title="Channels"
           total={stats.channels.total}
@@ -97,21 +99,14 @@ const Dashboard: React.FC = () => {
         />
 
         <StatCard
-          title="VODs"
-          total={stats.vods.total}
-          subtitle={`${stats.vods.totalViews.toLocaleString()} Views`}
-          icon={Video}
-        />
-
-        <StatCard
-          title="Downloads"
-          total={stats.downloads.active}
-          icon={Activity}
+          title="Tasks"
+          total={stats.tasks.active + stats.tasks.pending}
+          icon={ListChecks}
           items={[
-            { label: 'Active', value: stats.downloads.active, color: 'text-purple-600' },
-            { label: 'Pending', value: stats.downloads.pending, color: 'text-blue-600' },
-            { label: 'Completed', value: stats.downloads.completed, color: 'text-green-600' },
-            { label: 'Failed', value: stats.downloads.failed, color: 'text-red-600' }
+            { label: 'Active', value: stats.tasks.active, color: 'text-purple-600' },
+            { label: 'Pending', value: stats.tasks.pending, color: 'text-blue-600' },
+            { label: 'Completed', value: stats.tasks.completed, color: 'text-green-600' },
+            { label: 'Failed', value: stats.tasks.failed, color: 'text-red-600' }
           ]}
         />
       </div>

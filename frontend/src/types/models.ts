@@ -1,3 +1,5 @@
+// frontend/src/types/models.ts
+
 // Base Models
 export interface BaseModel {
   id: number;
@@ -8,67 +10,40 @@ export interface BaseModel {
 export interface Channel extends BaseModel {
   twitch_id: string;
   username: string;
+  display_name: string;
+  profile_image_url: string;
+  description: string;
   is_active: boolean;
-  last_vod_check: string | null;
   last_game_check: string | null;
   current_game_id: string | null;
+  metrics: {
+    followers: number;
+    average_viewers: number;
+  };
 }
 
 // Game Models
 export interface Game extends BaseModel {
   twitch_game_id: string;
   name: string;
+  box_art_url: string;
   is_active: boolean;
   last_checked: string | null;
+  metrics: {
+    current_viewers: number;
+    active_channels: number;
+  };
 }
 
-// VOD Models
-export interface VOD extends BaseModel {
-  twitch_vod_id: string;
-  channel_id: number;
-  channel_name?: string;
-  game_id: string | null;
-  title: string;
-  duration: string;
-  view_count: number;
-  published_at: string;
-  type: string;
-  url: string;
-  thumbnail_url: string;
-  processed_at: string;
-}
-
-export interface VODWithChapters extends VOD {
-  chapters: Chapter[];
-}
-
-export interface Chapter extends BaseModel {
-  vod_id: number;
-  game_id: string | null;
-  title: string;
-  start_time: number;
-  end_time: number;
-}
-
-// Download Models
-export interface Download extends BaseModel {
-  vod_id: number;
-  chapter_id: number | null;
-  download_path: string | null;
-  download_status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled';
-  started_at: string;
-  completed_at: string | null;
-  file_size: number | null;
-  error_message: string | null;
-}
-
-export interface DownloadQueue extends BaseModel {
-  vod_id: number;
-  chapter_id: number | null;
-  priority: number;
-  status: 'pending' | 'downloading' | 'failed' | 'cancelled';
-  error_message: string | null;
-  retry_count: number;
+// Task Models
+export interface Task extends BaseModel {
+  type: 'CHANNEL_SYNC' | 'GAME_SYNC' | 'DISCOVERY';
+  status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'FAILED';
+  config: Record<string, any>;
+  progress?: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
 }
 
 // Game Change Models
@@ -77,4 +52,35 @@ export interface GameChange extends BaseModel {
   previous_game_id: string | null;
   new_game_id: string | null;
   changed_at: string;
+}
+
+// Discovery Models
+export interface DiscoveryEvent extends BaseModel {
+  type: 'NEW_GAME' | 'RISING_CHANNEL' | 'SIMILAR_CONTENT';
+  channel_id?: number;
+  game_id?: string;
+  confidence_score: number;
+  metadata: Record<string, any>;
+}
+
+// Settings Models
+export interface UserPreferences extends BaseModel {
+  user_id: number;
+  notification_settings: {
+    new_games: boolean;
+    rising_channels: boolean;
+    similar_content: boolean;
+  };
+  discovery_settings: {
+    min_confidence: number;
+    auto_track: boolean;
+    preferred_languages: string[];
+  };
+  schedule_settings: {
+    active_hours: {
+      start: string;
+      end: string;
+    };
+    timezone: string;
+  };
 }

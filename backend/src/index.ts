@@ -8,7 +8,6 @@ import { logger } from './utils/logger';
 import pool from './config/database';
 import { setupChannelRoutes } from './routes/channels';
 import { setupGameRoutes } from './routes/games';
-import { setupVODRoutes } from './routes/vods';
 import { setupDashboardRoutes } from './routes/dashboard';
 import { setupWatchRoutes } from './routes/watch';
 import { setupAuthRoutes } from './routes/auth';
@@ -71,7 +70,6 @@ app.get('/health', (req, res) => {
 app.use('/auth', setupAuthRoutes(pool));
 app.use('/api/channels', authenticate(pool), setupChannelRoutes(pool));
 app.use('/api/games', authenticate(pool), setupGameRoutes(pool));
-app.use('/api/vods', authenticate(pool), setupVODRoutes(pool));
 app.use('/api/dashboard', authenticate(pool), setupDashboardRoutes(pool));
 app.use('/api/watch', authenticate(pool), setupWatchRoutes(pool));
 app.use('/api/system', authenticate(pool), setupSystemRoutes(pool));

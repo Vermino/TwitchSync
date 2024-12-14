@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { Users, Gamepad, Video, LayoutDashboard, CalendarClock } from 'lucide-react';
+import { Users, Gamepad, LayoutDashboard, CalendarClock } from 'lucide-react';
 import UserMenu from './UserMenu';
 
 const Layout = () => {
@@ -11,9 +11,9 @@ const Layout = () => {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/discovery', label: 'Content Discovery', icon: Users },
     { path: '/channels', label: 'Channels', icon: Users },
     { path: '/games', label: 'Games', icon: Gamepad },
-    { path: '/vods', label: 'VODs', icon: Video },
     { path: '/tasks', label: 'Task Manager', icon: CalendarClock }
   ];
 

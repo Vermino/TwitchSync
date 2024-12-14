@@ -1,5 +1,7 @@
+// frontend/src/types/components.ts
+
 import { ReactNode } from 'react';
-import type { Channel, Game, VOD, Chapter, Download } from './models';
+import type { Channel, Game } from './models';
 
 // Layout Components
 export interface LayoutProps {
@@ -44,34 +46,27 @@ export interface AddGameFormProps {
   isLoading?: boolean;
 }
 
-// VOD Components
-export interface VODCardProps {
-  vod: VOD;
-  onAnalyze?: (id: number) => void;
-  isAnalyzing?: boolean;
-}
-
-export interface VODListProps {
-  vods: VOD[];
-  onAnalyze?: (id: number) => void;
-  isLoading?: boolean;
-}
-
-export interface VODChaptersProps {
-  chapters: Chapter[];
-  onReanalyze?: () => void;
-  isAnalyzing?: boolean;
-}
-
-// Download Components
-export interface DownloadListProps {
-  downloads: Download[];
+// Task Components
+export interface TaskListProps {
+  tasks: Array<{
+    id: number;
+    type: string;
+    status: string;
+    progress?: number;
+    created_at: string;
+  }>;
   onCancel: (id: number) => void;
   onRetry: (id: number) => void;
 }
 
-export interface DownloadProgressProps {
-  download: Download;
+export interface TaskItemProps {
+  task: {
+    id: number;
+    type: string;
+    status: string;
+    progress?: number;
+    created_at: string;
+  };
   onCancel: (id: number) => void;
   onRetry: (id: number) => void;
 }
@@ -116,4 +111,25 @@ export interface PaginationProps {
   totalPages: number;
   onPageChange: (page: number) => void;
   isDisabled?: boolean;
+}
+
+// Search Components
+export interface SearchResultProps {
+  result: {
+    id: string;
+    name: string;
+    type: 'channel' | 'game';
+    thumbnail?: string;
+    metrics?: {
+      viewers?: number;
+      followers?: number;
+    };
+  };
+  onSelect: (result: any) => void;
+}
+
+export interface SearchBarProps {
+  onSearch: (query: string) => void;
+  isLoading?: boolean;
+  placeholder?: string;
 }

@@ -70,6 +70,7 @@ export interface Channel {
 
 export interface Task {
   id: number;
+  user_id: number;
   name: string;
   description: string | null;
   task_type: 'channel' | 'game' | 'combined';
@@ -81,6 +82,7 @@ export interface Task {
   retention_days: number | null;
   auto_delete: boolean;
   is_active: boolean;
+  status: 'pending' | 'active' | 'completed' | 'failed';
   priority: number;
   last_run: Date | null;
   next_run: Date | null;

@@ -1,6 +1,8 @@
+// backend/scripts/migrate.ts
+
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
-import { runMigrations, rollbackMigration } from '../src/database/migrations/runner';
+import { runMigrations, rollbackLatest } from '../src/database/migrations/runner';
 import { logger } from '../src/utils/logger';
 
 dotenv.config();
@@ -18,7 +20,7 @@ async function main() {
 
   try {
     if (command === 'rollback') {
-      await rollbackMigration(pool);
+      await rollbackLatest(pool);
     } else {
       await runMigrations(pool);
     }
