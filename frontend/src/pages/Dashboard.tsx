@@ -3,7 +3,7 @@
 import React from 'react';
 import { Users, Gamepad, ListChecks } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api } from '../lib/api';
 import { ErrorBoundary } from 'react-error-boundary';
 
 const StatCard: React.FC<{

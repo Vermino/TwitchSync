@@ -11,8 +11,8 @@ export interface Channel extends BaseModel {
   twitch_id: string;
   username: string;
   display_name: string;
-  profile_image_url: string;
-  description: string;
+  profile_image_url: string | null;
+  description: string | null;
   is_active: boolean;
   last_game_check: string | null;
   current_game_id: string | null;
@@ -83,4 +83,51 @@ export interface UserPreferences extends BaseModel {
     };
     timezone: string;
   };
+}
+
+// Search Results
+export interface TwitchSearchResult {
+  channels?: {
+    id: string;
+    login: string;
+    display_name: string;
+    profile_image_url: string;
+    description: string;
+    broadcaster_type: string;
+    follower_count?: number;
+    view_count: number;
+    is_live?: boolean;
+  }[];
+  games?: {
+    id: string;
+    name: string;
+    box_art_url: string;
+    igdb_id?: string;
+  }[];
+}
+
+// Analytics Models
+export interface ChannelMetrics {
+  views: number;
+  followers: number;
+  average_viewers: number;
+  peak_viewers: number;
+  stream_count: number;
+  hours_streamed: number;
+}
+
+export interface GameMetrics {
+  current_viewers: number;
+  peak_viewers: number;
+  average_viewers: number;
+  active_channels: number;
+  total_streams: number;
+  hours_streamed: number;
+}
+
+// WebSocket Event Types
+export interface WebSocketMessage<T = any> {
+  type: string;
+  payload: T;
+  timestamp: string;
 }

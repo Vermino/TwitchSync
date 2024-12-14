@@ -1,7 +1,7 @@
 // frontend/src/lib/api.ts
 
 import axios from 'axios';
-import type { Channel, Game, Task } from '@/types';
+import type { Channel, Game, Task } from '../types';
 
 class ApiClient {
   private static instance: ApiClient;
@@ -83,7 +83,7 @@ class ApiClient {
     }
   }
 
-  async createChannel(data: {
+ async createChannel(data: {
     twitch_id: string;
     username: string;
     display_name?: string;
@@ -92,6 +92,14 @@ class ApiClient {
     follower_count?: number;
   }): Promise<Channel> {
     try {
+      // Debug log to see exact data being sent
+      console.log('Creating channel with data in API:', data);
+
+      // Ensure username is present
+      if (!data.username) {
+        throw new Error('Username is required');
+      }
+
       const response = await axios.post(
         `${this.baseURL}/channels`,
         {
@@ -99,8 +107,9 @@ class ApiClient {
           username: data.username,
           display_name: data.display_name || data.username,
           profile_image_url: data.profile_image_url || null,
-          description: data.description || null,
-          follower_count: data.follower_count || 0
+          description: data.description || '',
+          follower_count: data.follower_count || 0,
+          is_active: true
         },
         {
           headers: this.getHeaders()
@@ -108,7 +117,7 @@ class ApiClient {
       );
       return response.data;
     } catch (error) {
-      console.error('Error creating channel:', error);
+      console.error('Error creating channel:', error.response?.data || error);
       throw error;
     }
   }

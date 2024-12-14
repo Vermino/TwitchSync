@@ -38,20 +38,22 @@ export class ChannelsController {
     }
   };
 
-  addChannel = async (req: Request, res: Response): Promise<void> => {
+ addChannel = async (req: Request, res: Response): Promise<void> => {
     try {
-      const {
-        twitch_id,
-        username,
-        display_name,
-        profile_image_url,
-        description,
-        follower_count
-      } = req.body as CreateChannelRequest;
+      const channelData = req.body as CreateChannelRequest;
+      console.log('Full channel data received:', channelData); // Debug log
+
+      // Check required fields
+      if (!channelData.username) {
+        console.log('Username missing from request'); // Debug log
+        res.status(400).json({ error: 'Username is required' });
+        return;
+      }
 
       // Validate input data
-      const validationError = validateChannelData({ twitch_id, username });
+      const validationError = validateChannelData(channelData);
       if (validationError) {
+        console.log('Validation error:', validationError); // Debug log
         res.status(400).json({ error: validationError });
         return;
       }
@@ -59,7 +61,7 @@ export class ChannelsController {
       // Check for existing channel
       const existingChannel = await this.pool.query(
         'SELECT id FROM channels WHERE twitch_id = $1',
-        [twitch_id]
+        [channelData.twitch_id]
       );
 
       if (existingChannel.rows.length > 0) {
@@ -67,6 +69,7 @@ export class ChannelsController {
         return;
       }
 
+      // Insert new channel with all required fields
       const result = await this.pool.query<Channel>(
         `INSERT INTO channels (
           twitch_id,
@@ -76,21 +79,23 @@ export class ChannelsController {
           description,
           follower_count,
           is_active,
-          created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+          created_at,
+          last_game_check,
+          current_game_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, NULL, NULL)
         RETURNING *`,
         [
-          twitch_id,
-          username,
-          display_name || username,
-          profile_image_url,
-          description,
-          follower_count,
+          channelData.twitch_id,
+          channelData.username,
+          channelData.display_name || channelData.username,
+          channelData.profile_image_url || null,
+          channelData.description || null,
+          channelData.follower_count || 0,
           true
         ]
       );
 
-      logger.info(`Channel created successfully: ${username}`);
+      logger.info(`Channel created successfully: ${channelData.username}`);
       res.status(201).json(result.rows[0]);
     } catch (error) {
       logger.error('Error adding channel:', error);
@@ -101,15 +106,16 @@ export class ChannelsController {
   updateChannel = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { is_active } = req.body;
+      const { is_active, current_game_id } = req.body;
 
       const result = await this.pool.query<Channel>(
         `UPDATE channels 
-         SET is_active = $1, 
+         SET is_active = $1,
+             current_game_id = $2,
              updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2 
+         WHERE id = $3 
          RETURNING *`,
-        [is_active, id]
+        [is_active, current_game_id || null, id]
       );
 
       if (result.rows.length === 0) {

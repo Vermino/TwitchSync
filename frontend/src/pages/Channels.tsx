@@ -2,13 +2,16 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Trash2, CheckCircle, XCircle } from 'lucide-react';
 import ChannelSearchModal from '../components/ChannelSearchModal';
-import { api } from '@/lib/api';
+import { api } from '../lib/api';
 import { ErrorBoundary } from 'react-error-boundary';
+import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 
 interface Channel {
   id: number;
   twitch_id: string;
   username: string;
+  display_name: string;
+  profile_image_url: string;
   is_active: boolean;
   last_vod_check: string | null;
   last_game_check: string | null;
@@ -40,27 +43,30 @@ const Channels = () => {
     queryFn: () => api.getChannels(),
   });
 
- // Add channel mutation
+// Add channel mutation
   const addChannelMutation = useMutation({
     mutationFn: (selectedChannels: Array<{
       id: string;
       login: string;
       display_name: string;
-      profile_image_url?: string;
-      description?: string;
+      profile_image_url: string;
+      description: string;
+      broadcaster_type: string;
       follower_count?: number;
     }>) =>
       Promise.all(
-        selectedChannels.map(channel =>
-          api.createChannel({
+        selectedChannels.map(channel => {
+          // Debug log
+          console.log('Processing channel for creation:', channel);
+          return api.createChannel({
             twitch_id: channel.id,
-            username: channel.login,
+            username: channel.login,  // This should now be properly populated from broadcaster_login
             display_name: channel.display_name,
             profile_image_url: channel.profile_image_url,
-            description: channel.description,
-            follower_count: channel.follower_count
-          })
-        )
+            description: channel.description || '',
+            follower_count: channel.follower_count || 0
+          });
+        })
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
@@ -68,7 +74,8 @@ const Channels = () => {
     },
     onError: (error: any) => {
       console.error('Error adding channels:', error);
-      // You could add a toast notification here
+      // Add error message to UI
+      alert(error.response?.data?.error || 'Failed to add channel');
     }
   });
 
@@ -110,7 +117,7 @@ const Channels = () => {
         <table className="min-w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Twitch ID</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Added</th>
@@ -122,7 +129,16 @@ const Channels = () => {
               channels.map((channel) => (
                 <tr key={channel.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{channel.username}</div>
+                    <div className="flex items-center">
+                      <Avatar className="h-10 w-10 mr-3">
+                        <AvatarImage src={channel.profile_image_url} alt={channel.username} />
+                        <AvatarFallback>{channel.username[0].toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{channel.display_name}</div>
+                        <div className="text-sm text-gray-500">@{channel.username}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-500">{channel.twitch_id}</div>
@@ -165,7 +181,7 @@ const Channels = () => {
             ) : (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                  No channels added yet. Click &#34;Add Channels&#34; to start tracking channels!
+                  No channels added yet. Click "Add Channels" to start tracking channels!
                 </td>
               </tr>
             )}

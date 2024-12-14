@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { Pool } from 'pg';
 import { ChannelsController } from './controller';
 import { validateChannelId } from './validation';
@@ -7,25 +7,28 @@ export function setupChannelRoutes(pool: Pool): Router {
   const router = Router();
   const controller = new ChannelsController(pool);
 
-  // Middleware to validate channel ID parameter
-  const validateIdParam = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): void => {
-    const error = validateChannelId(req.params.id);
-    if (error) {
-      res.status(400).json({ error });
-      return;
-    }
-    next();
-  };
+  // Add search route
+  router.get('/search', controller.searchChannels);
 
-  // Routes
+  // Get all channels
   router.get('/', controller.getAllChannels);
-  router.post('/', controller.addChannel);
-  router.put('/:id', validateIdParam, controller.updateChannel);
-  router.delete('/:id', validateIdParam, controller.deleteChannel);
+
+  // Create new channel
+  router.post('/', async (req, res) => {
+    try {
+      console.log('Received channel creation request:', req.body); // Debug log
+      await controller.addChannel(req, res);
+    } catch (error) {
+      console.error('Error in channel creation route:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Update channel
+  router.put('/:id', validateChannelId, controller.updateChannel);
+
+  // Delete channel
+  router.delete('/:id', validateChannelId, controller.deleteChannel);
 
   return router;
 }

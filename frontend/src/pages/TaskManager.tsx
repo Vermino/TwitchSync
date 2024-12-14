@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { ErrorBoundary } from 'react-error-boundary';
 import TaskModal from '../components/TaskModal';
-import { api } from '@/lib/api';
+import { api } from '../lib/api';
 
 interface Task {
   id: number;

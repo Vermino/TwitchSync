@@ -1,5 +1,5 @@
 import React from 'react';
-import { TwitchAuth } from '@/services/auth/twitch';
+import { TwitchAuth } from '../services/auth/twitch.ts';
 
 const twitchAuth = new TwitchAuth({
   clientId: process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID || '',

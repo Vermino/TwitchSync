@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Plus, Minus, AlertCircle } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api } from './../lib/api';
 
 interface Channel {
   id: number;

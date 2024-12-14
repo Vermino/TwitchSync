@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import TwitchConnect from '@/components/TwitchConnect';
-import WatchConfig from '@/components/WatchConfig';
+import TwitchConnect from '../components/TwitchConnect';
+import WatchConfig from '../components/WatchConfig';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 
 const WatchPage: React.FC = () => {

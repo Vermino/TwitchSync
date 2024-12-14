@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Star, Sparkles, Trophy, Clock, Users, Gamepad2, Heart, TrendingUp,
          Radio, Filter, Bell, Calendar, Settings } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 
 interface StreamPremiereEvent {
   id: string;

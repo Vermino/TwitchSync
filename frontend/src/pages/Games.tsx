@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Trash2, CheckCircle, XCircle } from 'lucide-react';
 import GameSearchModal from '../components/GameSearchModal';
-import { api } from '@/lib/api';
+import { api } from '../lib/api';
 import { ErrorBoundary } from 'react-error-boundary';
 
 interface Game {
