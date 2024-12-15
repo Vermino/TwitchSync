@@ -18,6 +18,7 @@ import { setupTaskRoutes } from './routes/tasks';
 import { authenticate } from "./middleware/auth";
 import { loggingMiddleware } from './middleware/logging';
 import { setupTwitchSearchRoutes } from './routes/twitch/search';
+import { createDiscoveryRouter } from './routes/discovery';
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ app.use('/api/downloads', authenticate(pool), setupDownloadsRoutes(pool));
 app.use('/api/settings', authenticate(pool), setupSettingsRoutes(pool));
 app.use('/api/tasks', authenticate(pool), setupTaskRoutes(pool));
 app.use('/api/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));
+app.use('/api/discovery', createDiscoveryRouter(pool));
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
