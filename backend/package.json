@@ -11,7 +11,8 @@
     "test": "jest",
     "migrate": "ts-node scripts/migrate.ts",
     "migrate:rollback": "ts-node scripts/migrate.ts rollback",
-    "db:reset": "psql -U $DB_USER -d $DB_NAME -f scripts/reset-db.sql"
+    "db:reset": "psql -U $DB_USER -d $DB_NAME -f scripts/reset-db.sql",
+    "seed:discovery": "ts-node scripts/seed-discovery.ts"
   },
   "dependencies": {
     "axios": "^1.4.0",

@@ -80,18 +80,20 @@ export interface GameRecommendation {
 }
 
 export interface RisingChannel {
-  id: string;
-  name: string;
-  avatar: string;
-  currentGame: string;
-  gameImage: string;
-  metrics: {
-    averageViewers: number;
-    growthRate: number;
-    peakViewers: number;
-    followers: number;
+  id: string | number;
+  display_name: string;
+  username: string;
+  profile_image_url?: string;
+  current_game_name?: string;
+  game_image?: string;
+  avg_viewers?: number;
+  growth_rate?: number;
+  tags?: string[];
+  metrics?: {
+    followers?: number;
+    averageViewers?: number;
+    peakViewers?: number;
   };
-  tags: string[];
 }
 
 export interface TrendingCategory {
@@ -156,7 +158,7 @@ export interface PremiereCardProps {
 
 export interface RisingChannelCardProps {
   channel: RisingChannel;
-  onTrack: (id: string) => Promise<void>;
+  onTrack?: (channelId: string) => void;
 }
 
 export interface RecommendationCardProps {

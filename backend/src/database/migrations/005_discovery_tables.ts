@@ -33,8 +33,29 @@ export async function up(pool: Pool): Promise<void> {
       END $$;
     `);
 
+    // Create discovery preferences table first since other tables reference it
     await client.query(`
-      CREATE TABLE premiere_events (
+      CREATE TABLE IF NOT EXISTS discovery_preferences (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        min_viewers INTEGER NOT NULL DEFAULT 100,
+        max_viewers INTEGER NOT NULL DEFAULT 50000,
+        preferred_languages TEXT[] NOT NULL DEFAULT ARRAY['en'],
+        content_rating VARCHAR(20) NOT NULL DEFAULT 'all',
+        notify_only BOOLEAN NOT NULL DEFAULT false,
+        schedule_match BOOLEAN NOT NULL DEFAULT true,
+        confidence_threshold DOUBLE PRECISION NOT NULL DEFAULT 0.7,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id)
+      );
+
+      CREATE INDEX idx_discovery_preferences_user ON discovery_preferences(user_id);
+    `);
+
+    // Create premiere events table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS premiere_events (
         id SERIAL PRIMARY KEY,
         channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
         game_id INTEGER REFERENCES games(id) ON DELETE CASCADE,
@@ -57,7 +78,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // Channel metrics tracking
     await client.query(`
-      CREATE TABLE channel_metrics (
+      CREATE TABLE IF NOT EXISTS channel_metrics (
         id SERIAL PRIMARY KEY,
         channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
         viewer_count INTEGER NOT NULL,
@@ -87,7 +108,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // Channel metrics aggregation
     await client.query(`
-      CREATE TABLE channel_metrics_hourly (
+      CREATE TABLE IF NOT EXISTS channel_metrics_hourly (
         id SERIAL PRIMARY KEY,
         channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
         hour TIMESTAMP NOT NULL,
@@ -106,7 +127,7 @@ export async function up(pool: Pool): Promise<void> {
         UNIQUE(channel_id, hour)
       );
 
-      CREATE TABLE channel_metrics_daily (
+      CREATE TABLE IF NOT EXISTS channel_metrics_daily (
         id SERIAL PRIMARY KEY,
         channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
         date DATE NOT NULL,
@@ -130,7 +151,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // Game metrics tracking
     await client.query(`
-      CREATE TABLE game_metrics (
+      CREATE TABLE IF NOT EXISTS game_metrics (
         id SERIAL PRIMARY KEY,
         game_id INTEGER REFERENCES games(id) ON DELETE CASCADE,
         total_viewers INTEGER,
@@ -154,7 +175,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // Discovery events tracking
     await client.query(`
-      CREATE TABLE discovery_events (
+      CREATE TABLE IF NOT EXISTS discovery_events (
         id SERIAL PRIMARY KEY,
         event_type discovery_event_type NOT NULL,
         channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
@@ -179,7 +200,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // Content recommendations
     await client.query(`
-      CREATE TABLE recommendations (
+      CREATE TABLE IF NOT EXISTS recommendations (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         recommendation_type recommendation_type NOT NULL,
@@ -204,7 +225,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // Viewer engagement tracking
     await client.query(`
-      CREATE TABLE viewer_engagement (
+      CREATE TABLE IF NOT EXISTS viewer_engagement (
         id SERIAL PRIMARY KEY,
         channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -229,7 +250,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // Content similarity tracking
     await client.query(`
-      CREATE TABLE content_similarity (
+      CREATE TABLE IF NOT EXISTS content_similarity (
         id SERIAL PRIMARY KEY,
         source_id INTEGER NOT NULL,
         target_id INTEGER NOT NULL,
@@ -250,7 +271,7 @@ export async function up(pool: Pool): Promise<void> {
 
     // User interests tracking
     await client.query(`
-      CREATE TABLE user_interests (
+      CREATE TABLE IF NOT EXISTS user_interests (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         interest_type VARCHAR(50) NOT NULL,
@@ -271,17 +292,48 @@ export async function up(pool: Pool): Promise<void> {
       CREATE INDEX idx_interests_score ON user_interests(score DESC);
     `);
 
+    // Create update_updated_at_column function if it doesn't exist
+    await client.query(`
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        NEW.updated_at = CURRENT_TIMESTAMP;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+
     // Add triggers for timestamp updates
     await client.query(`
-      CREATE TRIGGER update_content_similarity_updated_at
-        BEFORE UPDATE ON content_similarity
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
+      DO $$ BEGIN
+        DROP TRIGGER IF EXISTS update_discovery_preferences_updated_at ON discovery_preferences;
+        CREATE TRIGGER update_discovery_preferences_updated_at
+          BEFORE UPDATE ON discovery_preferences
+          FOR EACH ROW
+          EXECUTE FUNCTION update_updated_at_column();
+      EXCEPTION
+        WHEN undefined_table THEN null;
+      END $$;
 
-      CREATE TRIGGER update_user_interests_updated_at
-        BEFORE UPDATE ON user_interests
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
+      DO $$ BEGIN
+        DROP TRIGGER IF EXISTS update_content_similarity_updated_at ON content_similarity;
+        CREATE TRIGGER update_content_similarity_updated_at
+          BEFORE UPDATE ON content_similarity
+          FOR EACH ROW
+          EXECUTE FUNCTION update_updated_at_column();
+      EXCEPTION
+        WHEN undefined_table THEN null;
+      END $$;
+
+      DO $$ BEGIN
+        DROP TRIGGER IF EXISTS update_user_interests_updated_at ON user_interests;
+        CREATE TRIGGER update_user_interests_updated_at
+          BEFORE UPDATE ON user_interests
+          FOR EACH ROW
+          EXECUTE FUNCTION update_updated_at_column();
+      EXCEPTION
+        WHEN undefined_table THEN null;
+      END $$;
     `);
 
     // Create cleanup function for expired events and recommendations
@@ -299,6 +351,7 @@ export async function up(pool: Pool): Promise<void> {
       END;
       $$ LANGUAGE plpgsql;
 
+      DROP TRIGGER IF EXISTS trigger_cleanup_expired_discovery ON discovery_events;
       CREATE TRIGGER trigger_cleanup_expired_discovery
         AFTER INSERT ON discovery_events
         EXECUTE FUNCTION cleanup_expired_discovery_items();
@@ -326,8 +379,10 @@ export async function down(pool: Pool): Promise<void> {
       DROP TRIGGER IF EXISTS trigger_cleanup_expired_discovery ON discovery_events;
       DROP FUNCTION IF EXISTS cleanup_expired_discovery_items();
 
+      DROP TRIGGER IF EXISTS update_discovery_preferences_updated_at ON discovery_preferences;
       DROP TRIGGER IF EXISTS update_user_interests_updated_at ON user_interests;
       DROP TRIGGER IF EXISTS update_content_similarity_updated_at ON content_similarity;
+      DROP FUNCTION IF EXISTS update_updated_at_column();
 
       DROP TABLE IF EXISTS user_interests;
       DROP TABLE IF EXISTS content_similarity;
@@ -338,6 +393,8 @@ export async function down(pool: Pool): Promise<void> {
       DROP TABLE IF EXISTS channel_metrics_daily;
       DROP TABLE IF EXISTS channel_metrics_hourly;
       DROP TABLE IF EXISTS channel_metrics;
+      DROP TABLE IF EXISTS premiere_events;
+      DROP TABLE IF EXISTS discovery_preferences;
 
       DROP TYPE IF EXISTS confidence_level;
       DROP TYPE IF EXISTS recommendation_type;

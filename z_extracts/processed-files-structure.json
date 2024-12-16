@@ -1,10 +1,21 @@
 {
-  "updated_at": "2024-12-15T18:58:39.819684",
+  "updated_at": "2024-12-15T21:12:52.518846",
   "tree": {
-    "backend/src/database/migrations/_files": [
-      "004_vod_tables.ts",
-      "001_core_tables.ts",
-      "005_discovery_tables.ts"
-    ]
+    "backend": {
+      "src/database/migrations/_files": [
+        "005_discovery_tables.ts",
+        "001_core_tables.ts",
+        "002_auth_tables.ts",
+        "003_system_tables.ts",
+        "004_vod_tables.ts",
+        "005_discovery_tables.ts",
+        "runner.ts"
+      ]
+    },
+    "frontend": {
+      "src/pages/_files": [
+        "ContentDiscovery.tsx"
+      ]
+    }
   }
 }
