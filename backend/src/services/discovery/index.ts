@@ -257,7 +257,7 @@ export class DiscoveryService {
       const reasons: RecommendationReason[] = [];
 
       const gameOverlap = await client.query<{ common_games: number }>(`
-        SELECT COUNT(DISTINCT cgh.game_id) as common_games
+        SELECT COUNT(DISTINCT cgh.game_id)::BIGINT as common_games
         FROM channel_game_history cgh
         WHERE cgh.channel_id = $1
         AND cgh.game_id IN (
@@ -274,9 +274,9 @@ export class DiscoveryService {
 
       const viewerOverlap = await client.query<{ common_viewers: number; avg_viewers: number }>(`
         SELECT 
-          COUNT(DISTINCT v1.viewer_id) as common_viewers,
+          COUNT(DISTINCT v1.viewer_id)::BIGINT as common_viewers,
           (
-            SELECT AVG(viewer_count)
+            SELECT AVG(viewer_count)::BIGINT
             FROM channel_metrics
             WHERE channel_id = $1
           ) as avg_viewers

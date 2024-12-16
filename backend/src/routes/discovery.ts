@@ -85,6 +85,53 @@ export const createDiscoveryRouter = (pool: Pool) => {
     handleGameRecommendations
   );
 
+    router.get('/stats', authenticate(pool), async (req, res) => {
+      try {
+        const result = await pool.query(`
+          WITH stats AS (
+            SELECT
+              (SELECT COUNT(*)
+               FROM premiere_events 
+               WHERE start_time > NOW() - INTERVAL '24 hours') as today_discovered,
+               
+              (SELECT COUNT(*)
+               FROM premiere_events 
+               WHERE start_time > NOW()) as upcoming_premieres,
+               
+              (SELECT COUNT(*)
+               FROM user_premiere_tracking) as tracked_premieres,
+               
+              (SELECT COUNT(DISTINCT cm.channel_id)
+               FROM channel_metrics cm
+               WHERE cm.viewer_growth_rate > 0.1
+               AND cm.recorded_at > NOW() - INTERVAL '24 hours') as rising_channels,
+               
+              (SELECT COUNT(*)
+               FROM vods 
+               WHERE status = 'pending') as pending_archives
+          )
+          SELECT
+            COALESCE(today_discovered, 0) as today_discovered,
+            COALESCE(upcoming_premieres, 0) as upcoming_premieres,
+            COALESCE(tracked_premieres, 0) as tracked_premieres,
+            COALESCE(rising_channels, 0) as rising_channels,
+            COALESCE(pending_archives, 0) as pending_archives
+          FROM stats;
+        `);
+
+        res.json({
+          upcomingPremieres: parseInt(result.rows[0].upcoming_premieres),
+          trackedPremieres: parseInt(result.rows[0].tracked_premieres),
+          risingChannels: parseInt(result.rows[0].rising_channels),
+          pendingArchives: parseInt(result.rows[0].pending_archives),
+          todayDiscovered: parseInt(result.rows[0].today_discovered)
+        });
+      } catch (error) {
+        logger.error('Error fetching discovery stats:', error);
+        res.status(500).json({ error: 'Failed to fetch discovery stats' });
+      }
+    });
+
   return router;
 };
 
