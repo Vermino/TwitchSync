@@ -21,20 +21,31 @@ export class DiscoveryController {
 
       // Get upcoming premieres based on user's followed channels and games
       const premieresResult = await client.query(`
+        WITH user_preferences AS (
+          SELECT DISTINCT channel_id, game_id
+          FROM user_vod_preferences
+          WHERE user_id = $1
+        )
         SELECT 
           pe.*,
           c.username as channel_username,
           c.display_name as channel_display_name,
           c.profile_image_url as channel_image,
           g.name as game_name,
-          g.box_art_url as game_image
+          g.box_art_url as game_image,
+          v.id as vod_id,
+          v.download_status,
+          v.download_progress
         FROM premiere_events pe
         JOIN channels c ON pe.channel_id = c.id
         JOIN games g ON pe.game_id = g.id
+        LEFT JOIN vods v ON pe.channel_id = v.channel_id 
+          AND v.content_type = 'premiere'
+          AND v.created_at > pe.detected_at
         WHERE pe.start_time > NOW()
         AND (
-          c.id IN (SELECT channel_id FROM user_channel_preferences WHERE user_id = $1)
-          OR g.id IN (SELECT game_id FROM user_game_preferences WHERE user_id = $1)
+          c.id IN (SELECT channel_id FROM user_preferences)
+          OR g.id IN (SELECT game_id FROM user_preferences)
         )
         AND pe.predicted_viewers >= $2
         ORDER BY pe.confidence_score DESC, pe.start_time ASC
@@ -51,21 +62,31 @@ export class DiscoveryController {
           FROM channel_metrics
           WHERE recorded_at > NOW() - INTERVAL '7 days'
           GROUP BY channel_id
+        ),
+        user_preferences AS (
+          SELECT DISTINCT game_id
+          FROM user_vod_preferences
+          WHERE user_id = $1
         )
         SELECT 
           c.*,
           cm.avg_viewers,
           cm.growth_rate,
           g.name as current_game_name,
-          g.box_art_url as game_image
+          g.box_art_url as game_image,
+          COUNT(v.id) as recorded_vods,
+          STRING_AGG(DISTINCT vp.preferred_quality, ', ') as user_qualities
         FROM channels c
         JOIN channel_metrics cm ON c.id = cm.channel_id
         LEFT JOIN games g ON c.current_game_id = g.id
-        WHERE c.current_game_id IN (
-          SELECT game_id FROM user_game_preferences WHERE user_id = $1
-        )
+        LEFT JOIN vods v ON c.id = v.channel_id 
+          AND v.download_status IN ('completed', 'downloading')
+        LEFT JOIN user_vod_preferences vp ON c.id = vp.channel_id
+          AND vp.user_id = $1
+        WHERE c.current_game_id IN (SELECT game_id FROM user_preferences)
         AND cm.growth_rate > 0.1
         AND cm.avg_viewers BETWEEN $2 AND $3
+        GROUP BY c.id, cm.avg_viewers, cm.growth_rate, g.name, g.box_art_url
         ORDER BY cm.growth_rate DESC
         LIMIT 5
       `, [userId, preferences.min_viewers, preferences.max_viewers]);
@@ -78,282 +99,6 @@ export class DiscoveryController {
     } catch (error) {
       logger.error('Error fetching discovery feed:', error);
       res.status(500).json({ error: 'Failed to fetch discovery feed' });
-    } finally {
-      client.release();
-    }
-  };
-
-  getPreferences = async (req: Request, res: Response): Promise<void> => {
-    const client = await this.pool.connect();
-    try {
-      const userId = req.user?.id;
-      const result = await client.query(
-        'SELECT * FROM discovery_preferences WHERE user_id = $1',
-        [userId]
-      );
-
-      if (result.rows.length === 0) {
-        // Create default preferences if none exist
-        const defaultPreferences = await client.query(`
-          INSERT INTO discovery_preferences (
-            user_id, min_viewers, max_viewers, preferred_languages,
-            content_rating, notify_only, schedule_match, confidence_threshold
-          ) VALUES ($1, 100, 50000, ARRAY['EN'], 'all', false, true, 0.7)
-          RETURNING *
-        `, [userId]);
-        res.json(defaultPreferences.rows[0]);
-      } else {
-        res.json(result.rows[0]);
-      }
-    } catch (error) {
-      logger.error('Error fetching discovery preferences:', error);
-      res.status(500).json({ error: 'Failed to fetch discovery preferences' });
-    } finally {
-      client.release();
-    }
-  };
-
-  updatePreferences = async (req: Request, res: Response): Promise<void> => {
-    const client = await this.pool.connect();
-    try {
-      const userId = req.user?.id;
-      const {
-        min_viewers,
-        max_viewers,
-        preferred_languages,
-        content_rating,
-        notify_only,
-        schedule_match,
-        confidence_threshold
-      } = req.body;
-
-      const result = await client.query(`
-        UPDATE discovery_preferences
-        SET 
-          min_viewers = $1,
-          max_viewers = $2,
-          preferred_languages = $3,
-          content_rating = $4,
-          notify_only = $5,
-          schedule_match = $6,
-          confidence_threshold = $7,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = $8
-        RETURNING *
-      `, [
-        min_viewers,
-        max_viewers,
-        preferred_languages,
-        content_rating,
-        notify_only,
-        schedule_match,
-        confidence_threshold,
-        userId
-      ]);
-
-      res.json(result.rows[0]);
-    } catch (error) {
-      logger.error('Error updating discovery preferences:', error);
-      res.status(500).json({ error: 'Failed to update discovery preferences' });
-    } finally {
-      client.release();
-    }
-  };
-
-  getPremieres = async (req: Request, res: Response): Promise<void> => {
-    const client = await this.pool.connect();
-    try {
-      const userId = req.user?.id;
-      const result = await client.query(`
-        SELECT 
-          pe.*,
-          c.username as channel_username,
-          c.display_name as channel_display_name,
-          c.profile_image_url as channel_image,
-          g.name as game_name,
-          g.box_art_url as game_image
-        FROM premiere_events pe
-        JOIN channels c ON pe.channel_id = c.id
-        JOIN games g ON pe.game_id = g.id
-        WHERE pe.start_time > NOW()
-        AND (
-          c.id IN (SELECT channel_id FROM user_channel_preferences WHERE user_id = $1)
-          OR g.id IN (SELECT game_id FROM user_game_preferences WHERE user_id = $1)
-        )
-        ORDER BY pe.start_time ASC
-      `, [userId]);
-
-      res.json(result.rows);
-    } catch (error) {
-      logger.error('Error fetching premieres:', error);
-      res.status(500).json({ error: 'Failed to fetch premieres' });
-    } finally {
-      client.release();
-    }
-  };
-
-  getRisingChannels = async (req: Request, res: Response): Promise<void> => {
-    const client = await this.pool.connect();
-    try {
-      const userId = req.user?.id;
-      const result = await client.query(`
-        WITH channel_metrics AS (
-          SELECT 
-            channel_id,
-            AVG(viewer_count) as avg_viewers,
-            AVG(viewer_growth_rate) as growth_rate
-          FROM channel_metrics
-          WHERE recorded_at > NOW() - INTERVAL '7 days'
-          GROUP BY channel_id
-        )
-        SELECT 
-          c.*,
-          cm.avg_viewers,
-          cm.growth_rate,
-          g.name as current_game_name
-        FROM channels c
-        JOIN channel_metrics cm ON c.id = cm.channel_id
-        LEFT JOIN games g ON c.current_game_id = g.id
-        WHERE cm.growth_rate > 0.1
-        AND c.current_game_id IN (
-          SELECT game_id FROM user_game_preferences WHERE user_id = $1
-        )
-        ORDER BY cm.growth_rate DESC
-        LIMIT 10
-      `, [userId]);
-
-      res.json(result.rows);
-    } catch (error) {
-      logger.error('Error fetching rising channels:', error);
-      res.status(500).json({ error: 'Failed to fetch rising channels' });
-    } finally {
-      client.release();
-    }
-  };
-
-  getChannelRecommendations = async (req: Request, res: Response): Promise<void> => {
-    const client = await this.pool.connect();
-    try {
-      const userId = req.user?.id;
-      const result = await client.query(`
-        WITH user_preferences AS (
-          SELECT 
-            channel_id,
-            game_id
-          FROM user_channel_preferences
-          WHERE user_id = $1
-          UNION
-          SELECT 
-            NULL as channel_id,
-            game_id
-          FROM user_game_preferences
-          WHERE user_id = $1
-        ),
-        channel_game_overlap AS (
-          SELECT 
-            c.id as channel_id,
-            COUNT(DISTINCT cgh.game_id) as games_in_common
-          FROM channels c
-          JOIN channel_game_history cgh ON c.id = cgh.channel_id
-          WHERE cgh.game_id IN (SELECT game_id FROM user_preferences WHERE game_id IS NOT NULL)
-          GROUP BY c.id
-        )
-        SELECT 
-          c.*,
-          cgo.games_in_common,
-          cm.avg_viewers,
-          cm.engagement_rate
-        FROM channels c
-        JOIN channel_game_overlap cgo ON c.id = cgo.channel_id
-        JOIN channel_metrics cm ON c.id = cm.channel_id
-        WHERE c.id NOT IN (SELECT channel_id FROM user_preferences WHERE channel_id IS NOT NULL)
-        AND cgo.games_in_common >= 3
-        ORDER BY cgo.games_in_common DESC, cm.engagement_rate DESC
-        LIMIT 10
-      `, [userId]);
-
-      res.json(result.rows);
-    } catch (error) {
-      logger.error('Error fetching channel recommendations:', error);
-      res.status(500).json({ error: 'Failed to fetch channel recommendations' });
-    } finally {
-      client.release();
-    }
-  };
-
-  getGameRecommendations = async (req: Request, res: Response): Promise<void> => {
-    const client = await this.pool.connect();
-    try {
-      const userId = req.user?.id;
-      const result = await client.query(`
-        WITH user_games AS (
-          SELECT game_id
-          FROM user_game_preferences
-          WHERE user_id = $1
-        ),
-        game_channel_overlap AS (
-          SELECT 
-            g.id as game_id,
-            COUNT(DISTINCT c.id) as channels_in_common
-          FROM games g
-          JOIN channel_game_history cgh ON g.id = cgh.game_id
-          JOIN channels c ON cgh.channel_id = c.id
-          WHERE c.id IN (
-            SELECT channel_id 
-            FROM user_channel_preferences 
-            WHERE user_id = $1
-          )
-          GROUP BY g.id
-        )
-        SELECT 
-          g.*,
-          gco.channels_in_common
-        FROM games g
-        JOIN game_channel_overlap gco ON g.id = gco.game_id
-        WHERE g.id NOT IN (SELECT game_id FROM user_games)
-        ORDER BY gco.channels_in_common DESC
-        LIMIT 10
-      `, [userId]);
-
-      res.json(result.rows);
-    } catch (error) {
-      logger.error('Error fetching game recommendations:', error);
-      res.status(500).json({ error: 'Failed to fetch game recommendations' });
-    } finally {
-      client.release();
-    }
-  };
-
-  getTrendingCategories = async (req: Request, res: Response): Promise<void> => {
-    const client = await this.pool.connect();
-    try {
-      const result = await client.query(`
-        WITH game_metrics AS (
-          SELECT 
-            g.id,
-            g.name,
-            g.box_art_url,
-            COUNT(DISTINCT pe.id) as premiere_count,
-            COUNT(DISTINCT c.id) as active_channels,
-            SUM(cm.viewer_count) as total_viewers
-          FROM games g
-          LEFT JOIN premiere_events pe ON g.id = pe.game_id
-          LEFT JOIN channels c ON g.id = c.current_game_id
-          LEFT JOIN channel_metrics cm ON c.id = cm.channel_id
-          WHERE pe.start_time > NOW() - INTERVAL '24 hours'
-          OR cm.recorded_at > NOW() - INTERVAL '24 hours'
-          GROUP BY g.id, g.name, g.box_art_url
-        )
-        SELECT *
-        FROM game_metrics
-        ORDER BY total_viewers DESC
-        LIMIT 10
-      `);
-
-      res.json(result.rows);
-    } catch (error) {
-      logger.error('Error fetching trending categories:', error);
-      res.status(500).json({ error: 'Failed to fetch trending categories' });
     } finally {
       client.release();
     }
@@ -380,41 +125,73 @@ export class DiscoveryController {
 
       const premiere = premiereResult.rows[0];
 
-      // Create tracking task
-      const taskResult = await client.query(`
-        INSERT INTO tasks (
+      // Get user's VOD preferences for this channel
+      const prefsResult = await client.query(`
+        SELECT * FROM user_vod_preferences 
+        WHERE user_id = $1 AND channel_id = $2`,
+        [userId, premiere.channel_id]
+      );
+
+      const userPrefs = prefsResult.rows[0] || {
+        preferred_quality: 'source',
+        download_chat: true,
+        download_markers: true,
+        download_priority: 'normal',
+        retention_days: 30
+      };
+
+      // Create or update VOD entry
+      const vodResult = await client.query(`
+        INSERT INTO vods (
+          channel_id,
+          game_id,
           user_id,
-          type,
+          content_type,
           status,
-          config,
+          download_status,
+          download_priority,
+          preferred_quality,
+          download_chat,
+          download_markers,
+          retention_days,
+          scheduled_for,
           created_at
-        ) VALUES ($1, 'PREMIERE', 'PENDING', $2, CURRENT_TIMESTAMP)
-        RETURNING *
+        ) VALUES ($1, $2, $3, 'premiere', 'pending', 'queued', $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+        ON CONFLICT (channel_id, user_id, content_type) 
+        WHERE status = 'pending'
+        DO UPDATE SET
+          game_id = EXCLUDED.game_id,
+          download_priority = EXCLUDED.download_priority,
+          scheduled_for = EXCLUDED.scheduled_for
+        RETURNING id
       `, [
+        premiere.channel_id,
+        premiere.game_id,
         userId,
-        {
-          premiereId: premiere.id,
-          channelId: premiere.channel_id,
-          gameId: premiere.game_id,
-          startTime: premiere.start_time,
-          quality: 'best',
-          retention: 30 // days
-        }
+        userPrefs.download_priority,
+        userPrefs.preferred_quality,
+        userPrefs.download_chat,
+        userPrefs.download_markers,
+        userPrefs.retention_days,
+        premiere.start_time
       ]);
 
-      // Update premiere event tracking
+      // Update premiere tracking
       await client.query(`
         INSERT INTO user_premiere_tracking (
           user_id,
           premiere_id,
-          task_id,
+          vod_id,
           created_at
         ) VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-      `, [userId, id, taskResult.rows[0].id]);
+      `, [userId, id, vodResult.rows[0].id]);
 
       await client.query('COMMIT');
 
-      res.json({ message: 'Premiere event tracked successfully' });
+      res.json({
+        message: 'Premiere event tracked successfully',
+        vodId: vodResult.rows[0].id
+      });
     } catch (error) {
       await client.query('ROLLBACK');
       logger.error('Error tracking premiere event:', error);
@@ -430,6 +207,9 @@ export class DiscoveryController {
       const userId = req.user?.id;
       const { id } = req.params;
 
+      await client.query('BEGIN');
+
+      // Mark premiere as ignored
       await client.query(`
         INSERT INTO user_premiere_tracking (
           user_id,
@@ -439,10 +219,75 @@ export class DiscoveryController {
         ) VALUES ($1, $2, true, CURRENT_TIMESTAMP)
       `, [userId, id]);
 
+      // Cancel any pending VOD downloads for this premiere
+      await client.query(`
+        UPDATE vods 
+        SET download_status = 'cancelled',
+            error_message = 'Premiere event ignored by user'
+        WHERE id IN (
+          SELECT vod_id 
+          FROM user_premiere_tracking
+          WHERE user_id = $1 
+          AND premiere_id = $2
+        )
+        AND download_status IN ('pending', 'queued')
+      `, [userId, id]);
+
+      await client.query('COMMIT');
       res.json({ message: 'Premiere event ignored successfully' });
     } catch (error) {
+      await client.query('ROLLBACK');
       logger.error('Error ignoring premiere event:', error);
       res.status(500).json({ error: 'Failed to ignore premiere event' });
+    } finally {
+      client.release();
+    }
+  };
+
+  getGameRecommendations = async (req: Request, res: Response): Promise<void> => {
+    const client = await this.pool.connect();
+    try {
+      const userId = req.user?.id;
+
+      const result = await client.query(`
+        WITH user_games AS (
+          SELECT DISTINCT game_id
+          FROM user_vod_preferences
+          WHERE user_id = $1
+        ),
+        game_channel_overlap AS (
+          SELECT 
+            g.id as game_id,
+            COUNT(DISTINCT v.channel_id) as channels_in_common,
+            COUNT(DISTINCT CASE WHEN v.download_status = 'completed' THEN v.id END) as recorded_vods
+          FROM games g
+          JOIN vods v ON g.id = v.game_id
+          WHERE v.channel_id IN (
+            SELECT channel_id 
+            FROM user_vod_preferences 
+            WHERE user_id = $1
+          )
+          GROUP BY g.id
+        )
+        SELECT 
+          g.*,
+          gco.channels_in_common,
+          gco.recorded_vods,
+          COUNT(pe.id) as upcoming_premieres
+        FROM games g
+        JOIN game_channel_overlap gco ON g.id = gco.game_id
+        LEFT JOIN premiere_events pe ON g.id = pe.game_id
+          AND pe.start_time > NOW()
+        WHERE g.id NOT IN (SELECT game_id FROM user_games)
+        GROUP BY g.id, gco.channels_in_common, gco.recorded_vods
+        ORDER BY gco.channels_in_common DESC, upcoming_premieres DESC
+        LIMIT 10
+      `, [userId]);
+
+      res.json(result.rows);
+    } catch (error) {
+      logger.error('Error fetching game recommendations:', error);
+      res.status(500).json({ error: 'Failed to fetch game recommendations' });
     } finally {
       client.release();
     }
@@ -453,40 +298,46 @@ export class DiscoveryController {
     try {
       const userId = req.user?.id;
 
-      const stats = await client.query(`
+      const result = await client.query(`
         SELECT
           (
             SELECT COUNT(*)
             FROM premiere_events pe
             WHERE pe.start_time > NOW()
             AND pe.start_time < NOW() + INTERVAL '24 hours'
+            AND pe.channel_id IN (
+              SELECT channel_id FROM user_vod_preferences WHERE user_id = $1
+            )
           ) as upcoming_premieres,
           (
             SELECT COUNT(*)
-            FROM premiere_events pe
-            JOIN user_premiere_tracking upt ON pe.id = upt.premiere_id
-            WHERE upt.user_id = $1
-            AND upt.created_at > NOW() - INTERVAL '24 hours'
-          ) as tracked_premieres,
+            FROM vods v
+            WHERE v.content_type = 'premiere'
+            AND v.user_id = $1
+            AND v.download_status IN ('completed', 'downloading')
+            AND v.created_at > NOW() - INTERVAL '24 hours'
+          ) as recorded_premieres,
+          (
+            SELECT COUNT(DISTINCT v.channel_id)
+            FROM vods v
+            WHERE v.user_id = $1
+            AND v.download_status = 'completed'
+          ) as recorded_channels,
+          (
+            SELECT COUNT(DISTINCT v.game_id)
+            FROM vods v
+            WHERE v.user_id = $1
+            AND v.download_status = 'completed'
+          ) as recorded_games,
           (
             SELECT COUNT(*)
-            FROM channel_metrics cm
-            JOIN channels c ON cm.channel_id = c.id
-            WHERE cm.viewer_growth_rate > 0.1
-            AND c.current_game_id IN (
-              SELECT game_id FROM user_game_preferences WHERE user_id = $1
-            )
-          ) as rising_channels,
-          (
-            SELECT COUNT(*)
-            FROM tasks t
-            WHERE t.user_id = $1
-            AND t.type = 'PREMIERE'
-            AND t.status = 'PENDING'
-          ) as pending_archives
+            FROM vods v
+            WHERE v.user_id = $1
+            AND v.download_status = 'queued'
+          ) as pending_downloads
       `, [userId]);
 
-      res.json(stats.rows[0]);
+      res.json(result.rows[0]);
     } catch (error) {
       logger.error('Error fetching discovery stats:', error);
       res.status(500).json({ error: 'Failed to fetch discovery stats' });

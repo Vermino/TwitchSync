@@ -1,3 +1,5 @@
+// backend/src/services/gameMonitor.ts
+
 import { Pool } from 'pg';
 import TwitchAPIService from './twitch';
 import { logger } from '../utils/logger';
@@ -42,12 +44,17 @@ class GameMonitorService {
 
       // If game has changed, record the change
       if (currentGameId !== channel.current_game_id) {
-        // Record game change
+        // Record game change in history
         await client.query(
-          `INSERT INTO game_changes (
-            channel_id, previous_game_id, new_game_id
-          ) VALUES ($1, $2, $3)`,
-          [channelId, channel.current_game_id, currentGameId]
+          `INSERT INTO channel_game_history (
+            channel_id, game_id, first_played, last_played,
+            total_hours, stream_count, avg_viewers
+          ) VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 1, 0)
+          ON CONFLICT (channel_id, game_id) 
+          DO UPDATE SET 
+            last_played = CURRENT_TIMESTAMP,
+            stream_count = channel_game_history.stream_count + 1`,
+          [channelId, currentGameId]
         );
 
         // Update channel's current game
@@ -56,16 +63,65 @@ class GameMonitorService {
           [currentGameId, channelId]
         );
 
-        // If new game is tracked, process VOD segments
+        // Update any active VODs with the new game ID
         if (currentGameId) {
-          const trackedGame = await client.query(
-            'SELECT id FROM tracked_games WHERE twitch_game_id = $1 AND is_active = true',
-            [currentGameId]
+          await client.query(
+            `UPDATE vods 
+             SET game_id = $1,
+                 category_tags = ARRAY(
+                   SELECT name FROM games WHERE id = $1
+                 )
+             WHERE channel_id = $2 
+             AND status = 'pending'
+             AND download_status IN ('downloading', 'queued')`,
+            [currentGameId, channelId]
           );
 
-          if (trackedGame.rows.length > 0) {
-            // Update VOD information if game is tracked
-            await this.updateVODGameInfo(client, channelId, currentGameId);
+          // Check if this is a premiere event (first time playing this game)
+          const premiereCheck = await client.query(
+            `SELECT id FROM channel_game_history 
+             WHERE channel_id = $1 AND game_id = $2`,
+            [channelId, currentGameId]
+          );
+
+          if (premiereCheck.rows.length === 1) {
+            // This is the first time playing this game
+            await client.query(
+              `INSERT INTO premiere_events (
+                channel_id, game_id, event_type, confidence_score,
+                detected_at, predicted_start, metadata
+              ) VALUES ($1, $2, 'NEW_GAME', 1.0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3)`,
+              [
+                channelId,
+                currentGameId,
+                {
+                  previous_game: channel.current_game_id,
+                  detection_method: 'game_change'
+                }
+              ]
+            );
+
+            // Check user preferences for auto-recording premieres
+            const userPrefs = await client.query(
+              `SELECT uvp.* FROM user_vod_preferences uvp
+               WHERE uvp.channel_id = $1 AND uvp.auto_download = true`,
+              [channelId]
+            );
+
+            // Create VOD entries for users who want to auto-record premieres
+            for (const pref of userPrefs.rows) {
+              await client.query(
+                `UPDATE vods
+                 SET download_status = 'queued',
+                     download_priority = $1,
+                     content_type = 'premiere',
+                     scheduled_for = CURRENT_TIMESTAMP
+                 WHERE channel_id = $2
+                 AND status = 'pending'
+                 AND user_id = $3`,
+                [pref.download_priority, channelId, pref.user_id]
+              );
+            }
           }
         }
 
@@ -87,34 +143,6 @@ class GameMonitorService {
       throw error;
     } finally {
       client.release();
-    }
-  }
-
-  private async updateVODGameInfo(
-    client: any,
-    channelId: number,
-    gameId: string
-  ): Promise<void> {
-    try {
-      // Get the latest VOD for the channel
-      const vodResult = await client.query(
-        `SELECT id FROM vods 
-         WHERE channel_id = $1 
-         ORDER BY created_at DESC 
-         LIMIT 1`,
-        [channelId]
-      );
-
-      if (vodResult.rows.length > 0) {
-        // Update the VOD with the game information
-        await client.query(
-          'UPDATE vods SET game_id = $1 WHERE id = $2',
-          [gameId, vodResult.rows[0].id]
-        );
-      }
-    } catch (error) {
-      logger.error('Error updating VOD game info:', error);
-      throw error;
     }
   }
 
@@ -149,7 +177,7 @@ class GameMonitorService {
 
       // Get all active tracked games
       const gamesResult = await client.query(
-        'SELECT id, twitch_game_id, name FROM tracked_games WHERE is_active = true'
+        'SELECT id, twitch_game_id, name FROM games WHERE is_active = true'
       );
 
       for (const game of gamesResult.rows) {
@@ -160,15 +188,23 @@ class GameMonitorService {
           if (gameInfo && gameInfo.name !== game.name) {
             // Update game name if it has changed
             await client.query(
-              'UPDATE tracked_games SET name = $1, last_checked = CURRENT_TIMESTAMP WHERE id = $2',
+              'UPDATE games SET name = $1, last_checked = CURRENT_TIMESTAMP WHERE id = $2',
               [gameInfo.name, game.id]
+            );
+
+            // Update any VODs with this game to use the new name in category tags
+            await client.query(
+              `UPDATE vods 
+               SET category_tags = array_replace(category_tags, $1, $2)
+               WHERE game_id = $3`,
+              [game.name, gameInfo.name, game.id]
             );
 
             logger.info(`Updated game name for ${game.twitch_game_id}: ${game.name} -> ${gameInfo.name}`);
           } else {
             // Update last checked timestamp
             await client.query(
-              'UPDATE tracked_games SET last_checked = CURRENT_TIMESTAMP WHERE id = $1',
+              'UPDATE games SET last_checked = CURRENT_TIMESTAMP WHERE id = $1',
               [game.id]
             );
           }

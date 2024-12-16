@@ -1,0 +1,221 @@
+{
+  "updated_at": "2024-12-15T15:38:24.690333",
+  "tree": {
+    "backend": {
+      "_files": [
+        "nodemon.json",
+        "tsconfig.json"
+      ],
+      "scripts": {
+        "_files": [
+          "migrate.ts",
+          "reset-db.sql",
+          "setup.ts"
+        ]
+      },
+      "src": {
+        "config": {
+          "_files": [
+            "database.ts",
+            "twitch.ts"
+          ]
+        },
+        "database": {
+          "migrations/_files": [
+            "001_core_tables.ts",
+            "002_auth_tables.ts",
+            "003_system_tables.ts",
+            "004_vod_tables.ts",
+            "005_discovery_tables.ts",
+            "runner.ts"
+          ]
+        },
+        "_files": [
+          "index.ts"
+        ],
+        "middleware": {
+          "_files": [
+            "auth.ts",
+            "logging.ts"
+          ]
+        },
+        "services": {
+          "auth": {
+            "_files": [
+              "index.ts"
+            ]
+          },
+          "discovery": {
+            "_files": [
+              "index.ts"
+            ]
+          },
+          "_files": [
+            "downloadManager.ts",
+            "gameMonitor.ts",
+            "mediaServer.ts",
+            "twitch.ts"
+          ],
+          "media": {
+            "_files": [
+              "index.ts",
+              "server.ts"
+            ]
+          },
+          "monitoring": {
+            "_files": [
+              "channels.ts",
+              "games.ts",
+              "index.ts"
+            ]
+          },
+          "storage": {
+            "_files": [
+              "index.ts"
+            ]
+          },
+          "twitch": {
+            "_files": [
+              "api.ts",
+              "client.ts",
+              "index.ts"
+            ]
+          },
+          "watch": {
+            "_files": [
+              "index.ts"
+            ]
+          }
+        },
+        "types": {
+          "_files": [
+            "auth.ts",
+            "database.ts",
+            "discovery.ts",
+            "settings.ts"
+          ]
+        },
+        "utils": {
+          "_files": [
+            "error.ts",
+            "logger.ts",
+            "twitch-auth.ts"
+          ]
+        }
+      }
+    },
+    "_files": [
+      "docker-compose.yml",
+      "error.py"
+    ],
+    "frontend": {
+      "_files": [
+        ".eslintrc.json",
+        "index.html",
+        "postcss.config.js",
+        "tailwind.config.js",
+        "tsconfig.app.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts"
+      ],
+      "src": {
+        "_files": [
+          "App.css",
+          "App.tsx",
+          "index.css",
+          "main.tsx",
+          "vite-env.d.ts"
+        ],
+        "components": {
+          "_files": [
+            "CallbackHandler.tsx",
+            "ChannelSearchModal.tsx",
+            "DownloadManager.tsx",
+            "GameSearchModal.tsx",
+            "Navbar.tsx",
+            "SettingsManager.tsx",
+            "StatusBar.tsx",
+            "TaskModal.tsx",
+            "TwitchConnect.tsx",
+            "UserMenu.tsx",
+            "WatchConfig.tsx"
+          ],
+          "discovery": {
+            "_files": [
+              "DiscoveryHeader.tsx",
+              "DiscoverySettings.tsx",
+              "FilterPanel.tsx",
+              "PremiereCard.tsx",
+              "RecommendationCard.tsx",
+              "RisingChannelCard.tsx",
+              "StatsCard.tsx"
+            ]
+          },
+          "ui": {
+            "_files": [
+              "alert.tsx",
+              "avatar.tsx",
+              "badge.tsx",
+              "button.tsx",
+              "card.tsx",
+              "dialog.tsx",
+              "dropdown-menu.tsx",
+              "label.tsx",
+              "progress.tsx",
+              "select.tsx",
+              "slider.tsx",
+              "switch.tsx",
+              "tabs.tsx",
+              "toast.tsx",
+              "toaster.tsx",
+              "tooltip.tsx",
+              "use-toast.ts"
+            ]
+          }
+        },
+        "contexts": {
+          "_files": [
+            "AuthContext.tsx"
+          ]
+        },
+        "lib": {
+          "_files": [
+            "api.ts",
+            "utils.ts"
+          ]
+        },
+        "pages": {
+          "_files": [
+            "Channels.tsx",
+            "ConnectTwitch.tsx",
+            "ContentDiscovery.tsx",
+            "ContentDiscoverySystem.tsx",
+            "Dashboard.tsx",
+            "Games.tsx",
+            "Login.tsx",
+            "Settings.tsx",
+            "TaskManager.tsx",
+            "Watch.tsx"
+          ]
+        },
+        "services": {
+          "auth/_files": [
+            "twitch.ts"
+          ]
+        },
+        "types": {
+          "_files": [
+            "api.ts",
+            "components.ts",
+            "discovery.ts",
+            "index.ts",
+            "models.ts",
+            "settings.ts",
+            "task.ts"
+          ]
+        }
+      }
+    }
+  }
+}

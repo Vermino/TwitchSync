@@ -2,11 +2,12 @@
 
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
+
 import * as core from './001_core_tables';
 import * as auth from './002_auth_tables';
-import * as tasks from './003_task_tables';
-import * as discovery from './004_discovery_tables';
-import * as metrics from './005_metrics_tables';
+import * as system from './003_system_tables';
+import * as vod from './004_vod_tables';
+import * as discovery from './005_discovery_tables';
 
 interface Migration {
   name: string;
@@ -17,45 +18,69 @@ interface Migration {
 const migrations: Migration[] = [
   { name: '001_core_tables', ...core },
   { name: '002_auth_tables', ...auth },
-  { name: '003_task_tables', ...tasks },
-  { name: '004_discovery_tables', ...discovery },
-  { name: '005_metrics_tables', ...metrics }
+  { name: '003_system_tables', ...system },
+  { name: '004_vod_tables', ...vod },
+  { name: '005_discovery_tables', ...discovery }
 ];
 
-// Main migration function
 export async function runMigrations(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+
   try {
+    await client.query('BEGIN');
+
     // Create migrations table if it doesn't exist
-    await pool.query(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS migrations (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
-        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        checksum TEXT,
+        duration_ms INTEGER
       );
+
+      CREATE INDEX IF NOT EXISTS idx_migrations_name ON migrations(name);
     `);
 
     // Get executed migrations
-    const result = await pool.query('SELECT name FROM migrations ORDER BY id');
+    const result = await client.query('SELECT name FROM migrations ORDER BY id');
     const executedMigrations = new Set(result.rows.map(row => row.name));
 
     // Run pending migrations
     for (const migration of migrations) {
       if (!executedMigrations.has(migration.name)) {
         logger.info(`Running migration: ${migration.name}`);
-        await migration.up(pool);
-        await pool.query('INSERT INTO migrations (name) VALUES ($1)', [migration.name]);
-        logger.info(`Completed migration: ${migration.name}`);
+        const startTime = Date.now();
+
+        try {
+          await migration.up(pool);
+          const duration = Date.now() - startTime;
+
+          await client.query(
+            'INSERT INTO migrations (name, duration_ms) VALUES ($1, $2)',
+            [migration.name, duration]
+          );
+
+          logger.info(`Completed migration: ${migration.name} in ${duration}ms`);
+        } catch (error) {
+          logger.error(`Migration ${migration.name} failed:`, error);
+          throw error;
+        }
       } else {
         logger.info(`Skipping already executed migration: ${migration.name}`);
       }
     }
+
+    await client.query('COMMIT');
   } catch (error) {
+    await client.query('ROLLBACK');
     logger.error('Migration runner failed:', error);
     throw error;
+  } finally {
+    client.release();
   }
 }
 
-// Rollback function
 export async function rollbackLatest(pool: Pool): Promise<void> {
   const client = await pool.connect();
 
@@ -64,7 +89,8 @@ export async function rollbackLatest(pool: Pool): Promise<void> {
 
     // Get the last executed migration
     const result = await client.query(`
-      SELECT name FROM migrations 
+      SELECT name, executed_at 
+      FROM migrations 
       ORDER BY id DESC 
       LIMIT 1
     `);
@@ -79,9 +105,22 @@ export async function rollbackLatest(pool: Pool): Promise<void> {
 
     if (migration) {
       logger.info(`Rolling back migration: ${lastMigration}`);
-      await migration.down(pool);
-      await client.query('DELETE FROM migrations WHERE name = $1', [lastMigration]);
-      logger.info(`Successfully rolled back migration: ${lastMigration}`);
+      const startTime = Date.now();
+
+      try {
+        await migration.down(pool);
+        const duration = Date.now() - startTime;
+
+        await client.query(
+          'DELETE FROM migrations WHERE name = $1',
+          [lastMigration]
+        );
+
+        logger.info(`Successfully rolled back migration: ${lastMigration} in ${duration}ms`);
+      } catch (error) {
+        logger.error(`Rollback of ${lastMigration} failed:`, error);
+        throw error;
+      }
     }
 
     await client.query('COMMIT');
@@ -94,7 +133,53 @@ export async function rollbackLatest(pool: Pool): Promise<void> {
   }
 }
 
+export async function rollbackAll(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Get all migrations in reverse order
+    const result = await client.query(`
+      SELECT name 
+      FROM migrations 
+      ORDER BY id DESC
+    `);
+
+    for (const row of result.rows) {
+      const migration = migrations.find(m => m.name === row.name);
+      if (migration) {
+        logger.info(`Rolling back migration: ${row.name}`);
+        const startTime = Date.now();
+
+        try {
+          await migration.down(pool);
+          await client.query(
+            'DELETE FROM migrations WHERE name = $1',
+            [row.name]
+          );
+
+          const duration = Date.now() - startTime;
+          logger.info(`Successfully rolled back migration: ${row.name} in ${duration}ms`);
+        } catch (error) {
+          logger.error(`Rollback of ${row.name} failed:`, error);
+          throw error;
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('Complete rollback failed:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export default {
   runMigrations,
-  rollbackLatest
+  rollbackLatest,
+  rollbackAll
 };

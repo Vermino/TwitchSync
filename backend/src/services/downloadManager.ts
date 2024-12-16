@@ -1,3 +1,5 @@
+// backend/src/services/downloadManager.ts
+
 import { Pool } from 'pg';
 import axios from 'axios';
 import fs from 'fs';
@@ -6,10 +8,16 @@ import { logger } from '../utils/logger';
 
 interface DownloadTask {
   id: number;
-  vod_id: number;
-  chapter_id: number | null;
-  priority: number;
-  status: string;
+  twitch_id: string;
+  channel_id: number;
+  download_priority: 'low' | 'normal' | 'high' | 'critical';
+  preferred_quality: string;
+  download_chat: boolean;
+  download_markers: boolean;
+}
+
+interface DownloadError extends Error {
+  message: string;
 }
 
 class DownloadManager {
@@ -60,8 +68,7 @@ class DownloadManager {
 
   async addToQueue(
     vodId: number,
-    chapterId: number | null = null,
-    priority: number = 1
+    priority: 'low' | 'normal' | 'high' | 'critical' = 'normal'
   ): Promise<void> {
     const client = await this.pool.connect();
 
@@ -78,21 +85,16 @@ class DownloadManager {
         throw new Error(`VOD with ID ${vodId} not found`);
       }
 
-      // Check if already in queue
-      const queueCheck = await client.query(
-        'SELECT id FROM download_queue WHERE vod_id = $1 AND (chapter_id = $2 OR ($2 IS NULL AND chapter_id IS NULL))',
-        [vodId, chapterId]
+      // Update VOD status and priority
+      await client.query(
+        `UPDATE vods 
+         SET download_status = 'queued',
+             download_priority = $1,
+             scheduled_for = CURRENT_TIMESTAMP,
+             retry_count = 0
+         WHERE id = $2 AND download_status = 'pending'`,
+        [priority, vodId]
       );
-
-      if (queueCheck.rows.length === 0) {
-        // Add to queue
-        await client.query(
-          `INSERT INTO download_queue (
-            vod_id, chapter_id, priority, status
-          ) VALUES ($1, $2, $3, $4)`,
-          [vodId, chapterId, priority, 'pending']
-        );
-      }
 
       await client.query('COMMIT');
     } catch (error) {
@@ -104,37 +106,48 @@ class DownloadManager {
     }
   }
 
-  private async processDownload(task: DownloadTask): Promise<void> {
+  private async processDownload(vod: DownloadTask): Promise<void> {
     const client = await this.pool.connect();
 
     try {
-      // Get VOD information
-      const vodResult = await client.query(
-        'SELECT twitch_vod_id, url FROM vods WHERE id = $1',
-        [task.vod_id]
-      );
-
-      if (vodResult.rows.length === 0) {
-        throw new Error(`VOD ${task.vod_id} not found`);
-      }
-
-      const vod = vodResult.rows[0];
-      const tempFilePath = path.join(this.tempDir, `${vod.twitch_vod_id}.mp4`);
-
       // Update status to downloading
       await client.query(
-        'UPDATE download_queue SET status = $1 WHERE id = $2',
-        ['downloading', task.id]
+        `UPDATE vods 
+         SET download_status = 'downloading',
+             started_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [vod.id]
       );
+
+      const tempFilePath = path.join(this.tempDir, `${vod.twitch_id}.mp4`);
 
       // Download the file
       const response = await axios({
         method: 'GET',
-        url: vod.url,
+        url: vod.twitch_id,
         responseType: 'stream',
       });
 
       const writer = fs.createWriteStream(tempFilePath);
+      let downloadedSize = 0;
+      const totalSize = parseInt(response.headers['content-length'], 10);
+
+      response.data.on('data', (chunk: Buffer) => {
+        downloadedSize += chunk.length;
+        const progress = (downloadedSize / totalSize) * 100;
+
+        // Update download progress
+        client.query(
+          `UPDATE vods 
+           SET download_progress = $1,
+               downloaded_size = $2,
+               download_speed = $3
+           WHERE id = $4`,
+          [progress, downloadedSize, chunk.length, vod.id]
+        ).catch(error => {
+          logger.error(`Error updating download progress for VOD ${vod.id}:`, error);
+        });
+      });
 
       response.data.pipe(writer);
 
@@ -143,41 +156,53 @@ class DownloadManager {
         writer.on('error', reject);
       });
 
-      // Record successful download
+      const fileSize = fs.statSync(tempFilePath).size;
+
+      // Mark download as completed
       await client.query(
-        `INSERT INTO vod_downloads (
-          vod_id, download_path, download_status,
-          started_at, completed_at, file_size
-        ) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $4)`,
-        [task.vod_id, tempFilePath, 'completed', fs.statSync(tempFilePath).size]
+        `UPDATE vods 
+         SET download_status = 'completed',
+             download_progress = 100,
+             downloaded_size = $1,
+             file_size = $1,
+             download_path = $2,
+             downloaded_at = CURRENT_TIMESTAMP
+         WHERE id = $3`,
+        [fileSize, tempFilePath, vod.id]
       );
 
-      // Remove from queue
+      logger.info(`Successfully downloaded VOD ${vod.id}`);
+    } catch (error: unknown) {
+      logger.error(`Error downloading VOD ${vod.id}:`, error);
+
+      // Update status to failed
       await client.query(
-        'DELETE FROM download_queue WHERE id = $1',
-        [task.id]
+        `UPDATE vods 
+         SET download_status = 'failed',
+             error_message = $1,
+             retry_count = COALESCE(retry_count, 0) + 1,
+             last_retry = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [(error instanceof Error) ? error.message : 'Unknown error occurred', vod.id]
       );
 
-      logger.info(`Successfully downloaded VOD ${task.vod_id}`);
-    } catch (error) {
-      logger.error(`Error downloading VOD ${task.vod_id}:`, error);
-
-      // Update queue status
-      await client.query(
-        'UPDATE download_queue SET status = $1, error_message = $2 WHERE id = $3',
-        ['failed', error.message, task.id]
+      // If max retries reached, mark as permanently failed
+      const vodInfo = await client.query(
+        'SELECT retry_count, max_retries FROM vods WHERE id = $1',
+        [vod.id]
       );
 
-      // Record failed download
-      await client.query(
-        `INSERT INTO vod_downloads (
-          vod_id, download_status, started_at,
-          completed_at, error_message
-        ) VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3)`,
-        [task.vod_id, 'failed', error.message]
-      );
+      if (vodInfo.rows[0].retry_count >= vodInfo.rows[0].max_retries) {
+        await client.query(
+          `UPDATE vods 
+           SET download_status = 'failed',
+               error_message = 'Max retry attempts reached'
+           WHERE id = $1`,
+          [vod.id]
+        );
+      }
     } finally {
-      this.activeDownloads.delete(task.id);
+      this.activeDownloads.delete(vod.id);
       client.release();
     }
   }
@@ -186,21 +211,31 @@ class DownloadManager {
     try {
       // Get pending downloads
       const result = await this.pool.query(
-        `SELECT * FROM download_queue 
-         WHERE status = 'pending' 
-         ORDER BY priority DESC, created_at ASC 
+        `SELECT id, twitch_id, channel_id, download_priority,
+                preferred_quality, download_chat, download_markers
+         FROM vods 
+         WHERE download_status = 'queued'
+         AND (retry_count IS NULL OR retry_count < max_retries)
+         ORDER BY 
+           CASE download_priority
+             WHEN 'critical' THEN 1
+             WHEN 'high' THEN 2
+             WHEN 'normal' THEN 3
+             WHEN 'low' THEN 4
+           END,
+           scheduled_for ASC
          LIMIT $1`,
         [this.maxConcurrent - this.activeDownloads.size]
       );
 
-      for (const task of result.rows) {
+      for (const vod of result.rows) {
         if (this.activeDownloads.size >= this.maxConcurrent) {
           break;
         }
 
-        this.activeDownloads.add(task.id);
-        this.processDownload(task).catch(error => {
-          logger.error(`Error processing download task ${task.id}:`, error);
+        this.activeDownloads.add(vod.id);
+        this.processDownload(vod).catch(error => {
+          logger.error(`Error processing download task for VOD ${vod.id}:`, error);
         });
       }
     } catch (error) {
@@ -221,32 +256,40 @@ class DownloadManager {
     await this.processQueue();
   }
 
-  async retryFailedDownload(downloadId: number): Promise<void> {
+  async retryFailedDownload(vodId: number): Promise<void> {
     const client = await this.pool.connect();
 
     try {
       await client.query('BEGIN');
 
-      // Get failed download info
-      const result = await client.query(
-        `SELECT vod_id, chapter_id 
-         FROM download_queue 
-         WHERE id = $1 AND status = 'failed'`,
-        [downloadId]
+      // Check if VOD exists and is failed
+      const vodResult = await client.query(
+        `SELECT id, retry_count, max_retries 
+         FROM vods 
+         WHERE id = $1 AND download_status = 'failed'`,
+        [vodId]
       );
 
-      if (result.rows.length === 0) {
-        throw new Error(`Failed download ${downloadId} not found`);
+      if (vodResult.rows.length === 0) {
+        throw new Error(`Failed VOD ${vodId} not found`);
       }
 
-      // Reset status and clear error
+      const vod = vodResult.rows[0];
+
+      if (vod.retry_count >= vod.max_retries) {
+        throw new Error(`Maximum retry attempts (${vod.max_retries}) reached for VOD ${vodId}`);
+      }
+
+      // Reset status and update retry count
       await client.query(
-        `UPDATE download_queue 
-         SET status = 'pending', 
-             error_message = NULL, 
-             retry_count = COALESCE(retry_count, 0) + 1 
+        `UPDATE vods 
+         SET download_status = 'queued',
+             error_message = NULL,
+             retry_count = COALESCE(retry_count, 0) + 1,
+             last_retry = CURRENT_TIMESTAMP,
+             scheduled_for = CURRENT_TIMESTAMP
          WHERE id = $1`,
-        [downloadId]
+        [vodId]
       );
 
       await client.query('COMMIT');
@@ -255,14 +298,14 @@ class DownloadManager {
       await this.processQueue();
     } catch (error) {
       await client.query('ROLLBACK');
-      logger.error(`Error retrying download ${downloadId}:`, error);
+      logger.error(`Error retrying download for VOD ${vodId}:`, error);
       throw error;
     } finally {
       client.release();
     }
   }
 
-  async cancelDownload(downloadId: number): Promise<void> {
+  async cancelDownload(vodId: number): Promise<void> {
     const client = await this.pool.connect();
 
     try {
@@ -270,42 +313,31 @@ class DownloadManager {
 
       // Check if download exists and is cancellable
       const result = await client.query(
-        `SELECT status 
-         FROM download_queue 
+        `SELECT id 
+         FROM vods 
          WHERE id = $1 
-         AND status IN ('pending', 'downloading')`,
-        [downloadId]
+         AND download_status IN ('queued', 'downloading')`,
+        [vodId]
       );
 
       if (result.rows.length === 0) {
-        throw new Error(`Download ${downloadId} not found or not cancellable`);
+        throw new Error(`Download for VOD ${vodId} not found or not cancellable`);
       }
 
-      // Remove from queue
+      // Update status to cancelled
       await client.query(
-        'DELETE FROM download_queue WHERE id = $1',
-        [downloadId]
-      );
-
-      // Record cancellation
-      await client.query(
-        `INSERT INTO vod_downloads (
-          vod_id, download_status, started_at,
-          completed_at, error_message
-        ) VALUES (
-          (SELECT vod_id FROM download_queue WHERE id = $1),
-          'cancelled',
-          CURRENT_TIMESTAMP,
-          CURRENT_TIMESTAMP,
-          'Download cancelled by user'
-        )`,
-        [downloadId]
+        `UPDATE vods 
+         SET download_status = 'cancelled',
+             error_message = 'Download cancelled by user',
+             download_progress = 0
+         WHERE id = $1`,
+        [vodId]
       );
 
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
-      logger.error(`Error cancelling download ${downloadId}:`, error);
+      logger.error(`Error cancelling download for VOD ${vodId}:`, error);
       throw error;
     } finally {
       client.release();
@@ -320,10 +352,11 @@ class DownloadManager {
     try {
       const result = await this.pool.query(`
         SELECT 
-          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-          SUM(CASE WHEN status = 'downloading' THEN 1 ELSE 0 END) as downloading,
-          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-        FROM download_queue
+          COUNT(CASE WHEN download_status = 'queued' THEN 1 END) as pending,
+          COUNT(CASE WHEN download_status = 'downloading' THEN 1 END) as downloading,
+          COUNT(CASE WHEN download_status = 'failed' THEN 1 END) as failed
+        FROM vods
+        WHERE download_status IN ('queued', 'downloading', 'failed')
       `);
 
       return {
@@ -362,7 +395,7 @@ class DownloadManager {
   async pauseQueue(): Promise<void> {
     try {
       await this.pool.query(
-        "UPDATE download_queue SET status = 'pending' WHERE status = 'downloading'"
+        "UPDATE vods SET download_status = 'queued' WHERE download_status = 'downloading'"
       );
       this.activeDownloads.clear();
     } catch (error) {

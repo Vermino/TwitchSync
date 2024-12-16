@@ -12,13 +12,14 @@ import { setupDashboardRoutes } from './routes/dashboard';
 import { setupWatchRoutes } from './routes/watch';
 import { setupAuthRoutes } from './routes/auth';
 import { setupSystemRoutes } from './routes/system';
-import { setupDownloadsRoutes } from './routes/downloads';
+import { createDownloadsRouter } from './routes/downloads';  // Updated this line
 import { setupSettingsRoutes } from './routes/settings';
 import { setupTaskRoutes } from './routes/tasks';
 import { authenticate } from "./middleware/auth";
 import { loggingMiddleware } from './middleware/logging';
 import { setupTwitchSearchRoutes } from './routes/twitch/search';
 import { createDiscoveryRouter } from './routes/discovery';
+import DownloadManager from './services/downloadManager';
 
 dotenv.config();
 
@@ -67,6 +68,14 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Initialize download manager
+const downloadManager = DownloadManager.getInstance(pool, {
+  tempDir: process.env.TEMP_DIR || './tmp',
+  maxConcurrent: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '3'),
+  retryAttempts: parseInt(process.env.DOWNLOAD_RETRY_ATTEMPTS || '3'),
+  retryDelay: parseInt(process.env.DOWNLOAD_RETRY_DELAY || '300')
+});
+
 // Protected routes
 app.use('/auth', setupAuthRoutes(pool));
 app.use('/api/channels', authenticate(pool), setupChannelRoutes(pool));
@@ -74,7 +83,7 @@ app.use('/api/games', authenticate(pool), setupGameRoutes(pool));
 app.use('/api/dashboard', authenticate(pool), setupDashboardRoutes(pool));
 app.use('/api/watch', authenticate(pool), setupWatchRoutes(pool));
 app.use('/api/system', authenticate(pool), setupSystemRoutes(pool));
-app.use('/api/downloads', authenticate(pool), setupDownloadsRoutes(pool));
+app.use('/api/downloads', authenticate(pool), createDownloadsRouter(pool, downloadManager));  // Updated this line
 app.use('/api/settings', authenticate(pool), setupSettingsRoutes(pool));
 app.use('/api/tasks', authenticate(pool), setupTaskRoutes(pool));
 app.use('/api/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));
@@ -90,6 +99,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 const startServer = async () => {
   try {
     await setupDatabase();
+
+    // Start download manager
+    await downloadManager.startProcessing();
+
     app.listen(port, () => {
       logger.info(`Server is running at http://localhost:${port}`);
       logger.info('Environment:', process.env.NODE_ENV);
