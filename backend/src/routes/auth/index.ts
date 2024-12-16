@@ -1,3 +1,5 @@
+// Filepath: backend/src/routes/auth/index.ts
+
 import { Router } from 'express';
 import { Pool } from 'pg';
 import jwt from 'jsonwebtoken';

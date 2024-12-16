@@ -1,15 +1,20 @@
+// frontend/src/pages/Settings.tsx
+
 import React, { useState, useEffect } from 'react';
+import { api } from '../lib/api';
+import { useToast } from '@/components/ui/use-toast';
 import {
-    Save,
-    FolderOpen,
-    HardDrive,
-    Bell,
-    Download,
-    FolderTree,
-    AlertTriangle,
-    RefreshCw,
-    Settings as SettingsIcon,
-    Trash2, Check
+  Save,
+  FolderOpen,
+  HardDrive,
+  Bell,
+  Download,
+  FolderTree,
+  AlertTriangle,
+  RefreshCw,
+  Settings as SettingsIcon,
+  Trash2,
+  Check
 } from 'lucide-react';
 
 interface SettingsState {
@@ -83,6 +88,7 @@ const defaultSettings: SettingsState = {
 };
 
 const Settings: React.FC = () => {
+  const { toast } = useToast();
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -101,10 +107,8 @@ const Settings: React.FC = () => {
 
   const loadSettings = async () => {
     try {
-      const response = await fetch('/api/settings');
-      if (!response.ok) throw new Error('Failed to load settings');
-      const data = await response.json();
-      setSettings(data);
+      const response = await api.getSystemSettings();
+      setSettings(response);
       setError(null);
     } catch (err) {
       setError('Failed to load settings. Please try again.');
@@ -116,36 +120,40 @@ const Settings: React.FC = () => {
 
   const loadStorageStats = async () => {
     try {
-      const response = await fetch('/api/system/storage');
-      if (!response.ok) throw new Error('Failed to load storage stats');
-      const data = await response.json();
-      setStorageStats(data);
+      const stats = await api.getStorageStats();
+      setStorageStats(stats);
     } catch (err) {
       console.error('Error loading storage stats:', err);
+      toast({
+        title: "Error",
+        description: "Failed to load storage statistics",
+        variant: "destructive"
+      });
     }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch('/api/settings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(settings),
-      });
-
-      if (!response.ok) throw new Error('Failed to save settings');
+      await api.updateSystemSettings(settings);
 
       setSuccessMessage('Settings saved successfully');
       setError(null);
+      toast({
+        title: "Success",
+        description: "Settings saved successfully",
+      });
 
       // Clear success message after 3 seconds
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       setError('Failed to save settings. Please try again.');
       console.error('Error saving settings:', err);
+      toast({
+        title: "Error",
+        description: "Failed to save settings",
+        variant: "destructive"
+      });
     } finally {
       setSaving(false);
     }

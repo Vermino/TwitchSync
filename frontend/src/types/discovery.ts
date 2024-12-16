@@ -1,5 +1,27 @@
 // frontend/src/types/discovery.ts
 
+// Base interfaces for metrics
+export interface ViewerMetrics {
+  activeChannels: number;
+  totalViewers: number;
+  averageViewers: number;
+}
+
+export interface ChannelMetrics {
+  viewerGrowth: number;
+  engagement: number;
+  streamHours: number;
+  followers: number;
+  averageViewers: number;
+}
+
+export interface GameMetrics {
+  activeChannels: number;
+  totalViewers: number;
+  averageViewers: number;
+}
+
+// Premiere and Event interfaces
 export interface StreamPremiereEvent {
   id: string;
   type: 'CHANNEL_PREMIERE' | 'GAME_PREMIERE' | 'RISING_STAR';
@@ -27,6 +49,7 @@ export interface StreamPremiereEvent {
   tags: string[];
 }
 
+// Discovery preferences and settings
 export interface DiscoveryPreferences {
   minViewers: number;
   maxViewers: number;
@@ -37,48 +60,64 @@ export interface DiscoveryPreferences {
   confidenceThreshold: number;
 }
 
-export interface ChannelRecommendation {
-  id: string;
-  channel: {
-    name: string;
-    avatar: string;
-    followers: number;
-    averageViewers: number;
-    currentGame: string;
-    language: string;
-  };
-  score: number;
-  reasons: Array<{
-    type: 'GAME_OVERLAP' | 'VIEWER_OVERLAP' | 'SCHEDULE_MATCH';
-    strength: number;
-  }>;
-  metrics: {
-    viewerGrowth: number;
-    engagement: number;
-    streamHours: number;
-  };
+export interface FilterSettings {
+  minViewers: number;
+  maxViewers: number;
+  preferredLanguages: string[];
+  contentRating: string;
+  notifyOnly: boolean;
+  scheduleMatch: boolean;
+  confidenceThreshold: number;
 }
 
-export interface GameRecommendation {
+// Channel and Game interfaces
+export interface Channel {
   id: string;
-  game: {
-    name: string;
-    boxArt: string;
-    genres: string[];
-    releaseDate?: string;
-  };
-  score: number;
-  reasons: Array<{
-    type: 'CHANNEL_OVERLAP' | 'VIEWER_OVERLAP' | 'GENRE_MATCH';
-    strength: number;
-  }>;
-  metrics: {
-    activeChannels: number;
-    totalViewers: number;
-    averageViewers: number;
-  };
+  name: string;
+  avatar: string;
+  followers: number;
+  averageViewers: number;
+  currentGame: string;
+  language: string;
 }
 
+export interface Game {
+  id: string;
+  name: string;
+  boxArt: string;
+  genres: string[];
+  releaseDate?: string;
+}
+
+// Recommendation types and interfaces
+export type ChannelReasonType = 'GAME_OVERLAP' | 'VIEWER_OVERLAP' | 'SCHEDULE_MATCH';
+export type GameReasonType = 'CHANNEL_OVERLAP' | 'VIEWER_OVERLAP' | 'GENRE_MATCH';
+
+export interface RecommendationReason<T extends string = string> {
+  type: T;
+  strength: number;
+}
+
+interface BaseRecommendation<T extends string, M> {
+  id: string;
+  score: number;
+  reasons: Array<RecommendationReason<T>>;
+  metrics: M;
+}
+
+export interface ChannelRecommendation extends BaseRecommendation<ChannelReasonType, ChannelMetrics> {
+  type: 'channel';
+  channel: Channel;
+}
+
+export interface GameRecommendation extends BaseRecommendation<GameReasonType, GameMetrics> {
+  type: 'game';
+  game: Game;
+}
+
+export type Recommendation = ChannelRecommendation | GameRecommendation;
+
+// Rising channel and trending category interfaces
 export interface RisingChannel {
   id: string | number;
   display_name: string;
@@ -108,22 +147,13 @@ export interface TrendingCategory {
   tags: string[];
 }
 
+// Stats interface
 export interface DiscoveryStats {
   upcomingPremieres: number;
   trackedPremieres: number;
   risingChannels: number;
   pendingArchives: number;
   todayDiscovered: number;
-}
-
-export interface FilterSettings {
-  minViewers: number;
-  maxViewers: number;
-  preferredLanguages: string[];
-  contentRating: string;
-  notifyOnly: boolean;
-  scheduleMatch: boolean;
-  confidenceThreshold: number;
 }
 
 // API Response types
@@ -162,9 +192,9 @@ export interface RisingChannelCardProps {
 }
 
 export interface RecommendationCardProps {
-  item: ChannelRecommendation | GameRecommendation;
+  item: Recommendation;
   type: 'channel' | 'game';
-  onAction: (id: string, type: string) => Promise<void>;
+  onAction: (id: string, type: 'channel' | 'game') => Promise<void>;
 }
 
 export interface FilterPanelProps {

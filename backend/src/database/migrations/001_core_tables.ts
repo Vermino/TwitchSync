@@ -1,5 +1,4 @@
 // backend/src/database/migrations/001_core_tables.ts
-
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
 
@@ -98,25 +97,26 @@ export async function up(pool: Pool): Promise<void> {
       CREATE INDEX idx_game_changes_games ON game_changes(previous_game_id, new_game_id);
     `);
 
-  // Discovery preferences table
-  await client.query(`
-    CREATE TABLE discovery_preferences (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      min_viewers INTEGER DEFAULT 100,
-      max_viewers INTEGER DEFAULT 50000,
-      preferred_languages TEXT[] DEFAULT ARRAY['en'],
-      content_rating VARCHAR(20) DEFAULT 'all',
-      notify_only BOOLEAN DEFAULT false,
-      schedule_match BOOLEAN DEFAULT true,
-      confidence_threshold FLOAT DEFAULT 0.7,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id)
-    );
-  
-    CREATE INDEX idx_discovery_prefs_user ON discovery_preferences(user_id);
-  `);
+    // Discovery preferences table
+    await client.query(`
+      CREATE TABLE discovery_preferences (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        min_viewers INTEGER DEFAULT 100,
+        max_viewers INTEGER DEFAULT 50000,
+        preferred_languages TEXT[] DEFAULT ARRAY['en'::text],
+        content_rating VARCHAR(20) DEFAULT 'all',
+        notify_only BOOLEAN DEFAULT false,
+        schedule_match BOOLEAN DEFAULT true,
+        confidence_threshold FLOAT DEFAULT 0.7,
+        excluded_game_ids INTEGER[] DEFAULT ARRAY[]::INTEGER[],
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id)
+      );
+    
+      CREATE INDEX idx_discovery_prefs_user ON discovery_preferences(user_id);
+    `);
 
     // Updated timestamp triggers
     await client.query(`

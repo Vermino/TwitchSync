@@ -51,7 +51,7 @@ const ConnectTwitch = () => {
 
             <div className="mt-6 text-sm text-gray-500">
               <ul className="list-disc pl-5 space-y-2">
-                <li>Access your channel's VODs and clips</li>
+                <li>Access your channel&#39;s VODs and clips</li>
                 <li>Automatically download new content</li>
                 <li>Track your favorite streamers</li>
                 <li>Manage your content library</li>

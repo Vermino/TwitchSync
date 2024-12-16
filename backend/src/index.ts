@@ -1,7 +1,8 @@
-// backend/src/index.ts
+// Filepath: backend/src/index.ts
 
 import express from 'express';
 import cors from 'cors';
+import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import { setupDatabase } from './config/database';
 import { logger } from './utils/logger';
@@ -12,7 +13,7 @@ import { setupDashboardRoutes } from './routes/dashboard';
 import { setupWatchRoutes } from './routes/watch';
 import { setupAuthRoutes } from './routes/auth';
 import { setupSystemRoutes } from './routes/system';
-import { createDownloadsRouter } from './routes/downloads';  // Updated this line
+import { createDownloadsRouter } from './routes/downloads';
 import { setupSettingsRoutes } from './routes/settings';
 import { setupTaskRoutes } from './routes/tasks';
 import { authenticate } from "./middleware/auth";
@@ -37,11 +38,14 @@ app.use((req, res, next) => {
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000'],
+  origin: process.env.NODE_ENV === 'development'
+    ? ['http://localhost:3000', 'http://127.0.0.1:3000']
+    : process.env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 app.use(loggingMiddleware);
 
@@ -83,7 +87,7 @@ app.use('/api/games', authenticate(pool), setupGameRoutes(pool));
 app.use('/api/dashboard', authenticate(pool), setupDashboardRoutes(pool));
 app.use('/api/watch', authenticate(pool), setupWatchRoutes(pool));
 app.use('/api/system', authenticate(pool), setupSystemRoutes(pool));
-app.use('/api/downloads', authenticate(pool), createDownloadsRouter(pool, downloadManager));  // Updated this line
+app.use('/api/downloads', authenticate(pool), createDownloadsRouter(pool, downloadManager));
 app.use('/api/settings', authenticate(pool), setupSettingsRoutes(pool));
 app.use('/api/tasks', authenticate(pool), setupTaskRoutes(pool));
 app.use('/api/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));

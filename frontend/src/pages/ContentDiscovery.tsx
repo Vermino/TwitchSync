@@ -3,24 +3,68 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { api } from '@/lib/api';
+import { discoveryService } from '@/services/discovery';
 import DiscoveryHeader from '../components/discovery/DiscoveryHeader';
 import FilterPanel from '../components/discovery/FilterPanel';
 import StatsCard from '../components/discovery/StatsCard';
+import RecommendationCard from '../components/discovery/RecommendationCard';
 import PremiereCard from '../components/discovery/PremiereCard';
 import RisingChannelCard from '../components/discovery/RisingChannelCard';
-import RecommendationCard from '../components/discovery/RecommendationCard';
+import { RefreshCw, Settings as SettingsIcon, Bell } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type {
   DiscoveryFeedResponse,
   FilterSettings,
+  DiscoveryStats,
+  ChannelRecommendation,
+  GameRecommendation,
   StreamPremiereEvent,
-  RisingChannel,
-  DiscoveryStats
+  RisingChannel
 } from '@/types/discovery';
 
-const ContentDiscovery = () => {
+// Component state interfaces
+interface RecommendationsState {
+  channels: ChannelRecommendation[];
+  games: GameRecommendation[];
+  lastUpdated: Date | null;
+  loading: boolean;
+}
+
+const defaultDiscoveryData: DiscoveryFeedResponse = {
+  preferences: {
+    minViewers: 100,
+    maxViewers: 50000,
+    preferredLanguages: ['EN'],
+    contentRating: 'all',
+    notifyOnly: false,
+    scheduleMatch: true,
+    confidenceThreshold: 0.7
+  },
+  premieres: [],
+  risingChannels: [],
+  recommendations: {
+    channels: [],
+    games: []
+  },
+  trending: [],
+  stats: {
+    upcomingPremieres: 0,
+    trackedPremieres: 0,
+    risingChannels: 0,
+    pendingArchives: 0,
+    todayDiscovered: 0
+  }
+};
+
+const ContentDiscovery: React.FC = () => {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'premieres' | 'discover' | 'history'>('premieres');
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'premieres' | 'discover' | 'history'>('discover');
+  const [recommendations, setRecommendations] = useState<RecommendationsState>({
+    channels: [],
+    games: [],
+    lastUpdated: null,
+    loading: true
+  });
   const [stats, setStats] = useState<DiscoveryStats | null>(null);
   const [filterSettings, setFilterSettings] = useState<FilterSettings>({
     minViewers: 100,
@@ -31,235 +75,214 @@ const ContentDiscovery = () => {
     scheduleMatch: true,
     confidenceThreshold: 0.7
   });
+  const [discoveryData, setDiscoveryData] = useState<DiscoveryFeedResponse>(defaultDiscoveryData);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const [discoveryData, setDiscoveryData] = useState<DiscoveryFeedResponse | null>(null);
-  const [premieres, setPremieres] = useState<StreamPremiereEvent[]>([]);
-  const [risingChannels, setRisingChannels] = useState<RisingChannel[]>([]);
-
-  // Load initial data
-  useEffect(() => {
-  const loadDiscoveryData = async () => {
-    setLoading(true);
+  const loadRecommendations = async () => {
+    setRecommendations(prev => ({ ...prev, loading: true }));
+    setIsRefreshing(true);
     try {
-      // Load discovery feed
-      const feed = await api.getDiscoveryFeed();
-      setDiscoveryData(feed);
-      setPremieres(feed.premieres);
-      setRisingChannels(feed.risingChannels);
+      const [channels, games] = await Promise.all([
+        discoveryService.getChannelRecommendations(filterSettings),
+        discoveryService.getGameRecommendations(filterSettings)
+      ]);
 
-      // Load discovery stats
+      setRecommendations({
+        channels,
+        games,
+        lastUpdated: new Date(),
+        loading: false
+      });
+
+      // Also update stats
       const statsData = await api.getDiscoveryStats();
       setStats(statsData);
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Error",
-        description: "Failed to load discovery data. Please try again.",
+        description: `Failed to load recommendations: ${errorMessage}`,
         variant: "destructive"
       });
+      setRecommendations(prev => ({ ...prev, loading: false }));
     } finally {
-      setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
-  loadDiscoveryData();
-}, []);
+  useEffect(() => {
+    loadRecommendations();
+  }, [filterSettings]);
 
-  // Handle filter changes
-  const handleFilterChange = async (newSettings: FilterSettings) => {
-    setFilterSettings(newSettings);
-    try {
-      // Update user preferences
-      await api.updateDiscoveryPreferences(newSettings);
-
-      // Refresh data with new filters
-      const feed = await api.getDiscoveryFeed();
-      setDiscoveryData(feed);
-      setPremieres(feed.premieres);
-      setRisingChannels(feed.risingChannels);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update preferences. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // Handle premiere tracking
-  const handleTrackPremiere = async (premiereId: string) => {
-    try {
-      await api.trackPremiereEvent(premiereId, {
-        quality: 'best',
-        retention: 30,
-        notify: true
-      });
-
-      toast({
-        title: "Success",
-        description: "Premiere will be tracked and archived.",
-      });
-
-      // Refresh stats after tracking
-      const statsData = await api.getDiscoveryStats();
-      setStats(statsData);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to track premiere. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // Handle premiere ignore
-  const handleIgnorePremiere = async (premiereId: string) => {
-    try {
-      await api.ignorePremiereEvent(premiereId);
-
-      // Remove from local state
-      setPremieres(prev => prev.filter(p => p.id !== premiereId));
-
-      toast({
-        title: "Success",
-        description: "Premiere has been ignored.",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to ignore premiere. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // Handle channel tracking
   const handleTrackChannel = async (channelId: string) => {
     try {
-      const response = await api.createChannel({ id: channelId });
+      await api.trackChannel(channelId, {
+        quality: 'best',
+        notifications: true,
+        autoArchive: true
+      });
 
       toast({
         title: "Success",
-        description: "Channel will be tracked.",
+        description: "Channel will be tracked",
       });
 
-      // Refresh rising channels
-      const feed = await api.getDiscoveryFeed();
-      setRisingChannels(feed.risingChannels);
+      // Remove from recommendations
+      setRecommendations(prev => ({
+        ...prev,
+        channels: prev.channels.filter(c => c.id !== channelId)
+      }));
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Error",
-        description: "Failed to track channel. Please try again.",
+        description: `Failed to track channel: ${errorMessage}`,
         variant: "destructive"
       });
     }
+  };
+
+  const handleTrackGame = async (gameId: string) => {
+    try {
+      await api.trackGame(gameId, {
+        notifications: true,
+        autoArchive: true
+      });
+
+      toast({
+        title: "Success",
+        description: "Game will be tracked",
+      });
+
+      // Remove from recommendations
+      setRecommendations(prev => ({
+        ...prev,
+        games: prev.games.filter(g => g.id !== gameId)
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast({
+        title: "Error",
+        description: `Failed to track game: ${errorMessage}`,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const renderRecommendations = () => {
+    if (recommendations.loading) {
+      return (
+        <div className="flex justify-center items-center h-64">
+          <RefreshCw className="w-8 h-8 animate-spin text-purple-600" />
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {/* Channel Recommendations */}
+        <div className="space-y-4 mb-8">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold">Channel Recommendations</h2>
+            <span className="text-sm text-gray-500">
+              {recommendations.channels.length} channels found
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {recommendations.channels.map(channel => (
+              <RecommendationCard
+                key={`channel-${channel.id}`}
+                item={channel}
+                type="channel"
+                onAction={handleTrackChannel}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Game Recommendations */}
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold">Game Recommendations</h2>
+            <span className="text-sm text-gray-500">
+              {recommendations.games.length} games found
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {recommendations.games.map(game => (
+              <RecommendationCard
+                key={`game-${game.id}`}
+                item={game}
+                type="game"
+                onAction={handleTrackGame}
+              />
+            ))}
+          </div>
+        </div>
+      </>
+    );
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <DiscoveryHeader
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onSettingsClick={() => {/* TODO: Implement settings modal */}}
-        notificationCount={stats?.pendingArchives || 0}
+        notificationCount={stats?.pendingArchives ?? 0}
       />
 
-      {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-12 gap-6">
           {/* Sidebar */}
           <div className="col-span-3 space-y-6">
             <FilterPanel
               settings={filterSettings}
-              onChange={handleFilterChange}
+              onChange={setFilterSettings}
             />
             {stats && <StatsCard stats={stats} />}
           </div>
 
-          {/* Main Content Area */}
+          {/* Main Content */}
           <div className="col-span-9">
-            {loading ? (
-              <div className="flex items-center justify-center h-96">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600" />
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                {recommendations.lastUpdated && (
+                  <p className="text-sm text-gray-500">
+                    Last updated: {recommendations.lastUpdated.toLocaleString()}
+                  </p>
+                )}
               </div>
-            ) : (
-              <>
-                {activeTab === 'premieres' && (
-                  <div className="grid grid-cols-2 gap-6">
-                    {/* Channel Premieres */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold">Channel Premieres</h2>
-                        <span className="text-sm text-purple-600">
-                          {premieres.filter(p => p.type === 'CHANNEL_PREMIERE').length} New
-                        </span>
-                      </div>
-                      {premieres
-                        .filter(p => p.type === 'CHANNEL_PREMIERE')
-                        .map(premiere => (
-                          <PremiereCard
-                            key={premiere.id}
-                            premiere={premiere}
-                            onTrack={handleTrackPremiere}
-                            onIgnore={handleIgnorePremiere}
-                          />
-                        ))}
-                    </div>
+              <Button
+                variant="outline"
+                onClick={loadRecommendations}
+                disabled={isRefreshing}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
 
-                    {/* Rising Stars */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold">Rising Stars</h2>
-                        <span className="text-sm text-green-600">
-                          {risingChannels.length} Active
-                        </span>
-                      </div>
-                      {risingChannels.map(channel => (
-                        <RisingChannelCard
-                          key={channel.id}
-                          channel={channel}
-                          onTrack={handleTrackChannel}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+            {activeTab === 'discover' && renderRecommendations()}
 
-                {activeTab === 'discover' && discoveryData && (
-                  <div className="space-y-6">
-                    {/* Channel Recommendations */}
-                    <div className="grid grid-cols-2 gap-6">
-                      {discoveryData.recommendations.channels.map(channel => (
-                        <RecommendationCard
-                          key={channel.id}
-                          item={channel}
-                          type="channel"
-                          onAction={handleTrackChannel}
-                        />
-                      ))}
-                    </div>
+            {activeTab === 'premieres' && (
+              <div className="grid grid-cols-2 gap-6">
+                {discoveryData.premieres.map(premiere => (
+                  <PremiereCard
+                    key={`premiere-${premiere.id}`}
+                    premiere={premiere}
+                    onTrack={handleTrackChannel}
+                    onIgnore={async () => {/* TODO: Implement ignore */}}
+                  />
+                ))}
+              </div>
+            )}
 
-                    {/* Game Recommendations */}
-                    <div className="grid grid-cols-2 gap-6">
-                      {discoveryData.recommendations.games.map(game => (
-                        <RecommendationCard
-                          key={game.id}
-                          item={game}
-                          type="game"
-                          onAction={(id) => {/* TODO: Implement game tracking */}}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 'history' && (
-                  <div className="text-center py-12 text-gray-500">
-                    History view coming soon...
-                  </div>
-                )}
-              </>
+            {activeTab === 'history' && (
+              <div className="text-center py-12 text-gray-500">
+                History view coming soon...
+              </div>
             )}
           </div>
         </div>

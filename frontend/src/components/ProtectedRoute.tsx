@@ -1,3 +1,5 @@
+// frontend/src/components/ProtectedRoute.tsx
+
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,10 +9,7 @@ interface ProtectedRouteProps {
   requireTwitch?: boolean;
 }
 
-export default function ProtectedRoute({
-  children,
-  requireTwitch = true
-}: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, requireTwitch = true }: ProtectedRouteProps) {
   const { isAuthenticated, twitchAccount, isLoading } = useAuth();
   const location = useLocation();
 

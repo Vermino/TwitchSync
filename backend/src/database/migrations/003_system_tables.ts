@@ -1,4 +1,4 @@
-// backend/src/database/migrations/003_system_tables.ts
+// Filepath: backend/src/database/migrations/003_system_tables.ts
 
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
@@ -8,6 +8,42 @@ export async function up(pool: Pool): Promise<void> {
 
   try {
     await client.query('BEGIN');
+
+    // Create function for timestamp updates if it doesn't exist
+    await client.query(`
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        NEW.updated_at = CURRENT_TIMESTAMP;
+        RETURN NEW;
+      END;
+      $$ language 'plpgsql';
+    `);
+
+    // Create enums first with IF NOT EXISTS checks
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'job_status') THEN
+          CREATE TYPE job_status AS ENUM (
+            'pending',
+            'processing',
+            'completed',
+            'failed',
+            'cancelled'
+          );
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'job_priority') THEN
+          CREATE TYPE job_priority AS ENUM (
+            'low',
+            'normal',
+            'high',
+            'critical'
+          );
+        END IF;
+      END $$;
+    `);
 
     // Create global settings table
     await client.query(`
@@ -20,8 +56,8 @@ export async function up(pool: Pool): Promise<void> {
         is_encrypted BOOLEAN DEFAULT false,
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(category, key)
       );
 
@@ -71,8 +107,8 @@ export async function up(pool: Pool): Promise<void> {
           "chat_position": "right",
           "low_latency": true
         }'::jsonb,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT unique_user_preferences UNIQUE (user_id)
       );
     `);
@@ -95,10 +131,10 @@ export async function up(pool: Pool): Promise<void> {
         priority INTEGER DEFAULT 1,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         status VARCHAR(50) DEFAULT 'pending',
-        last_run TIMESTAMP,
-        next_run TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        last_run TIMESTAMP WITH TIME ZONE,
+        next_run TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX idx_tasks_user ON tasks(user_id);
@@ -109,11 +145,11 @@ export async function up(pool: Pool): Promise<void> {
         id SERIAL PRIMARY KEY,
         task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
         status VARCHAR(50) NOT NULL,
-        start_time TIMESTAMP NOT NULL,
-        end_time TIMESTAMP,
+        start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+        end_time TIMESTAMP WITH TIME ZONE,
         error_message TEXT,
         details JSONB,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX idx_task_history_task ON task_history(task_id);
@@ -130,15 +166,15 @@ export async function up(pool: Pool): Promise<void> {
         rules JSONB DEFAULT '{}',
         percentage INTEGER DEFAULT 100,
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE TABLE user_feature_flags (
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         feature_id INTEGER REFERENCES feature_flags(id) ON DELETE CASCADE,
         enabled BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (user_id, feature_id)
       );
     `);
@@ -151,8 +187,8 @@ export async function up(pool: Pool): Promise<void> {
         metric VARCHAR(100) NOT NULL,
         value NUMERIC NOT NULL,
         dimensions JSONB DEFAULT '{}',
-        measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        measured_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX idx_stats_category ON system_stats(category);
@@ -166,8 +202,8 @@ export async function up(pool: Pool): Promise<void> {
         id SERIAL PRIMARY KEY,
         key VARCHAR(200) NOT NULL,
         tokens INTEGER NOT NULL,
-        last_refill TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_refill TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(key)
       );
 
@@ -188,7 +224,7 @@ export async function up(pool: Pool): Promise<void> {
         metadata JSONB DEFAULT '{}',
         ip_address VARCHAR(45),
         user_agent TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);
@@ -199,14 +235,6 @@ export async function up(pool: Pool): Promise<void> {
 
     // Background jobs table
     await client.query(`
-      CREATE TYPE job_status AS ENUM (
-        'pending', 'processing', 'completed', 'failed', 'cancelled'
-      );
-
-      CREATE TYPE job_priority AS ENUM (
-        'low', 'normal', 'high', 'critical'
-      );
-
       CREATE TABLE background_jobs (
         id SERIAL PRIMARY KEY,
         job_type VARCHAR(100) NOT NULL,
@@ -217,12 +245,12 @@ export async function up(pool: Pool): Promise<void> {
         error_message TEXT,
         retries INTEGER DEFAULT 0,
         max_retries INTEGER DEFAULT 3,
-        scheduled_for TIMESTAMP,
-        started_at TIMESTAMP,
-        completed_at TIMESTAMP,
+        scheduled_for TIMESTAMP WITH TIME ZONE,
+        started_at TIMESTAMP WITH TIME ZONE,
+        completed_at TIMESTAMP WITH TIME ZONE,
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX idx_jobs_status ON background_jobs(status);
@@ -232,7 +260,7 @@ export async function up(pool: Pool): Promise<void> {
         WHERE status = 'pending';
     `);
 
-    // Add triggers for all tables
+    // Add triggers for timestamp updates
     await client.query(`
       CREATE TRIGGER update_system_settings_updated_at
         BEFORE UPDATE ON system_settings
@@ -310,26 +338,38 @@ export async function down(pool: Pool): Promise<void> {
   try {
     await client.query('BEGIN');
 
+    // Drop triggers first
     await client.query(`
       DROP TRIGGER IF EXISTS update_background_jobs_updated_at ON background_jobs;
       DROP TRIGGER IF EXISTS update_feature_flags_updated_at ON feature_flags;
       DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
       DROP TRIGGER IF EXISTS update_user_preferences_updated_at ON user_preferences;
       DROP TRIGGER IF EXISTS update_system_settings_updated_at ON system_settings;
+    `);
 
-      DROP TABLE IF EXISTS audit_logs;
-      DROP TABLE IF EXISTS rate_limits;
-      DROP TABLE IF EXISTS system_stats;
-      DROP TABLE IF EXISTS user_feature_flags;
-      DROP TABLE IF EXISTS feature_flags;
-      DROP TABLE IF EXISTS task_history;
-      DROP TABLE IF EXISTS tasks;
-      DROP TABLE IF EXISTS background_jobs;
-      DROP TABLE IF EXISTS user_preferences;
-      DROP TABLE IF EXISTS system_settings;
+    // Drop tables in correct order
+    await client.query(`
+      DROP TABLE IF EXISTS audit_logs CASCADE;
+      DROP TABLE IF EXISTS rate_limits CASCADE;
+      DROP TABLE IF EXISTS system_stats CASCADE;
+      DROP TABLE IF EXISTS user_feature_flags CASCADE;
+      DROP TABLE IF EXISTS feature_flags CASCADE;
+      DROP TABLE IF EXISTS task_history CASCADE;
+      DROP TABLE IF EXISTS tasks CASCADE;
+      DROP TABLE IF EXISTS background_jobs CASCADE;
+      DROP TABLE IF EXISTS user_preferences CASCADE;
+      DROP TABLE IF EXISTS system_settings CASCADE;
+    `);
 
-      DROP TYPE IF EXISTS job_status;
-      DROP TYPE IF EXISTS job_priority;
+    // Drop enums last
+    await client.query(`
+      DROP TYPE IF EXISTS job_status CASCADE;
+      DROP TYPE IF EXISTS job_priority CASCADE;
+    `);
+
+    // Drop the update timestamp function
+    await client.query(`
+      DROP FUNCTION IF EXISTS update_updated_at_column CASCADE;
     `);
 
     await client.query('COMMIT');

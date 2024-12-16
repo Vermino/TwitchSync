@@ -5,18 +5,21 @@ import { Users, Gamepad2, TrendingUp, BarChart2, Star } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type {ChannelRecommendation, GameRecommendation, RecommendationCardProps} from '../../types/discovery';
+import type {
+  RecommendationCardProps,
+  ChannelRecommendation,
+  GameRecommendation
+} from '@/types/discovery';
 
-const RecommendationCard = ({ item, type, onAction }: RecommendationCardProps) => {
+const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onAction }) => {
   const renderReasons = () => (
     <div className="space-y-2 mb-3">
       {item.reasons.map((reason, index) => (
-        <div key={index} className="flex items-center gap-2">
+        <div key={`${reason.type}-${index}`} className="flex items-center gap-2">
           <Progress value={reason.strength * 100} className="h-2" />
           <span className="text-sm text-gray-600 min-w-[100px]">
             {reason.type.split('_').map(word =>
-              word.charAt(0) + word.slice(1).toLowerCase()
+              word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
             ).join(' ')}
           </span>
         </div>
@@ -25,7 +28,9 @@ const RecommendationCard = ({ item, type, onAction }: RecommendationCardProps) =
   );
 
   if (type === 'channel') {
-    const channel = (item as ChannelRecommendation).channel;
+    const channelRec = item as ChannelRecommendation;
+    const { channel } = channelRec;
+
     return (
       <Card>
         <CardContent className="p-4">
@@ -42,7 +47,7 @@ const RecommendationCard = ({ item, type, onAction }: RecommendationCardProps) =
               </div>
             </div>
             <div className="ml-auto text-right">
-              <div className="text-sm font-medium">{(item.score * 100).toFixed(0)}%</div>
+              <div className="text-sm font-medium">{(channelRec.score * 100).toFixed(0)}%</div>
               <div className="text-xs text-gray-600">Match</div>
             </div>
           </div>
@@ -65,7 +70,7 @@ const RecommendationCard = ({ item, type, onAction }: RecommendationCardProps) =
           </div>
 
           <button
-            onClick={() => onAction(item.id, 'channel')}
+            onClick={() => onAction(channelRec.id, 'channel')}
             className="w-full px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
           >
             Follow Channel
@@ -75,7 +80,9 @@ const RecommendationCard = ({ item, type, onAction }: RecommendationCardProps) =
     );
   }
 
-  const game = (item as GameRecommendation).game;
+  const gameRec = item as GameRecommendation;
+  const { game } = gameRec;
+
   return (
     <Card>
       <CardContent className="p-4">
@@ -92,7 +99,7 @@ const RecommendationCard = ({ item, type, onAction }: RecommendationCardProps) =
             </div>
           </div>
           <div className="ml-auto text-right">
-            <div className="text-sm font-medium">{(item.score * 100).toFixed(0)}%</div>
+            <div className="text-sm font-medium">{(gameRec.score * 100).toFixed(0)}%</div>
             <div className="text-xs text-gray-600">Match</div>
           </div>
         </div>
@@ -102,20 +109,20 @@ const RecommendationCard = ({ item, type, onAction }: RecommendationCardProps) =
         <div className="grid grid-cols-3 gap-2 mb-3 text-sm text-gray-600">
           <div className="flex items-center gap-1">
             <Users size={16} />
-            <span>{item.metrics.activeChannels.toLocaleString()}</span>
+            <span>{gameRec.metrics.activeChannels.toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-1">
             <BarChart2 size={16} />
-            <span>{item.metrics.averageViewers.toLocaleString()}/stream</span>
+            <span>{gameRec.metrics.averageViewers.toLocaleString()}/stream</span>
           </div>
           <div className="flex items-center gap-1">
             <TrendingUp size={16} />
-            <span>{item.metrics.totalViewers.toLocaleString()}</span>
+            <span>{gameRec.metrics.totalViewers.toLocaleString()}</span>
           </div>
         </div>
 
         <button
-          onClick={() => onAction(item.id, 'game')}
+          onClick={() => onAction(gameRec.id, 'game')}
           className="w-full px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
         >
           Track Game

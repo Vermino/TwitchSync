@@ -5,8 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { AuthProvider } from './contexts/AuthContext';
+
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import CallbackHandler from './components/CallbackHandler';
+
 import Login from './pages/Login';
 import ConnectTwitch from './pages/ConnectTwitch';
 import Dashboard from './pages/Dashboard';
@@ -15,8 +18,8 @@ import Games from './pages/Games';
 import ContentDiscovery from './pages/ContentDiscovery';
 import Settings from './pages/Settings';
 import TaskManager from './pages/TaskManager';
-import CallbackHandler from './components/CallbackHandler';
 
+// Configure React Query client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -37,12 +40,20 @@ function App() {
         <Router>
           <AuthProvider>
             <Routes>
+              {/* Public routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/connect-twitch" element={<ConnectTwitch />} />
               <Route path="/auth/callback" element={<CallbackHandler />} />
 
               {/* Protected routes */}
-              <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Layout />
+                  </ProtectedRoute>
+                }
+              >
                 <Route index element={<Dashboard />} />
                 <Route path="channels" element={<Channels />} />
                 <Route path="games" element={<Games />} />

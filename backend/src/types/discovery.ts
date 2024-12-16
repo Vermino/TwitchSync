@@ -1,5 +1,21 @@
 // backend/src/types/discovery.ts
 
+export interface TwitchStream {
+  id: string;
+  user_id: string;
+  user_login: string;
+  user_name: string;
+  game_id: string;
+  game_name: string;
+  type: string;
+  title: string;
+  viewer_count: number;
+  started_at: string;
+  language: string;
+  thumbnail_url: string;
+  tags: string[];
+}
+
 export interface PremiereEvent {
   id: string;
   type: 'CHANNEL_PREMIERE' | 'GAME_PREMIERE' | 'RISING_STAR';
@@ -61,13 +77,6 @@ export interface DiscoveryRecommendation {
     thumbnail: string;
     metrics: Record<string, number>;
   };
-}
-
-export interface DiscoveryStats {
-  upcoming_premieres: number;
-  tracked_premieres: number;
-  rising_channels: number;
-  pending_archives: number;
 }
 
 export interface ChannelCompatibility {
@@ -140,4 +149,73 @@ export interface RecommendationsResponse {
       active_channels: number;
     };
   }>;
+}
+
+// Filepath: backend/src/types/discovery.ts
+
+export interface StreamFilters {
+  limit?: number;
+  languages?: string[];
+  gameId?: string;
+}
+
+export interface BaseRecommendation {
+  id: string;
+  type: 'channel' | 'game';
+  compatibility_score: number;
+}
+
+export interface ChannelRecommendation extends BaseRecommendation {
+  type: 'channel';
+  display_name: string;
+  login: string;
+  profile_image_url: string | null;
+  description: string | null;
+  viewer_count: number;
+}
+
+export interface GameRecommendation extends BaseRecommendation {
+  type: 'game';
+  game_id: string;  // Required field for game recommendations
+  name: string;
+  box_art_url: string;
+}
+
+export interface StreamFilters {
+  languages?: string[];
+  limit?: number;
+  gameId?: string;
+}
+
+export interface UserPreferences {
+  preferred_languages: string[];
+  min_viewers: number;
+  max_viewers: number;
+  preferred_categories: string[];
+  schedule_preference: string;
+}
+
+export interface FilterSettings {
+  minViewers: number;
+  maxViewers: number;
+  preferredLanguages: string[];
+  contentRating: 'all' | 'mature' | 'family';
+  notifyOnly: boolean;
+  scheduleMatch: boolean;
+  confidenceThreshold: number;
+}
+
+export interface DiscoveryStats {
+  upcomingPremieres: number;
+  trackedPremieres: number;
+  risingChannels: number;
+  pendingArchives: number;
+  todayDiscovered: number;
+}
+
+export interface Recommendation {
+  id: string;
+  type: 'channel' | 'game';
+  compatibility_score: number;
+  [key: string]: any;  // Allow additional properties based on type
 }

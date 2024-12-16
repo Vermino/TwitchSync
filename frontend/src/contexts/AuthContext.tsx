@@ -1,5 +1,9 @@
+// Filepath: frontend/src/contexts/AuthContext.tsx
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../lib/api';
+import { logger } from '../utils/logger';
 
 interface User {
   id: number;
@@ -17,6 +21,7 @@ interface AuthState {
   user: User | null;
   twitchAccount: TwitchAccount | null;
   isLoading: boolean;
+  error: string | null;
 }
 
 interface AuthContextType extends AuthState {
@@ -24,9 +29,13 @@ interface AuthContextType extends AuthState {
   logout: () => Promise<void>;
   connectTwitch: () => void;
   disconnectTwitch: () => Promise<void>;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_DELAY = 1000; // 1 second
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
@@ -35,9 +44,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user: null,
     twitchAccount: null,
     isLoading: true,
+    error: null,
   });
 
-  // Check authentication status on mount
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('auth_token');
@@ -47,60 +56,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const response = await fetch('http://localhost:3001/auth/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+        const data = await api.checkAuth();
+        setAuthState({
+          isAuthenticated: true,
+          user: data.user,
+          twitchAccount: data.user.twitch_account,
+          isLoading: false,
+          error: null,
         });
-
-        if (response.ok) {
-          const data = await response.json();
-          setAuthState({
-            isAuthenticated: true,
-            user: data.user,
-            twitchAccount: data.user.twitch_account,
-            isLoading: false,
-          });
-        } else {
-          localStorage.removeItem('auth_token');
-          setAuthState({
-            isAuthenticated: false,
-            user: null,
-            twitchAccount: null,
-            isLoading: false,
-          });
-          navigate('/login');
-        }
       } catch (error) {
-        console.error('Auth check failed:', error);
-        setAuthState(prev => ({ ...prev, isLoading: false }));
+        logger.error('Auth check failed:', error);
+        localStorage.removeItem('auth_token');
+        setAuthState({
+          isAuthenticated: false,
+          user: null,
+          twitchAccount: null,
+          isLoading: false,
+          error: 'Session expired. Please log in again.',
+        });
+        navigate('/login');
       }
     };
 
     checkAuth();
   }, [navigate]);
 
+  const clearError = () => {
+    setAuthState(prev => ({ ...prev, error: null }));
+  };
+
+  const retryWithDelay = async (fn: () => Promise<any>, attempt: number = 1): Promise<any> => {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt < MAX_RETRY_ATTEMPTS && error.code === 'ERR_NETWORK') {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
+        return retryWithDelay(fn, attempt + 1);
+      }
+      throw error;
+    }
+  };
+
   const login = async (code: string) => {
     try {
-      console.log('Attempting login with code:', code.substring(0, 6) + '...');
+      logger.info('Attempting login with code:', code.substring(0, 6) + '...');
 
-      const response = await fetch('http://localhost:3001/auth/twitch/callback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ code }),
-      });
+      const loginAttempt = async () => {
+        const response = await fetch('http://localhost:3001/auth/twitch/callback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ code }),
+        });
 
-      const data = await response.json();
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Authentication failed');
+        }
 
-      if (!response.ok) {
-        console.error('Login failed with status:', response.status);
-        console.error('Error details:', data);
-        throw new Error(data.error || 'Login failed');
-      }
+        return await response.json();
+      };
 
-      console.log('Login successful, setting token and state');
+      const data = await retryWithDelay(loginAttempt);
       localStorage.setItem('auth_token', data.token);
 
       setAuthState({
@@ -108,28 +126,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user: data.user,
         twitchAccount: data.user.twitch_account || null,
         isLoading: false,
+        error: null,
       });
 
       navigate('/');
     } catch (error) {
-      console.error('Login error:', error);
+      logger.error('Login error:', error);
+      const errorMessage = error instanceof Error
+        ? (error.message === 'Network Error'
+            ? 'Unable to connect to authentication server. Please check your connection and try again.'
+            : error.message)
+        : 'Failed to connect to authentication server';
+
+      setAuthState(prev => ({
+        ...prev,
+        error: errorMessage,
+        isLoading: false,
+      }));
       throw error;
     }
   };
 
   const logout = async () => {
     try {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        await fetch('http://localhost:3001/auth/logout', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-      }
+      await api.logout();
     } catch (error) {
-      console.error('Logout error:', error);
+      logger.error('Logout error:', error);
     } finally {
       localStorage.removeItem('auth_token');
       setAuthState({
@@ -137,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user: null,
         twitchAccount: null,
         isLoading: false,
+        error: null,
       });
       navigate('/login');
     }
@@ -147,29 +170,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const redirectUri = import.meta.env.VITE_TWITCH_REDIRECT_URI;
     const scope = 'user:read:email user:read:follows';
 
-    window.location.href = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
+    const authUrl = `https://id.twitch.tv/oauth2/authorize?` +
+      `client_id=${clientId}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `response_type=code&` +
+      `scope=${encodeURIComponent(scope)}&` +
+      `force_verify=true`;
+
+    window.location.href = authUrl;
   };
 
   const disconnectTwitch = async () => {
     try {
-      const token = localStorage.getItem('auth_token');
-      if (!token) return;
-
-      const response = await fetch('http://localhost:3001/auth/twitch/revoke', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        setAuthState(prev => ({
-          ...prev,
-          twitchAccount: null
-        }));
-      }
+      await api.revokeTwitchAccess();
+      setAuthState(prev => ({
+        ...prev,
+        twitchAccount: null,
+      }));
     } catch (error) {
-      console.error('Failed to disconnect Twitch:', error);
+      logger.error('Failed to disconnect Twitch:', error);
       throw error;
     }
   };
@@ -182,6 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         connectTwitch,
         disconnectTwitch,
+        clearError,
       }}
     >
       {children}

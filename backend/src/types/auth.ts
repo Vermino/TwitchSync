@@ -1,27 +1,27 @@
+// Filepath: backend/src/types/auth.ts
+
+import { Request } from 'express';
+
 export interface User {
   id: number;
-  email: string | null;
+  email: string;
   username: string;
-  password_hash: string | null;
+  password_hash?: string;
+  twitch_id?: string;
   is_active: boolean;
-  last_login: Date | null;
+  role: 'admin' | 'moderator' | 'user' | 'guest';
+  status: 'active' | 'suspended' | 'banned' | 'pending';
   created_at: Date;
   updated_at: Date;
+  deleted_at?: Date | null;
+  twitch_account?: TwitchAccount;
 }
 
 export interface TwitchAccount {
-  id: number;
-  user_id: number;
-  twitch_id: string;
   username: string;
-  email: string | null;
-  profile_image_url: string | null;
-  access_token: string;
-  refresh_token: string;
-  token_expires_at: Date;
-  scope: string[];
-  created_at: Date;
-  updated_at: Date;
+  display_name?: string;
+  profile_image_url?: string | null;
+  email?: string;
 }
 
 export interface Session {
@@ -61,4 +61,17 @@ export interface TwitchUserResponse {
   profile_image_url: string;
   type: string;
   broadcaster_type: string;
+}
+
+// Extended Request interface with user
+export interface RequestWithUser extends Request {
+  user?: User;
+}
+
+// JWT Payload interface
+export interface JwtPayload {
+  id: number;
+  twitch_id?: string;
+  iat?: number;
+  exp?: number;
 }

@@ -1,5 +1,6 @@
-// backend/src/types/database.ts
+// Filepath: backend/src/types/database.ts
 
+// Channel related types
 export interface Channel {
   id: number;
   twitch_id: string;
@@ -35,7 +36,7 @@ export interface UpdateChannelRequest {
   current_game_id?: string;
 }
 
-
+// Game related types
 export interface Game {
   id: number;
   twitch_game_id: string;
@@ -47,6 +48,12 @@ export interface Game {
   updated_at: Date;
 }
 
+// VOD related types
+export type VodContentType = 'stream' | 'highlight' | 'upload' | 'clip' | 'premiere';
+export type VodStatus = 'pending' | 'queued' | 'downloading' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'archived' | 'deleted';
+export type VideoQuality = 'source' | '1080p60' | '1080p' | '720p60' | '720p' | '480p' | '360p' | '160p';
+export type DownloadPriority = 'low' | 'normal' | 'high' | 'critical';
+
 export interface VOD {
   id: number;
   twitch_id: string;
@@ -56,8 +63,8 @@ export interface VOD {
   title: string;
   description: string | null;
   duration: string;
-  content_type: 'stream' | 'highlight' | 'upload' | 'clip' | 'premiere';
-  status: 'pending' | 'queued' | 'downloading' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'archived' | 'deleted';
+  content_type: VodContentType;
+  status: VodStatus;
   view_count: number;
   thumbnail_url: string | null;
   playlist_url: string | null;
@@ -74,15 +81,15 @@ export interface VOD {
 
   // Download management fields
   download_path: string | null;
-  download_status: 'pending' | 'queued' | 'downloading' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'archived' | 'deleted';
-  download_priority: 'low' | 'normal' | 'high' | 'critical';
+  download_status: VodStatus;
+  download_priority: DownloadPriority;
   download_progress: number;
   download_speed: number | null;
   downloaded_size: number | null;
   estimated_size: number | null;
   file_size: number | null;
   file_format: string | null;
-  preferred_quality: 'source' | '1080p60' | '1080p' | '720p60' | '720p' | '480p' | '360p' | '160p';
+  preferred_quality: VideoQuality;
   download_chat: boolean;
   download_markers: boolean;
   retry_count: number;
@@ -143,8 +150,8 @@ export interface VODSegment {
   duration: string;
   file_path: string | null;
   file_size: number | null;
-  video_quality: 'source' | '1080p60' | '1080p' | '720p60' | '720p' | '480p' | '360p' | '160p';
-  download_status: 'pending' | 'queued' | 'downloading' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'archived' | 'deleted';
+  video_quality: VideoQuality;
+  download_status: VodStatus;
   download_progress: number;
   download_speed: number | null;
   retry_count: number;
@@ -189,21 +196,26 @@ export interface ChatMessage {
   created_at: Date;
 }
 
+// Task related types
+export type TaskType = 'channel' | 'game' | 'combined';
+export type TaskScheduleType = 'interval' | 'cron' | 'manual';
+export type TaskStatus = 'pending' | 'active' | 'completed' | 'failed';
+
 export interface Task {
   id: number;
   user_id: number;
   name: string;
   description: string | null;
-  task_type: 'channel' | 'game' | 'combined';
+  task_type: TaskType;
   channel_ids: number[];
   game_ids: number[];
-  schedule_type: 'interval' | 'cron' | 'manual';
+  schedule_type: TaskScheduleType;
   schedule_value: string;
   storage_limit_gb: number | null;
   retention_days: number | null;
   auto_delete: boolean;
   is_active: boolean;
-  status: 'pending' | 'active' | 'completed' | 'failed';
+  status: TaskStatus;
   priority: number;
   last_run: Date | null;
   next_run: Date | null;
@@ -227,10 +239,10 @@ export interface UserVODPreferences {
   user_id: number;
   channel_id: number;
   auto_download: boolean;
-  preferred_quality: 'source' | '1080p60' | '1080p' | '720p60' | '720p' | '480p' | '360p' | '160p';
+  preferred_quality: VideoQuality;
   download_chat: boolean;
   download_markers: boolean;
-  download_priority: 'low' | 'normal' | 'high' | 'critical';
+  download_priority: DownloadPriority;
   retention_days: number | null;
   storage_path: string | null;
   notification_settings: {
@@ -243,16 +255,96 @@ export interface UserVODPreferences {
   updated_at: Date;
 }
 
+// Discovery and Preference types
+export interface UserPreferences {
+  id: number;
+  user_id: number;
+  preferred_languages: string[];
+  min_viewers: number;
+  max_viewers: number;
+  preferred_categories: string[];
+  schedule_preference: string;
+  content_rating: string;
+  notify_only: boolean;
+  schedule_match: boolean;
+  confidence_threshold: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ChannelGameHistory {
+  id: number;
+  channel_id: number;
+  game_id: string;
+  start_time: Date;
+  end_time: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface UserGamePreferences {
+  id: number;
+  user_id: number;
+  game_id: string;
+  interest_level: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface UserChannelPreferences {
+  id: number;
+  user_id: number;
+  channel_id: number;
+  notify_live: boolean;
+  auto_record: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ChannelMetrics {
+  id: number;
+  channel_id: number;
+  viewer_count: number;
+  follower_count: number;
+  avg_viewers: number;
+  peak_viewers: number;
+  recorded_at: Date;
+  created_at: Date;
+}
+
+// System Settings
+export interface SystemSettings {
+  id: number;
+  user_id: number;
+  settings: {
+    downloads: {
+      downloadPath: string;
+      tempStorageLocation: string;
+      concurrentDownloadLimit: number;
+      bandwidthThrottle: number;
+    };
+    storage: {
+      diskSpaceAlertThreshold: number;
+      enableAutoCleanup: boolean;
+      cleanupThresholdGB: number;
+      minAgeForCleanupDays: number;
+      keepMetadataOnCleanup: boolean;
+    };
+  };
+  created_at: Date;
+  updated_at: Date;
+}
+
 // Request DTOs
 export type CreateTaskDTO = Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_run' | 'next_run'>;
 
 export interface CreateTaskRequest {
   name: string;
   description?: string;
-  task_type: 'channel' | 'game' | 'combined';
+  task_type: TaskType;
   channel_ids?: number[];
   game_ids?: number[];
-  schedule_type: 'interval' | 'cron' | 'manual';
+  schedule_type: TaskScheduleType;
   schedule_value: string;
   storage_limit_gb?: number;
   retention_days?: number;
@@ -265,11 +357,92 @@ export interface UpdateTaskRequest {
   description?: string;
   channel_ids?: number[];
   game_ids?: number[];
-  schedule_type?: 'interval' | 'cron' | 'manual';
+  schedule_type?: TaskScheduleType;
   schedule_value?: string;
   storage_limit_gb?: number;
   retention_days?: number;
   auto_delete?: boolean;
   is_active?: boolean;
   priority?: number;
+}
+
+// Discovery types
+export interface PremiereEvent {
+  id: string;
+  type: 'CHANNEL_PREMIERE' | 'RISING_STAR' | 'SPECIAL_EVENT';
+  channel_id: string;
+  game_id: string;
+  start_time: string;
+  predicted_viewers: number;
+  confidence_score: number;
+  similar_channels: string[];
+  viewer_trend: 'rising' | 'stable' | 'falling';
+  metadata: Record<string, any>;
+}
+
+export interface ViewerTrend {
+  channel_id: string;
+  current_viewers: number;
+  peak_viewers: number;
+  growth_rate: number;
+  trend: 'rising' | 'stable' | 'falling';
+  measured_at: string;
+}
+
+export interface StreamFilters {
+  languages?: string[];
+  limit?: number;
+  gameId?: string;
+}
+
+export interface DiscoveryStats {
+  upcomingPremieres: number;
+  trackedPremieres: number;
+  risingChannels: number;
+  pendingArchives: number;
+  todayDiscovered: number;
+}
+
+export interface BaseRecommendation {
+  type: 'channel' | 'game';
+  id: string;
+  compatibility_score: number;
+}
+
+export interface ChannelRecommendation extends BaseRecommendation {
+  type: 'channel';
+  display_name: string;
+  login: string;
+  profile_image_url: string | null;
+  description: string | null;
+  viewer_count: number;
+  recommendation_reasons?: Array<{
+    type: string;
+    strength: number;
+  }>;
+}
+
+export interface GameRecommendation extends BaseRecommendation {
+  type: 'game';
+  game_id: string;
+  name: string;
+  box_art_url: string;
+}
+
+export type Recommendation = ChannelRecommendation | GameRecommendation;
+
+export interface TwitchStream {
+  id: string;
+  user_id: string;
+  user_login: string;
+  user_name: string;
+  game_id: string;
+  game_name: string;
+  type: string;
+  title: string;
+  viewer_count: number;
+  started_at: string;
+  language: string;
+  thumbnail_url: string;
+  tags: string[];
 }

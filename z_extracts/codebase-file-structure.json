@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-15T21:12:52.518846",
+  "updated_at": "2024-12-16T13:58:04.498761",
   "tree": {
     "backend": {
       "_files": [
@@ -10,6 +10,7 @@
         "_files": [
           "migrate.ts",
           "reset-db.sql",
+          "seed-discovery.ts",
           "setup.ts"
         ]
       },
@@ -27,6 +28,8 @@
             "003_system_tables.ts",
             "004_vod_tables.ts",
             "005_discovery_tables.ts",
+            "006_missing_tables.ts",
+            "007_discovery_preferences_tables.ts",
             "runner.ts"
           ]
         },
@@ -64,7 +67,6 @@
           },
           "monitoring": {
             "_files": [
-              "channels.ts",
               "games.ts",
               "index.ts"
             ]
@@ -97,6 +99,7 @@
         },
         "utils": {
           "_files": [
+            "disk.ts",
             "error.ts",
             "logger.ts",
             "twitch-auth.ts"
@@ -190,7 +193,6 @@
             "Channels.tsx",
             "ConnectTwitch.tsx",
             "ContentDiscovery.tsx",
-            "ContentDiscoverySystem.tsx",
             "Dashboard.tsx",
             "Games.tsx",
             "Login.tsx",
@@ -200,9 +202,21 @@
           ]
         },
         "services": {
-          "auth/_files": [
-            "twitch.ts"
-          ]
+          "auth": {
+            "_files": [
+              "twitch.ts"
+            ]
+          },
+          "discovery": {
+            "_files": [
+              "index.ts"
+            ]
+          },
+          "twitch": {
+            "_files": [
+              "api.ts"
+            ]
+          }
         },
         "types": {
           "_files": [
@@ -213,6 +227,11 @@
             "models.ts",
             "settings.ts",
             "task.ts"
+          ]
+        },
+        "utils": {
+          "_files": [
+            "logger.ts"
           ]
         }
       }

@@ -2,7 +2,8 @@
 
 import axios from 'axios';
 import type { Channel, Game, Task } from '../types';
-import {
+import type { SystemSettings, StorageStats } from '../types/settings';
+import type {
   ChannelRecommendation,
   DiscoveryFeedResponse,
   DiscoveryPreferences,
@@ -15,9 +16,28 @@ import {
   UpdatePreferencesResponse
 } from '../types/discovery';
 
+
+interface DashboardStats {
+  channels: {
+    total: number;
+    active: number;
+  };
+  games: {
+    total: number;
+    active: number;
+  };
+  tasks: {
+    active: number;
+    pending: number;
+    completed: number;
+    failed: number;
+  };
+}
+
 class ApiClient {
   private static instance: ApiClient;
   private baseURL = 'http://localhost:3001/api';
+  private authURL = 'http://localhost:3001/auth';
 
   private constructor() {
     // Add request interceptor for auth token
@@ -54,6 +74,118 @@ class ApiClient {
     }
     return ApiClient.instance;
   }
+
+    // Add Authentication Methods
+  async twitchCallback(code: string) {
+    try {
+      const response = await axios.post(
+        `${this.authURL}/twitch/callback`,
+        { code },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error during Twitch callback:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async checkAuth() {
+    try {
+      const response = await axios.get(`${this.authURL}/me`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async logout() {
+    try {
+      const response = await axios.post(
+        `${this.authURL}/logout`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error during logout:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async revokeTwitchAccess() {
+    try {
+      const response = await axios.post(
+        `${this.authURL}/twitch/revoke`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error revoking Twitch access:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Dashboard Methods
+  async getDashboardStats(): Promise<DashboardStats> {
+    try {
+      const response = await axios.get(`${this.baseURL}/dashboard/stats`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Settings Methods
+  async getSystemSettings(): Promise<SystemSettings> {
+    try {
+      const response = await axios.get(`${this.baseURL}/settings/system`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching system settings:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async updateSystemSettings(settings: Partial<SystemSettings>): Promise<SystemSettings> {
+    try {
+      const response = await axios.put(
+        `${this.baseURL}/settings/system`,
+        settings,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error updating system settings:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getStorageStats(): Promise<StorageStats> {
+    try {
+      const response = await axios.get(`${this.baseURL}/system/storage`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching storage stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
 
   // Twitch Search Methods
   async searchTwitchChannels(query: string) {
@@ -317,6 +449,39 @@ class ApiClient {
       return response.data;
     } catch (error) {
       console.error('Error fetching game recommendations:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async trackChannel(channelId: string, options: {
+    quality?: 'best' | 'high' | 'medium' | 'low';
+    notifications?: boolean;
+    autoArchive?: boolean;
+  } = {}): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/channels/track/${channelId}`,
+        options,
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error tracking channel:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async trackGame(gameId: string, options: {
+    notifications?: boolean;
+    autoArchive?: boolean;
+  } = {}): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/games/track/${gameId}`,
+        options,
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error tracking game:', error);
       throw this.handleError(error);
     }
   }

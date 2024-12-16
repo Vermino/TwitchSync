@@ -1,7 +1,15 @@
-// backend/src/services/twitch/api.ts
+// Filepath: backend/src/services/twitch/api.ts
 
 import axios, { AxiosResponse } from 'axios';
 import { logger } from '../../utils/logger';
+import { StreamFilters } from '../../types/discovery';
+
+interface TwitchAPIResponse<T> {
+  data: T[];
+  pagination?: {
+    cursor?: string;
+  };
+}
 
 interface TwitchChannel {
   id: string;
@@ -12,119 +20,119 @@ interface TwitchChannel {
   description: string;
   view_count: number;
   broadcaster_type: string;
+  follower_count?: number;
 }
 
-interface TwitchResponse<T> {
-  data: T[];
-  pagination?: {
-    cursor?: string;
-  };
+interface TwitchGame {
+  genres: any;
+  id: string;
+  name: string;
+  box_art_url: string;
+  igdb_id?: string;
 }
 
-export class TwitchAPI {
+export class TwitchAPIService {
+  private static instance: TwitchAPIService;
   private clientId: string;
   private clientSecret: string;
-  private credentials: {
-    accessToken: string;
-    expiresIn: number;
-    obtainedAt: number;
-  } | null = null;
-  private static instance: TwitchAPI;
+  private accessToken: string | null = null;
+  private tokenExpiration: number = 0;
 
   private constructor() {
     this.clientId = process.env.TWITCH_CLIENT_ID || '';
     this.clientSecret = process.env.TWITCH_CLIENT_SECRET || '';
 
     if (!this.clientId || !this.clientSecret) {
-      throw new Error('Twitch credentials not properly configured');
+      throw new Error('Twitch API credentials not configured');
     }
   }
 
-  public static getInstance(): TwitchAPI {
-    if (!TwitchAPI.instance) {
-      TwitchAPI.instance = new TwitchAPI();
+  public static getInstance(): TwitchAPIService {
+    if (!TwitchAPIService.instance) {
+      TwitchAPIService.instance = new TwitchAPIService();
     }
-    return TwitchAPI.instance;
+    return TwitchAPIService.instance;
   }
 
-  private async getAccessToken(): Promise<string> {
+  private async refreshAccessToken(): Promise<string> {
     try {
-      if (
-        this.credentials &&
-        Date.now() - this.credentials.obtainedAt < (this.credentials.expiresIn - 300) * 1000
-      ) {
-        return this.credentials.accessToken;
+      const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+        params: {
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          grant_type: 'client_credentials'
+        }
+      });
+
+      this.accessToken = response.data.access_token;
+      this.tokenExpiration = Date.now() + (response.data.expires_in * 1000) - 300000; // 5 minutes buffer
+
+      if (!this.accessToken) {
+        throw new Error('Failed to obtain access token from Twitch');
       }
 
-      const response = await axios.post<{ access_token: string; expires_in: number }>(
-        `https://id.twitch.tv/oauth2/token` +
-        `?client_id=${this.clientId}` +
-        `&client_secret=${this.clientSecret}` +
-        `&grant_type=client_credentials`
-      );
-
-      this.credentials = {
-        accessToken: response.data.access_token,
-        expiresIn: response.data.expires_in,
-        obtainedAt: Date.now(),
-      };
-
-      return this.credentials.accessToken;
+      return this.accessToken;
     } catch (error) {
-      logger.error('Failed to obtain Twitch access token:', error);
+      logger.error('Failed to refresh Twitch access token:', error);
       throw new Error('Failed to obtain Twitch access token');
     }
   }
 
-  private async makeRequest<T>(
-    endpoint: string,
-    params: Record<string, string> = {}
-  ): Promise<AxiosResponse<TwitchResponse<T>>> {
-    try {
-      const accessToken = await this.getAccessToken();
+  private async getAccessToken(): Promise<string> {
+    if (!this.accessToken || Date.now() >= this.tokenExpiration) {
+      return this.refreshAccessToken();
+    }
+    return this.accessToken;
+  }
 
-      return axios.get<TwitchResponse<T>>(`https://api.twitch.tv/helix${endpoint}`, {
+  private async makeRequest<T>(endpoint: string, params: Record<string, string | number> = {}): Promise<TwitchAPIResponse<T>> {
+    try {
+      const token = await this.getAccessToken();
+      const response = await axios.get<TwitchAPIResponse<T>>(`https://api.twitch.tv/helix${endpoint}`, {
         headers: {
-          'Client-ID': this.clientId,
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${token}`,
+          'Client-Id': this.clientId
         },
-        params,
+        params
       });
+      return response.data;
     } catch (error) {
-      logger.error(`Failed to make Twitch API request to ${endpoint}:`, error);
+      logger.error(`Twitch API request failed for ${endpoint}:`, error);
       throw error;
     }
   }
 
   async searchChannels(query: string): Promise<TwitchChannel[]> {
     try {
-      const searchResponse = await this.makeRequest<TwitchChannel>('/search/channels', {
+      const response = await this.makeRequest<TwitchChannel>('/search/channels', {
         query,
-        first: '10'
+        first: '20'
       });
 
-      logger.info('Raw Twitch API response:', searchResponse.data);
+      logger.info('Raw Twitch API response:', response);
 
-      const broadcasterIds = searchResponse.data.data.map(channel => channel.id);
+      // Get follower counts for each channel
+      const enrichedChannels = await Promise.all(
+        response.data.map(async (channel) => {
+          try {
+            const followersResponse = await this.makeRequest<{ total: number }>('/users/follows', {
+              to_id: channel.id
+            });
 
-      const followerCounts = await Promise.all(
-        broadcasterIds.map(async (id) => {
-          const response = await this.makeRequest<{ total: number }>('/users/follows', {
-            to_id: id
-          });
-          return { id, count: response.data.data.length };
+            return {
+              ...channel,
+              follower_count: followersResponse.data.length
+            };
+          } catch (error) {
+            logger.error(`Failed to get follower count for channel ${channel.display_name}:`, error);
+            return {
+              ...channel,
+              follower_count: 0
+            };
+          }
         })
       );
 
-      const enrichedChannels = searchResponse.data.data.map(channel => {
-        logger.info('Processing Twitch channel:', channel);
-        return {
-          ...channel,
-          follower_count: followerCounts.find(fc => fc.id === channel.id)?.count || 0
-        };
-      });
-
-      logger.info('Enriched channel data:', enrichedChannels);
       return enrichedChannels;
     } catch (error) {
       logger.error('Error searching channels:', error);
@@ -132,29 +140,38 @@ export class TwitchAPI {
     }
   }
 
-  async getChannel(userId: string) {
-    return this.makeRequest('/channels', { broadcaster_id: userId });
+  async getTopStreams(filters: StreamFilters): Promise<any[]> {
+    const params: Record<string, string | number> = {
+      first: filters.limit?.toString() || '100'
+    };
+
+    if (filters.languages?.length) {
+      params.language = filters.languages.join(',');
+    }
+
+    if (filters.gameId) {
+      params.game_id = filters.gameId;
+    }
+
+    const response = await this.makeRequest<any>('/streams', params);
+    return response.data;
   }
 
-  async getVODs(userId: string, first: number = 100) {
-    return this.makeRequest('/videos', {
-      user_id: userId,
-      first: first.toString(),
-      type: 'archive'
-    });
-  }
+  async getCurrentGame(channelId: string): Promise<TwitchGame | null> {
+    try {
+      const response = await this.makeRequest<any>('/streams', { user_id: channelId });
+      if (response.data.length === 0) {
+        return null;
+      }
 
-  async getGame(gameId: string) {
-    return this.makeRequest('/games', { id: gameId });
-  }
-
-  async searchGames(query: string) {
-    return this.makeRequest('/search/categories', { query });
-  }
-
-  async getUser(username: string) {
-    return this.makeRequest('/users', { login: username });
+      const stream = response.data[0];
+      const gameResponse = await this.makeRequest<TwitchGame>('/games', { id: stream.game_id });
+      return gameResponse.data[0] || null;
+    } catch (error) {
+      logger.error('Failed to get current game:', error);
+      return null;
+    }
   }
 }
 
-export const twitchAPI = TwitchAPI.getInstance();
+export const twitchAPI = TwitchAPIService.getInstance();
