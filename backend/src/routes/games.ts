@@ -2,16 +2,18 @@
 
 import { Router } from 'express';
 import { Pool } from 'pg';
+import { authenticate } from '../middleware/auth';
 import { logger } from '../utils/logger';
-
-const router = Router();
+import { Game } from '../types/database';
 
 export const setupGameRoutes = (pool: Pool) => {
+  const router = Router();
+
   // Get all games
-  router.get('/', async (req, res) => {
+  router.get('/', authenticate(pool), async (req, res) => {
     try {
-      const result = await pool.query(
-        'SELECT * FROM games ORDER BY created_at DESC'
+      const result = await pool.query<Game>(
+        'SELECT * FROM games WHERE is_active = true ORDER BY name ASC'
       );
       res.json(result.rows);
     } catch (error) {
@@ -21,15 +23,41 @@ export const setupGameRoutes = (pool: Pool) => {
   });
 
   // Add new game to track
-  router.post('/', async (req, res) => {
+  router.post('/', authenticate(pool), async (req, res) => {
     const { twitch_game_id, name, box_art_url } = req.body;
     try {
-      const result = await pool.query(
+      // Check if game already exists
+      const existingGame = await pool.query(
+        'SELECT * FROM games WHERE twitch_game_id = $1',
+        [twitch_game_id]
+      );
+
+      if (existingGame.rows.length > 0) {
+        // If game exists but is inactive, reactivate it
+        if (!existingGame.rows[0].is_active) {
+          const result = await pool.query<Game>(
+            `UPDATE games 
+             SET is_active = true, 
+                 name = $2, 
+                 box_art_url = $3,
+                 updated_at = CURRENT_TIMESTAMP 
+             WHERE twitch_game_id = $1 
+             RETURNING *`,
+            [twitch_game_id, name, box_art_url]
+          );
+          res.json(result.rows[0]);
+          return;
+        }
+        res.status(409).json({ error: 'Game already exists' });
+        return;
+      }
+
+      const result = await pool.query<Game>(
         `INSERT INTO games 
-        (twitch_game_id, name, box_art_url, is_active) 
-        VALUES ($1, $2, $3, $4) 
-        RETURNING *`,
-        [twitch_game_id, name, box_art_url, true]
+         (twitch_game_id, name, box_art_url, is_active, status) 
+         VALUES ($1, $2, $3, true, 'active') 
+         RETURNING *`,
+        [twitch_game_id, name, box_art_url]
       );
       res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -39,14 +67,21 @@ export const setupGameRoutes = (pool: Pool) => {
   });
 
   // Update game
-  router.put('/:id', async (req, res) => {
+  router.put('/:id', authenticate(pool), async (req, res) => {
     const { id } = req.params;
-    const { is_active, name } = req.body;
+    const { is_active, name, box_art_url } = req.body;
     try {
-      const result = await pool.query(
-        'UPDATE games SET is_active = $1, name = COALESCE($2, name) WHERE id = $3 RETURNING *',
-        [is_active, name, id]
+      const result = await pool.query<Game>(
+        `UPDATE games 
+         SET is_active = COALESCE($1, is_active),
+             name = COALESCE($2, name),
+             box_art_url = COALESCE($3, box_art_url),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $4 
+         RETURNING *`,
+        [is_active, name, box_art_url, id]
       );
+
       if (result.rows.length === 0) {
         res.status(404).json({ error: 'Game not found' });
       } else {
@@ -58,24 +93,32 @@ export const setupGameRoutes = (pool: Pool) => {
     }
   });
 
-  // Delete game
-  router.delete('/:id', async (req, res) => {
+  // Delete game (soft delete by setting is_active to false)
+  router.delete('/:id', authenticate(pool), async (req, res) => {
     const { id } = req.params;
     try {
-      const result = await pool.query(
-        'DELETE FROM games WHERE id = $1 RETURNING *',
+      const result = await pool.query<Game>(
+        `UPDATE games 
+         SET is_active = false,
+             status = 'inactive',
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $1 
+         RETURNING *`,
         [id]
       );
+
       if (result.rows.length === 0) {
         res.status(404).json({ error: 'Game not found' });
       } else {
-        res.json({ message: 'Game deleted successfully' });
+        res.json({ message: 'Game deactivated successfully' });
       }
     } catch (error) {
-      logger.error('Error deleting game:', error);
-      res.status(500).json({ error: 'Failed to delete game' });
+      logger.error('Error deactivating game:', error);
+      res.status(500).json({ error: 'Failed to deactivate game' });
     }
   });
 
   return router;
 };
+
+export default setupGameRoutes;

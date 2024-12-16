@@ -1,4 +1,4 @@
-// backend/src/database/migrations/006_discovery_tables.ts
+// backend/src/database/migrations/005_discovery_tables.ts
 
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
@@ -31,6 +31,28 @@ export async function up(pool: Pool): Promise<void> {
       EXCEPTION
         WHEN duplicate_object THEN null;
       END $$;
+    `);
+
+    await client.query(`
+      CREATE TABLE premiere_events (
+        id SERIAL PRIMARY KEY,
+        channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
+        game_id INTEGER REFERENCES games(id) ON DELETE CASCADE,
+        event_type VARCHAR(50) NOT NULL,
+        predicted_viewers INTEGER,
+        confidence_score FLOAT,
+        detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        start_time TIMESTAMP,
+        predicted_start TIMESTAMP,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    
+      CREATE INDEX idx_premieres_channel ON premiere_events(channel_id);
+      CREATE INDEX idx_premieres_game ON premiere_events(game_id);
+      CREATE INDEX idx_premieres_start ON premiere_events(start_time);
+      CREATE INDEX idx_premieres_detected ON premiere_events(detected_at);
     `);
 
     // Channel metrics tracking
@@ -249,34 +271,6 @@ export async function up(pool: Pool): Promise<void> {
       CREATE INDEX idx_interests_score ON user_interests(score DESC);
     `);
 
-    // Discovery preferences
-    await client.query(`
-      CREATE TABLE discovery_preferences (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        enabled BOOLEAN DEFAULT true,
-        min_confidence confidence_level DEFAULT 'medium',
-        preferred_languages TEXT[] DEFAULT ARRAY['en'],
-        excluded_categories TEXT[],
-        excluded_tags TEXT[],
-        content_filters JSONB DEFAULT '{"mature": false, "violence": false}'::jsonb,
-        schedule_preferences JSONB DEFAULT '{
-          "preferred_times": [],
-          "timezone": "UTC",
-          "days_available": ["1","2","3","4","5","6","7"]
-        }'::jsonb,
-        notification_settings JSONB DEFAULT '{
-          "email": true,
-          "browser": true,
-          "frequency": "daily",
-          "types": ["all"]
-        }'::jsonb,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id)
-      );
-    `);
-
     // Add triggers for timestamp updates
     await client.query(`
       CREATE TRIGGER update_content_similarity_updated_at
@@ -286,11 +280,6 @@ export async function up(pool: Pool): Promise<void> {
 
       CREATE TRIGGER update_user_interests_updated_at
         BEFORE UPDATE ON user_interests
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
-
-      CREATE TRIGGER update_discovery_preferences_updated_at
-        BEFORE UPDATE ON discovery_preferences
         FOR EACH ROW
         EXECUTE FUNCTION update_updated_at_column();
     `);
@@ -337,11 +326,9 @@ export async function down(pool: Pool): Promise<void> {
       DROP TRIGGER IF EXISTS trigger_cleanup_expired_discovery ON discovery_events;
       DROP FUNCTION IF EXISTS cleanup_expired_discovery_items();
 
-      DROP TRIGGER IF EXISTS update_discovery_preferences_updated_at ON discovery_preferences;
       DROP TRIGGER IF EXISTS update_user_interests_updated_at ON user_interests;
       DROP TRIGGER IF EXISTS update_content_similarity_updated_at ON content_similarity;
 
-      DROP TABLE IF EXISTS discovery_preferences;
       DROP TABLE IF EXISTS user_interests;
       DROP TABLE IF EXISTS content_similarity;
       DROP TABLE IF EXISTS viewer_engagement;

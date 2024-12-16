@@ -34,6 +34,7 @@ export async function up(pool: Pool): Promise<void> {
         view_count INTEGER DEFAULT 0,
         language VARCHAR(10),
         status content_status DEFAULT 'active',
+        is_active BOOLEAN DEFAULT true,
         is_mature BOOLEAN DEFAULT false,
         last_online TIMESTAMP,
         last_game_check TIMESTAMP,
@@ -59,6 +60,7 @@ export async function up(pool: Pool): Promise<void> {
         box_art_url TEXT,
         igdb_id INTEGER,
         status content_status DEFAULT 'active',
+        is_active BOOLEAN DEFAULT true,
         category VARCHAR(50),
         tags TEXT[],
         last_checked TIMESTAMP,
@@ -69,11 +71,12 @@ export async function up(pool: Pool): Promise<void> {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
+    
       CREATE INDEX idx_games_twitch_id ON games(twitch_game_id);
       CREATE INDEX idx_games_name ON games(name);
       CREATE INDEX idx_games_status ON games(status);
       CREATE INDEX idx_games_category ON games(category);
+      CREATE INDEX idx_games_active ON games(is_active);
     `);
 
     // Game changes history
@@ -95,6 +98,26 @@ export async function up(pool: Pool): Promise<void> {
       CREATE INDEX idx_game_changes_games ON game_changes(previous_game_id, new_game_id);
     `);
 
+  // Discovery preferences table
+  await client.query(`
+    CREATE TABLE discovery_preferences (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      min_viewers INTEGER DEFAULT 100,
+      max_viewers INTEGER DEFAULT 50000,
+      preferred_languages TEXT[] DEFAULT ARRAY['en'],
+      content_rating VARCHAR(20) DEFAULT 'all',
+      notify_only BOOLEAN DEFAULT false,
+      schedule_match BOOLEAN DEFAULT true,
+      confidence_threshold FLOAT DEFAULT 0.7,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id)
+    );
+  
+    CREATE INDEX idx_discovery_prefs_user ON discovery_preferences(user_id);
+  `);
+
     // Updated timestamp triggers
     await client.query(`
       CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -112,6 +135,11 @@ export async function up(pool: Pool): Promise<void> {
 
       CREATE TRIGGER update_games_updated_at
         BEFORE UPDATE ON games
+        FOR EACH ROW
+        EXECUTE FUNCTION update_updated_at_column();
+        
+      CREATE TRIGGER update_discovery_preferences_updated_at
+        BEFORE UPDATE ON discovery_preferences
         FOR EACH ROW
         EXECUTE FUNCTION update_updated_at_column();
     `);
@@ -135,10 +163,12 @@ export async function down(pool: Pool): Promise<void> {
 
     // Drop tables
     await client.query(`
+      DROP TRIGGER IF EXISTS update_discovery_preferences_updated_at ON discovery_preferences;
       DROP TRIGGER IF EXISTS update_games_updated_at ON games;
       DROP TRIGGER IF EXISTS update_channels_updated_at ON channels;
       DROP FUNCTION IF EXISTS update_updated_at_column();
       DROP TABLE IF EXISTS game_changes;
+      DROP TABLE IF EXISTS discovery_preferences;
       DROP TABLE IF EXISTS games;
       DROP TABLE IF EXISTS channels;
       DROP TYPE IF EXISTS content_status;

@@ -77,6 +77,49 @@ export async function up(pool: Pool): Promise<void> {
       );
     `);
 
+    // Tasks tables
+    await client.query(`
+      CREATE TABLE tasks (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        task_type VARCHAR(50) NOT NULL,
+        channel_ids INTEGER[],
+        game_ids INTEGER[],
+        schedule_type VARCHAR(50) NOT NULL,
+        schedule_value TEXT NOT NULL,
+        storage_limit_gb INTEGER,
+        retention_days INTEGER,
+        auto_delete BOOLEAN DEFAULT false,
+        is_active BOOLEAN DEFAULT true,
+        priority INTEGER DEFAULT 1,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        status VARCHAR(50) DEFAULT 'pending',
+        last_run TIMESTAMP,
+        next_run TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_tasks_user ON tasks(user_id);
+      CREATE INDEX idx_tasks_status ON tasks(status);
+      CREATE INDEX idx_tasks_next_run ON tasks(next_run) WHERE status = 'pending';
+
+      CREATE TABLE task_history (
+        id SERIAL PRIMARY KEY,
+        task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+        status VARCHAR(50) NOT NULL,
+        start_time TIMESTAMP NOT NULL,
+        end_time TIMESTAMP,
+        error_message TEXT,
+        details JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_task_history_task ON task_history(task_id);
+      CREATE INDEX idx_task_history_status ON task_history(status);
+    `);
+
     // Feature flags table
     await client.query(`
       CREATE TABLE feature_flags (
@@ -130,57 +173,6 @@ export async function up(pool: Pool): Promise<void> {
 
       CREATE INDEX idx_rate_limits_key ON rate_limits(key);
       CREATE INDEX idx_rate_limits_refill ON rate_limits(last_refill);
-    `);
-
-    // Add triggers
-    await client.query(`
-      CREATE TRIGGER update_system_settings_updated_at
-        BEFORE UPDATE ON system_settings
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
-
-      CREATE TRIGGER update_user_preferences_updated_at
-        BEFORE UPDATE ON user_preferences
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
-
-      CREATE TRIGGER update_feature_flags_updated_at
-        BEFORE UPDATE ON feature_flags
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
-    `);
-
-    // Insert default system settings
-    await client.query(`
-      INSERT INTO system_settings (category, key, value, description) VALUES
-        ('downloads', 'max_concurrent', '3'::jsonb, 'Maximum concurrent downloads'),
-        ('downloads', 'temp_dir', '"/tmp/downloads"'::jsonb, 'Temporary download directory'),
-        ('storage', 'retention_days', '30'::jsonb, 'Default content retention period'),
-        ('authentication', 'session_duration', '86400'::jsonb, 'Session duration in seconds'),
-        ('authentication', 'max_attempts', '5'::jsonb, 'Maximum login attempts before lockout'),
-        ('discovery', 'update_interval', '300'::jsonb, 'Discovery update interval in seconds'),
-        ('discovery', 'min_confidence', '0.7'::jsonb, 'Minimum confidence score for recommendations'),
-        ('monitoring', 'stats_retention', '90'::jsonb, 'Statistics retention period in days');
-    `);
-
-    // Insert default feature flags
-    await client.query(`
-      INSERT INTO feature_flags (name, description, enabled, rules) VALUES
-        ('advanced_discovery', 'Enhanced content discovery features', true, '{
-          "min_role": "user",
-          "requires_verification": true
-        }'::jsonb),
-        ('beta_ui', 'New beta interface features', false, '{
-          "allowed_roles": ["admin", "moderator"],
-          "opt_in": true
-        }'::jsonb),
-        ('ai_recommendations', 'AI-powered content recommendations', false, '{
-          "gradual_rollout": true,
-          "whitelist_only": true
-        }'::jsonb),
-        ('chat_integration', 'Twitch chat integration features', true, '{
-          "requires_auth": true
-        }'::jsonb);
     `);
 
     // System audit log
@@ -240,69 +232,65 @@ export async function up(pool: Pool): Promise<void> {
         WHERE status = 'pending';
     `);
 
-    // Cache table for system-wide caching
+    // Add triggers for all tables
     await client.query(`
-      CREATE TABLE cache (
-        id SERIAL PRIMARY KEY,
-        cache_key VARCHAR(255) NOT NULL,
-        value JSONB NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(cache_key)
-      );
+      CREATE TRIGGER update_system_settings_updated_at
+        BEFORE UPDATE ON system_settings
+        FOR EACH ROW
+        EXECUTE FUNCTION update_updated_at_column();
 
-      CREATE INDEX idx_cache_expires ON cache(expires_at);
-      CREATE INDEX idx_cache_key ON cache(cache_key);
-    `);
+      CREATE TRIGGER update_user_preferences_updated_at
+        BEFORE UPDATE ON user_preferences
+        FOR EACH ROW
+        EXECUTE FUNCTION update_updated_at_column();
 
-    // Webhook configurations
-    await client.query(`
-      CREATE TABLE webhooks (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        name VARCHAR(100) NOT NULL,
-        url TEXT NOT NULL,
-        events TEXT[] NOT NULL,
-        secret TEXT,
-        is_active BOOLEAN DEFAULT true,
-        failure_count INTEGER DEFAULT 0,
-        last_failure_message TEXT,
-        last_success_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+      CREATE TRIGGER update_tasks_updated_at
+        BEFORE UPDATE ON tasks
+        FOR EACH ROW
+        EXECUTE FUNCTION update_updated_at_column();
 
-      CREATE INDEX idx_webhooks_user ON webhooks(user_id);
-      CREATE INDEX idx_webhooks_active ON webhooks(is_active) 
-        WHERE is_active = true;
-    `);
+      CREATE TRIGGER update_feature_flags_updated_at
+        BEFORE UPDATE ON feature_flags
+        FOR EACH ROW
+        EXECUTE FUNCTION update_updated_at_column();
 
-    // Add trigger for background jobs
-    await client.query(`
       CREATE TRIGGER update_background_jobs_updated_at
         BEFORE UPDATE ON background_jobs
         FOR EACH ROW
         EXECUTE FUNCTION update_updated_at_column();
-
-      CREATE TRIGGER update_webhooks_updated_at
-        BEFORE UPDATE ON webhooks
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
     `);
 
-    // Create cleanup function for expired cache entries
+    // Insert default system settings
     await client.query(`
-      CREATE OR REPLACE FUNCTION cleanup_expired_cache()
-      RETURNS trigger AS $$
-      BEGIN
-        DELETE FROM cache WHERE expires_at < CURRENT_TIMESTAMP;
-        RETURN NULL;
-      END;
-      $$ LANGUAGE plpgsql;
+      INSERT INTO system_settings (category, key, value, description) VALUES
+        ('downloads', 'max_concurrent', '3'::jsonb, 'Maximum concurrent downloads'),
+        ('downloads', 'temp_dir', '"/tmp/downloads"'::jsonb, 'Temporary download directory'),
+        ('storage', 'retention_days', '30'::jsonb, 'Default content retention period'),
+        ('authentication', 'session_duration', '86400'::jsonb, 'Session duration in seconds'),
+        ('authentication', 'max_attempts', '5'::jsonb, 'Maximum login attempts before lockout'),
+        ('discovery', 'update_interval', '300'::jsonb, 'Discovery update interval in seconds'),
+        ('discovery', 'min_confidence', '0.7'::jsonb, 'Minimum confidence score for recommendations'),
+        ('monitoring', 'stats_retention', '90'::jsonb, 'Statistics retention period in days');
+    `);
 
-      CREATE TRIGGER trigger_cleanup_expired_cache
-        AFTER INSERT ON cache
-        EXECUTE FUNCTION cleanup_expired_cache();
+    // Insert default feature flags
+    await client.query(`
+      INSERT INTO feature_flags (name, description, enabled, rules) VALUES
+        ('advanced_discovery', 'Enhanced content discovery features', true, '{
+          "min_role": "user",
+          "requires_verification": true
+        }'::jsonb),
+        ('beta_ui', 'New beta interface features', false, '{
+          "allowed_roles": ["admin", "moderator"],
+          "opt_in": true
+        }'::jsonb),
+        ('ai_recommendations', 'AI-powered content recommendations', false, '{
+          "gradual_rollout": true,
+          "whitelist_only": true
+        }'::jsonb),
+        ('chat_integration', 'Twitch chat integration features', true, '{
+          "requires_auth": true
+        }'::jsonb);
     `);
 
     await client.query('COMMIT');
@@ -322,30 +310,26 @@ export async function down(pool: Pool): Promise<void> {
   try {
     await client.query('BEGIN');
 
-    // Drop all system-related tables and types
     await client.query(`
-      DROP TRIGGER IF EXISTS trigger_cleanup_expired_cache ON cache;
-      DROP FUNCTION IF EXISTS cleanup_expired_cache();
-
-      DROP TRIGGER IF EXISTS update_webhooks_updated_at ON webhooks;
       DROP TRIGGER IF EXISTS update_background_jobs_updated_at ON background_jobs;
       DROP TRIGGER IF EXISTS update_feature_flags_updated_at ON feature_flags;
+      DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
       DROP TRIGGER IF EXISTS update_user_preferences_updated_at ON user_preferences;
       DROP TRIGGER IF EXISTS update_system_settings_updated_at ON system_settings;
 
-      DROP TABLE IF EXISTS webhooks;
-      DROP TABLE IF EXISTS cache;
-      DROP TABLE IF EXISTS background_jobs;
       DROP TABLE IF EXISTS audit_logs;
       DROP TABLE IF EXISTS rate_limits;
       DROP TABLE IF EXISTS system_stats;
       DROP TABLE IF EXISTS user_feature_flags;
       DROP TABLE IF EXISTS feature_flags;
+      DROP TABLE IF EXISTS task_history;
+      DROP TABLE IF EXISTS tasks;
+      DROP TABLE IF EXISTS background_jobs;
       DROP TABLE IF EXISTS user_preferences;
       DROP TABLE IF EXISTS system_settings;
 
-      DROP TYPE IF EXISTS job_priority;
       DROP TYPE IF EXISTS job_status;
+      DROP TYPE IF EXISTS job_priority;
     `);
 
     await client.query('COMMIT');

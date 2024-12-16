@@ -1,38 +1,34 @@
 // backend/src/routes/tasks/index.ts
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { Pool } from 'pg';
-import { TasksController } from './controller';
-import { validateTaskId } from './validation';
+import { createTasksController } from './controller';
+import { authenticate } from '../../middleware/auth';
 
-export function setupTaskRoutes(pool: Pool): Router {
-    const router = Router();
-    const controller = new TasksController(pool);
+const validateIdParam = (req: any, res: any, next: any) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid task ID' });
+  }
+  next();
+};
 
-    // Middleware to validate task ID parameter
-    const validateIdParam = (
-        req: Request,
-        res: Response,
-        next: NextFunction
-    ): void => {
-        const error = validateTaskId(req.params.id);
-        if (error) {
-            res.status(400).json({ error });
-            return;
-        }
-        next();
-    };
+export const setupTaskRoutes = (pool: Pool) => {
+  const router = Router();
+  const controller = createTasksController(pool);
 
-    // Task Routes
-    router.get('/', controller.getAllTasks);
-    router.get('/:id', validateIdParam, controller.getTaskById);
-    router.get('/:id/history', validateIdParam, controller.getTaskHistory);
-    router.post('/', controller.createTask);
-    router.put('/:id', validateIdParam, controller.updateTask);
-    router.delete('/:id', validateIdParam, controller.deleteTask);
-    router.post('/:id/run', validateIdParam, controller.manualRunTask);
+  router.use(authenticate(pool));
 
-    return router;
-}
+  // Use bound methods from the controller instance
+  router.get('/', controller.getAllTasks);
+  router.post('/', controller.createTask);
+  router.get('/:id', validateIdParam, controller.getTaskById);
+  router.put('/:id', validateIdParam, controller.updateTask);
+  router.delete('/:id', validateIdParam, controller.deleteTask);
+  router.get('/:id/history', validateIdParam, controller.getTaskHistory);
+  router.post('/:id/run', validateIdParam, controller.manualRunTask);
+
+  return router;
+};
 
 export default setupTaskRoutes;
