@@ -1,3 +1,5 @@
+// filepath: frontend/src/pages/Games.tsx
+
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Trash2, CheckCircle, XCircle } from 'lucide-react';
@@ -9,6 +11,7 @@ interface Game {
   id: number;
   twitch_game_id: string;
   name: string;
+  box_art_url?: string;
   is_active: boolean;
   last_checked: string | null;
   created_at: string;
@@ -37,6 +40,8 @@ const Games = () => {
     queryKey: ['games'],
     queryFn: () => api.getGames(),
   });
+
+  console.log("Games data:", games);
 
   // Add game mutation
   const addGameMutation = useMutation({
@@ -103,7 +108,17 @@ const Games = () => {
               games.map((game) => (
                 <tr key={game.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{game.name}</div>
+                    <div className="flex items-center gap-3">
+                      {/* Render box_art_url image if available */}
+                      {game.box_art_url && (
+                        <img
+                          src={game.box_art_url.replace('{width}', '52').replace('{height}', '72')}
+                          alt={game.name}
+                          className="w-13 h-18 rounded object-cover"
+                        />
+                      )}
+                      <div className="text-sm font-medium text-gray-900">{game.name}</div>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-500">{game.twitch_game_id}</div>
@@ -112,7 +127,7 @@ const Games = () => {
                     <button
                       onClick={() => toggleGameMutation.mutate({
                         id: game.id,
-                        currentStatus: game.is_active
+                        currentStatus: game.is_active,
                       })}
                       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         game.is_active
@@ -146,7 +161,7 @@ const Games = () => {
             ) : (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                  No games added yet. Click "Add Games" to start tracking games!
+                  No games added yet. Click &#34;Add Games&#34; to start tracking games!
                 </td>
               </tr>
             )}

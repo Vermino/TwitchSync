@@ -6,19 +6,6 @@ import { api } from '../lib/api';
 import { ErrorBoundary } from 'react-error-boundary';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 
-interface Channel {
-  id: number;
-  twitch_id: string;
-  username: string;
-  display_name: string;
-  profile_image_url: string;
-  is_active: boolean;
-  last_vod_check: string | null;
-  last_game_check: string | null;
-  current_game_id: string | null;
-  created_at: string;
-}
-
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center h-64">
     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
@@ -181,7 +168,7 @@ const Channels = () => {
             ) : (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                  No channels added yet. Click "Add Channels" to start tracking channels!
+                  No channels added yet. Click &#34;Add Channels&#34; to start tracking channels!
                 </td>
               </tr>
             )}

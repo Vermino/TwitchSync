@@ -1,6 +1,5 @@
 // frontend/src/components/discovery/RisingChannelCard.tsx
 
-import React from 'react';
 import { TrendingUp, Users, Eye, Clock, Gamepad2 } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';

@@ -1,7 +1,6 @@
 // frontend/src/services/twitch/api.ts
 
 import axios from 'axios';
-import type { Channel, Game } from '@/types/discovery';
 
 interface TwitchStream {
   user_id: string;

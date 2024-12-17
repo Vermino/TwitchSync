@@ -29,6 +29,7 @@ interface TwitchSearchResult {
 }
 
 interface Channel {
+  thumbnail_url: any;
   id: string;
   login: string;
   display_name: string;

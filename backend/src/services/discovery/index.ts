@@ -9,7 +9,6 @@ import type {
   GameRecommendation,
   PremiereEvent,
   TwitchStream,
-  StreamFilters,
   UserPreferences,
 } from '../../types/database';
 
@@ -19,13 +18,6 @@ interface ChannelEnriched {
   twitch_id: string;
   tags?: string[];
 }
-
-interface GameEnriched {
-  id: string;
-  name: string;
-  genres?: string[];
-}
-
 interface RecommendationReason {
   type: string;
   strength: number;

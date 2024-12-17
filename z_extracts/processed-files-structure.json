@@ -1,9 +1,8 @@
 {
-  "updated_at": "2024-12-16T13:58:04.498761",
+  "updated_at": "2024-12-17T03:39:58.809468",
   "tree": {
-    "backend/_files": [
-      "nodemon.json",
-      "tsconfig.json"
+    "frontend/src/_files": [
+      "App.tsx"
     ]
   }
 }

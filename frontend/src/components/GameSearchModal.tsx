@@ -1,3 +1,5 @@
+// filepath: frontend/src/components/GameSearchModal.tsx
+
 import React, { useState, useEffect } from 'react';
 import {
   Search,

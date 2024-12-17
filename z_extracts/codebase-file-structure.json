@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-16T13:58:04.498761",
+  "updated_at": "2024-12-17T03:39:58.808466",
   "tree": {
     "backend": {
       "_files": [
@@ -30,6 +30,7 @@
             "005_discovery_tables.ts",
             "006_missing_tables.ts",
             "007_discovery_preferences_tables.ts",
+            "008_discovery_stats_tables.ts",
             "runner.ts"
           ]
         },

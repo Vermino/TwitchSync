@@ -516,31 +516,6 @@ class ApiClient {
     }
   }
 
-  async ignorePremiereEvent(id: string): Promise<void> {
-    try {
-      await axios.post(
-        `${this.baseURL}/discovery/premieres/${id}/ignore`,
-        {},
-        { headers: this.getHeaders() }
-      );
-    } catch (error) {
-      console.error('Error ignoring premiere event:', error);
-      throw this.handleError(error);
-    }
-  }
-
-  async getDiscoveryPreferences(): Promise<DiscoveryPreferences> {
-    try {
-      const response = await axios.get(`${this.baseURL}/discovery/preferences`, {
-        headers: this.getHeaders()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching discovery preferences:', error);
-      throw this.handleError(error);
-    }
-  }
-
   async updateDiscoveryPreferences(preferences: Partial<DiscoveryPreferences>): Promise<UpdatePreferencesResponse> {
     try {
       const response = await axios.put(
