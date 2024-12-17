@@ -1,9 +1,9 @@
-// backend/src/routes/tasks/controller.ts
+// Filepath: backend/src/routes/tasks/controller.ts
 
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
-import { Task, CreateTaskDTO } from '../../types/database';
+import { Task, CreateTaskDTO, TaskType } from '../../types/database';
 import { parseExpression } from 'cron-parser';
 
 interface AuthenticatedRequest extends Request {
@@ -92,7 +92,7 @@ export class TasksController {
     }
   }
 
-  async createTask(req: AuthenticatedRequest, res: Response) {
+ async createTask(req: AuthenticatedRequest, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -106,6 +106,33 @@ export class TasksController {
         ...req.body,
         user_id: userId
       };
+
+      // Validate required fields
+      if (!taskData.task_type) {
+        // Determine task type based on channel_ids and game_ids
+        if (taskData.channel_ids?.length > 0 && taskData.game_ids?.length > 0) {
+          taskData.task_type = 'combined';
+        } else if (taskData.channel_ids?.length > 0) {
+          taskData.task_type = 'channel';
+        } else if (taskData.game_ids?.length > 0) {
+          taskData.task_type = 'game';
+        } else {
+          res.status(400).json({ error: 'At least one channel or game must be selected' });
+          return;
+        }
+      }
+
+      // Set default name if not provided
+      if (!taskData.name) {
+        const typeLabel = taskData.task_type === 'combined' ? 'Combined' :
+                         taskData.task_type === 'channel' ? 'Channel' : 'Game';
+        const itemCount = (taskData.channel_ids?.length || 0) + (taskData.game_ids?.length || 0);
+        const scheduleLabel = taskData.schedule_type === 'interval' ?
+          `Every ${parseInt(taskData.schedule_value) / 3600} hours` :
+          'Custom schedule';
+
+        taskData.name = `${typeLabel} Task: ${itemCount} items - ${scheduleLabel}`;
+      }
 
       // Validate schedule value based on type
       if (taskData.schedule_type === 'cron') {
@@ -138,26 +165,32 @@ export class TasksController {
           is_active,
           priority,
           user_id,
-          status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          status,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::task_priority_level, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
       `, [
         taskData.name,
         taskData.description,
         taskData.task_type,
-        taskData.channel_ids,
-        taskData.game_ids,
+        taskData.channel_ids || [],
+        taskData.game_ids || [],
         taskData.schedule_type,
         taskData.schedule_value,
         taskData.storage_limit_gb,
         taskData.retention_days,
-        taskData.auto_delete,
-        taskData.is_active,
-        taskData.priority,
+        taskData.auto_delete || false,
+        taskData.is_active !== undefined ? taskData.is_active : true,
+        taskData.priority || 'low',
         taskData.user_id,
         'pending'
       ]);
 
+      logger.info('Task created successfully', {
+        taskId: result.rows[0].id,
+        taskType: taskData.task_type
+      });
       res.status(201).json(result.rows[0]);
     } catch (error) {
       logger.error('Error creating task:', error);
@@ -191,6 +224,12 @@ export class TasksController {
 
       const updates = req.body;
 
+      // Validate priority if provided
+      if (updates.priority && !['low', 'medium', 'high'].includes(updates.priority)) {
+        res.status(400).json({ error: 'Invalid priority level. Must be one of: low, medium, high' });
+        return;
+      }
+
       // Validate schedule if being updated
       if (updates.schedule_type && updates.schedule_value) {
         if (updates.schedule_type === 'cron') {
@@ -209,17 +248,33 @@ export class TasksController {
         }
       }
 
+      // Cast priority to enum type if it's being updated
+      if (updates.priority) {
+        updates.priority = `${updates.priority}::task_priority_level`;
+      }
+
       // Build dynamic update query
       const setClause = Object.entries(updates)
-        .map(([key, _], index) => `${key} = $${index + 3}`)
+        .map(([key, value], index) => {
+          if (key === 'priority') {
+            // Priority is already cast to enum type
+            return `${key} = ${value}`;
+          }
+          return `${key} = $${index + 3}`;
+        })
         .join(', ');
+
+      // Filter out priority from values as it's handled in the query
+      const updateValues = Object.entries(updates)
+        .filter(([key]) => key !== 'priority')
+        .map(([_, value]) => value);
 
       const result = await client.query<Task>(`
         UPDATE tasks 
         SET ${setClause}, updated_at = CURRENT_TIMESTAMP
         WHERE id = $1 AND user_id = $2
         RETURNING *
-      `, [taskId, userId, ...Object.values(updates)]);
+      `, [taskId, userId, ...updateValues]);
 
       res.json(result.rows[0]);
     } catch (error) {
@@ -343,9 +398,6 @@ export class TasksController {
       `, [taskId]);
 
       await client.query('COMMIT');
-
-      // Note: You would typically trigger the actual task execution here
-      // For now, we just return success
 
       res.json({
         message: 'Task execution started',

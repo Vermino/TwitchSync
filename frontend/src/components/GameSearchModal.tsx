@@ -1,4 +1,4 @@
-// filepath: frontend/src/components/GameSearchModal.tsx
+// Filepath: frontend/src/components/GameSearchModal.tsx
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -8,7 +8,7 @@ import {
   X,
   Loader2
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api } from '../lib/api';
 
 interface Game {
   id: string;
@@ -81,7 +81,11 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
   };
 
   const handleSubmit = () => {
-    onSelect(selectedGames);
+    onSelect(selectedGames.map(game => ({
+      id: game.id,
+      name: game.name,
+      box_art_url: game.box_art_url.replace('-52x72', '-285x380') // Ensure we store high-res version
+    })));
     onClose();
   };
 
@@ -90,7 +94,6 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-xl font-semibold">Search Games</h2>
           <button
@@ -101,7 +104,6 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
           </button>
         </div>
 
-        {/* Search Input */}
         <div className="p-4 border-b">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -115,7 +117,6 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
           </div>
         </div>
 
-        {/* Results */}
         <div className="overflow-y-auto max-h-[60vh]">
           {loading ? (
             <div className="flex items-center justify-center p-8">
@@ -141,7 +142,7 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
                 >
                   {game.box_art_url && (
                     <img
-                      src={game.box_art_url.replace('{width}', '52').replace('{height}', '72')}
+                      src={game.box_art_url}
                       alt={game.name}
                       className="w-13 h-18 rounded object-cover"
                     />
@@ -158,7 +159,6 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
           )}
         </div>
 
-        {/* Footer */}
         <div className="p-4 border-t flex justify-end gap-3">
           <button
             onClick={onClose}

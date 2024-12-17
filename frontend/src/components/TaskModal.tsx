@@ -1,39 +1,16 @@
-import React, { useEffect, useState } from 'react';
+// Filepath: frontend/src/components/TaskModal.tsx
+
+import React, { useState, useEffect } from 'react';
+import { X, Users, Gamepad2, Settings, Search, Check } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useQuery } from '@tanstack/react-query';
-import {
-  X, Plus, AlertCircle, Users, Gamepad2, Clock,
-  HardDrive, Calendar, Settings, Check
-} from 'lucide-react';
-import { api } from '../lib/api';
-import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
-
-interface Channel {
-  id: number;
-  username: string;
-  display_name?: string;
-  profile_image_url?: string;
-}
-
-interface Game {
-  id: number;
-  name: string;
-  box_art_url?: string;
-}
-
-interface Task {
-  id: number;
-  name: string;
-  description: string | null;
-  task_type: 'channel' | 'game' | 'combined';
-  channel_ids: number[];
-  game_ids: number[];
-  schedule_type: 'interval' | 'cron' | 'manual';
-  schedule_value: string;
-  storage_limit_gb: number | null;
-  retention_days: number | null;
-  auto_delete: boolean;
-  priority: number;
-}
+import { api } from '@/lib/api';
+import type { Task } from '@/types/task';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -48,11 +25,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
   onSubmit,
   task
 }) => {
-  // Form state
+  const [activeTab, setActiveTab] = useState('channels');
+  const [channelSearch, setChannelSearch] = useState('');
+  const [gameSearch, setGameSearch] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    task_type: 'combined',
     channel_ids: [] as number[],
     game_ids: [] as number[],
     schedule_type: 'interval',
@@ -63,27 +41,32 @@ const TaskModal: React.FC<TaskModalProps> = ({
     priority: 1
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<'channels' | 'games' | 'settings'>('channels');
-
-  // Fetch data
-  const { data: channels } = useQuery({
+  // Fetch all channels and games
+  const { data: channels, isLoading: channelsLoading } = useQuery({
     queryKey: ['channels'],
     queryFn: () => api.getChannels()
   });
 
-  const { data: games } = useQuery({
+  const { data: games, isLoading: gamesLoading } = useQuery({
     queryKey: ['games'],
     queryFn: () => api.getGames()
   });
 
-  // Reset form when modal opens/closes
+  // Filter channels and games based on search
+  const filteredChannels = channels?.filter(channel =>
+    channel.display_name?.toLowerCase().includes(channelSearch.toLowerCase()) ||
+    channel.username.toLowerCase().includes(channelSearch.toLowerCase())
+  ) || [];
+
+  const filteredGames = games?.filter(game =>
+    game.name.toLowerCase().includes(gameSearch.toLowerCase())
+  ) || [];
+
   useEffect(() => {
     if (isOpen && task) {
       setFormData({
         name: task.name,
         description: task.description || '',
-        task_type: task.task_type,
         channel_ids: task.channel_ids,
         game_ids: task.game_ids,
         schedule_type: task.schedule_type,
@@ -91,40 +74,26 @@ const TaskModal: React.FC<TaskModalProps> = ({
         storage_limit_gb: task.storage_limit_gb?.toString() || '',
         retention_days: task.retention_days?.toString() || '',
         auto_delete: task.auto_delete,
-        priority: task.priority
+        priority: task.priority.toString()
+      });
+    } else {
+      setFormData({
+        name: '',
+        description: '',
+        channel_ids: [],
+        game_ids: [],
+        schedule_type: 'interval',
+        schedule_value: '3600',
+        storage_limit_gb: '',
+        retention_days: '',
+        auto_delete: false,
+        priority: 'low'
       });
     }
+    setActiveTab('channels');
+    setChannelSearch('');
+    setGameSearch('');
   }, [isOpen, task]);
-
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
-    }
-
-    if (formData.channel_ids.length === 0 && formData.game_ids.length === 0) {
-      newErrors.selection = 'Select at least one channel or game';
-    }
-
-    if (formData.schedule_type !== 'manual' && !formData.schedule_value) {
-      newErrors.schedule = 'Schedule value is required';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (validateForm()) {
-      onSubmit({
-        ...formData,
-        storage_limit_gb: formData.storage_limit_gb ? parseInt(formData.storage_limit_gb) : null,
-        retention_days: formData.retention_days ? parseInt(formData.retention_days) : null
-      });
-    }
-  };
 
   const handleChannelToggle = (channelId: number) => {
     setFormData(prev => ({
@@ -144,342 +113,313 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }));
   };
 
-  if (!isOpen) return null;
+  const handleSubmit = () => {
+    onSubmit({
+      ...formData,
+      storage_limit_gb: formData.storage_limit_gb ? parseInt(formData.storage_limit_gb) : null,
+      retention_days: formData.retention_days ? parseInt(formData.retention_days) : null
+    });
+  };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-        {/* Header with selection summary */}
-        <div className="flex items-center justify-between p-4 border-b bg-white">
-          <div className="space-y-1">
-            <h2 className="text-xl font-semibold">
-              {task ? 'Edit Task' : 'Create New Task'}
-            </h2>
-            <div className="flex gap-3 text-sm text-gray-500">
-              <span className="flex items-center gap-1.5">
-                <Users className="w-4 h-4" />
-                {formData.channel_ids.length} channels
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Gamepad2 className="w-4 h-4" />
-                {formData.game_ids.length} games
-              </span>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
+        <DialogHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <DialogTitle>
+                {task ? 'Edit Task' : 'Create New Task'}
+              </DialogTitle>
+              <div className="flex gap-4 mt-2 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Users className="h-4 w-4" />
+                  {formData.channel_ids.length} channels
+                </span>
+                <span className="flex items-center gap-1">
+                  <Gamepad2 className="h-4 w-4" />
+                  {formData.game_ids.length} games
+                </span>
+              </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 p-2"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+        </DialogHeader>
 
-        {/* Basic Info */}
-        <div className="p-4 space-y-4 bg-white border-b">
+        {/* Optional Name and Description */}
+        <div className="space-y-4 py-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Task Name
-            </label>
-            <input
-              type="text"
+            <Input
+              placeholder="Task name (optional - will be auto-generated if empty)"
               value={formData.name}
               onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="Enter task name"
             />
-            {errors.name && (
-              <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-            )}
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <textarea
+            <Textarea
+              placeholder="Task description (optional - will be auto-generated if empty)"
               value={formData.description}
               onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              rows={2}
-              placeholder="Enter task description"
+              rows={3}
             />
           </div>
         </div>
 
-        {/* Tabs Navigation */}
-        <div className="border-b bg-white">
-          <div className="flex gap-2 p-2">
-            <button
-              onClick={() => setActiveTab('channels')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
-                ${activeTab === 'channels' 
-                  ? 'bg-purple-100 text-purple-700' 
-                  : 'text-gray-600 hover:bg-gray-100'}`}
-            >
-              <Users className="w-4 h-4" />
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="channels" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
               Channels
-            </button>
-            <button
-              onClick={() => setActiveTab('games')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
-                ${activeTab === 'games' 
-                  ? 'bg-purple-100 text-purple-700' 
-                  : 'text-gray-600 hover:bg-gray-100'}`}
-            >
-              <Gamepad2 className="w-4 h-4" />
+            </TabsTrigger>
+            <TabsTrigger value="games" className="flex items-center gap-2">
+              <Gamepad2 className="h-4 w-4" />
               Games
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
-                ${activeTab === 'settings' 
-                  ? 'bg-purple-100 text-purple-700' 
-                  : 'text-gray-600 hover:bg-gray-100'}`}
-            >
-              <Settings className="w-4 h-4" />
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
               Settings
-            </button>
-          </div>
-        </div>
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Tab Content */}
-        <div className="overflow-y-auto flex-1" style={{ maxHeight: 'calc(90vh - 400px)' }}>
-          {activeTab === 'channels' && (
-            <div className="p-4 grid grid-cols-2 gap-4">
-              {channels?.map(channel => (
-                <div
-                  key={channel.id}
-                  onClick={() => handleChannelToggle(channel.id)}
-                  className={`relative bg-white rounded-lg border cursor-pointer transition-all hover:border-purple-300
-                    ${formData.channel_ids.includes(channel.id) 
-                      ? 'border-purple-500 shadow-sm' 
-                      : 'border-gray-200'}`}
-                >
-                  <div className="p-4 flex items-center gap-3">
-                    <Avatar className="w-12 h-12 rounded-full">
-                      <AvatarImage
-                        src={channel.profile_image_url}
-                        alt={channel.display_name || channel.username}
-                      />
-                      <AvatarFallback>
-                        {(channel.display_name || channel.username)[0].toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate">
-                        {channel.display_name || channel.username}
-                      </h3>
-                      <p className="text-sm text-gray-500 truncate">@{channel.username}</p>
-                    </div>
-                    {formData.channel_ids.includes(channel.id) && (
-                      <div className="absolute top-2 right-2 text-purple-600">
-                        <Check className="w-5 h-5" />
+          {/* Channels Tab */}
+          <TabsContent value="channels">
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder="Search channels..."
+                  value={channelSearch}
+                  onChange={(e) => setChannelSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto">
+                {channelsLoading ? (
+                  Array(4).fill(0).map((_, i) => (
+                    <div key={i} className="animate-pulse flex p-4 border rounded-lg">
+                      <div className="h-10 w-10 bg-gray-200 rounded-full" />
+                      <div className="ml-3 space-y-2 flex-1">
+                        <div className="h-4 bg-gray-200 rounded w-3/4" />
+                        <div className="h-3 bg-gray-200 rounded w-1/2" />
                       </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'games' && (
-            <div className="p-4 grid grid-cols-3 gap-4">
-              {games?.map(game => (
-                <div
-                  key={game.id}
-                  onClick={() => handleGameToggle(game.id)}
-                  className={`relative bg-white rounded-lg border cursor-pointer transition-all hover:border-purple-300
-                    ${formData.game_ids.includes(game.id) 
-                      ? 'border-purple-500 shadow-sm' 
-                      : 'border-gray-200'}`}
-                >
-                  <div className="p-3">
-                    <div className="aspect-video relative rounded-lg overflow-hidden bg-gray-100 mb-3">
-                      <img
-                        src={game.box_art_url?.replace('{width}', '285').replace('{height}', '380') ||
-                             '/api/placeholder/285/380'}
-                        alt={game.name}
-                        className="w-full h-full object-cover"
-                      />
                     </div>
-                    <h3 className="font-medium text-sm truncate pr-6">{game.name}</h3>
-                    {formData.game_ids.includes(game.id) && (
-                      <div className="absolute top-2 right-2 text-purple-600">
-                        <Check className="w-5 h-5" />
+                  ))
+                ) : filteredChannels.length === 0 ? (
+                  <div className="col-span-2 text-center py-8 text-gray-500">
+                    No channels found
+                  </div>
+                ) : (
+                  filteredChannels.map(channel => (
+                    <div
+                      key={channel.id}
+                      onClick={() => handleChannelToggle(channel.id)}
+                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        formData.channel_ids.includes(channel.id)
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={channel.profile_image_url} alt={channel.display_name} />
+                        <AvatarFallback>
+                          {(channel.display_name || channel.username)[0].toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">
+                          {channel.display_name || channel.username}
+                        </p>
+                        <p className="text-sm text-gray-500 truncate">
+                          @{channel.username}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'settings' && (
-            <div className="p-4 space-y-6">
-              {/* Schedule Settings */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Schedule Type
-                  </label>
-                  <select
-                    value={formData.schedule_type}
-                    onChange={e => setFormData(prev => ({ ...prev, schedule_type: e.target.value as any }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    <option value="interval">Interval</option>
-                    <option value="cron">Cron</option>
-                    <option value="manual">Manual</option>
-                  </select>
-                </div>
-
-                {formData.schedule_type !== 'manual' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {formData.schedule_type === 'interval' ? 'Interval (seconds)' : 'Cron Expression'}
-                    </label>
-                    <input
-                      type={formData.schedule_type === 'interval' ? 'number' : 'text'}
-                      value={formData.schedule_value}
-                      onChange={e => setFormData(prev => ({ ...prev, schedule_value: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      placeholder={formData.schedule_type === 'interval' ? '3600' : '0 */6 * * *'}
-                    />
-                    {errors.schedule_value && (
-                      <p className="mt-1 text-sm text-red-600">{errors.schedule_value}</p>
-                    )}
-                  </div>
+                      {formData.channel_ids.includes(channel.id) && (
+                        <Check className="h-5 w-5 text-purple-600" />
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
+            </div>
+          </TabsContent>
 
-              {/* Storage Settings */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Storage Limit (GB)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.storage_limit_gb}
-                    onChange={e => setFormData(prev => ({ ...prev, storage_limit_gb: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="Optional"
-                  />
-                  {errors.storage_limit_gb && (
-                    <p className="mt-1 text-sm text-red-600">{errors.storage_limit_gb}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Retention Period (days)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.retention_days}
-                    onChange={e => setFormData(prev => ({ ...prev, retention_days: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="Optional"
-                  />
-                  {errors.retention_days && (
-                    <p className="mt-1 text-sm text-red-600">{errors.retention_days}</p>
-                  )}
-                </div>
+          {/* Games Tab */}
+          <TabsContent value="games">
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder="Search games..."
+                  value={gameSearch}
+                  onChange={(e) => setGameSearch(e.target.value)}
+                  className="pl-10"
+                />
               </div>
 
-              {/* Additional Settings */}
-              <div className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.auto_delete}
-                    onChange={e => setFormData(prev => ({ ...prev, auto_delete: e.target.checked }))}
-                    className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                  />
-                  <label className="ml-2 text-sm text-gray-700">
-                    Auto-delete files after retention period
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Priority Level
-                  </label>
-                  <select
-                    value={formData.priority}
-                    onChange={e => setFormData(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    <option value={1}>Low</option>
-                    <option value={2}>Medium-Low</option>
-                    <option value={3}>Medium</option>
-                    <option value={4}>Medium-High</option>
-                    <option value={5}>High</option>
-                  </select>
-                </div>
+              <div className="grid grid-cols-3 gap-4 max-h-[400px] overflow-y-auto">
+                {gamesLoading ? (
+                  Array(6).fill(0).map((_, i) => (
+                    <div key={i} className="animate-pulse flex flex-col p-4 border rounded-lg">
+                      <div className="h-32 bg-gray-200 rounded mb-2" />
+                      <div className="h-4 bg-gray-200 rounded w-3/4" />
+                    </div>
+                  ))
+                ) : filteredGames.length === 0 ? (
+                  <div className="col-span-3 text-center py-8 text-gray-500">
+                    No games found
+                  </div>
+                ) : (
+                  filteredGames.map(game => (
+                    <div
+                      key={game.id}
+                      onClick={() => handleGameToggle(game.id)}
+                      className={`relative border rounded-lg cursor-pointer transition-colors ${
+                        formData.game_ids.includes(game.id)
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="p-3">
+                        <div className="w-full h-32 mb-2 bg-gray-100 rounded overflow-hidden">
+                          <img
+                            src={game.box_art_url}
+                            alt={game.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = '/api/placeholder/285/380';
+                            }}
+                          />
+                        </div>
+                        <p className="font-medium truncate">{game.name}</p>
+                      </div>
+                      {formData.game_ids.includes(game.id) && (
+                        <div className="absolute top-2 right-2">
+                          <Check className="h-5 w-5 text-purple-600" />
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-          )}
+          </TabsContent>
+
+          {/* Settings Tab */}
+          <TabsContent value="settings" className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Schedule Type</label>
+                <select
+                  value={formData.schedule_type}
+                  onChange={e => setFormData(prev => ({ ...prev, schedule_type: e.target.value }))}
+                  className="w-full p-2 border rounded-lg"
+                >
+                  <option value="interval">Interval</option>
+                  <option value="cron">Cron</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {formData.schedule_type === 'interval' ? 'Interval (seconds)' : 'Cron Expression'}
+                </label>
+                <Input
+                  type={formData.schedule_type === 'interval' ? 'number' : 'text'}
+                  value={formData.schedule_value}
+                  onChange={e => setFormData(prev => ({ ...prev, schedule_value: e.target.value }))}
+                  placeholder={formData.schedule_type === 'interval' ? '3600' : '0 */6 * * *'}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Storage Limit (GB)</label>
+                <Input
+                  type="number"
+                  value={formData.storage_limit_gb}
+                  onChange={e => setFormData(prev => ({ ...prev, storage_limit_gb: e.target.value }))}
+                  placeholder="Optional"
+                  min="0"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Retention Period (days)</label>
+                <Input
+                  type="number"
+                  value={formData.retention_days}
+                  onChange={e => setFormData(prev => ({ ...prev, retention_days: e.target.value }))}
+                  placeholder="Optional"
+                  min="0"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.auto_delete}
+                  onChange={e => setFormData(prev => ({ ...prev, auto_delete: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">Auto-delete files after retention period</span>
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Priority Level</label>
+              <select
+                value={formData.priority}
+                onChange={e => setFormData(prev => ({ ...prev, priority: e.target.value }))}
+                className="w-full p-2 border rounded-lg"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        {/* Summary */}
+        <div className="mt-6 bg-gray-50 -mx-6 -mb-6 p-4 border-t">
+          <div className="flex items-center justify-between">
+            <div className="flex gap-4 text-sm text-gray-600">
+              {formData.schedule_type === 'interval' && (
+                <span>Every {parseInt(formData.schedule_value) / 3600} hours</span>
+              )}
+              {formData.schedule_type === 'cron' && (
+                <span>Custom schedule</span>
+              )}
+              {formData.schedule_type === 'manual' && (
+                <span>Manual execution</span>
+              )}
+              {formData.storage_limit_gb && (
+                <span>{formData.storage_limit_gb}GB limit</span>
+              )}
+              {formData.retention_days && (
+                <span>{formData.retention_days} days retention</span>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+                disabled={formData.channel_ids.length === 0 && formData.game_ids.length === 0}
+              >
+                {task ? 'Update Task' : 'Create Task'}
+              </Button>
+            </div>
+          </div>
         </div>
-
-        {/* Error Display */}
-        {Object.keys(errors).length > 0 && (
-          <div className="px-4 py-3 bg-red-50 border-t border-red-100">
-            <div className="flex items-start gap-2 text-red-800">
-              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-              <div className="text-sm">
-                {Object.values(errors).map((error, index) => (
-                  <p key={index}>{error}</p>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="p-4 border-t bg-gray-50 flex items-center justify-between">
-          <div className="flex gap-4 text-sm text-gray-600">
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-4 h-4" />
-              {formData.schedule_type === 'interval' &&
-                `Every ${parseInt(formData.schedule_value) / 60} minutes`}
-              {formData.schedule_type === 'cron' && 'Custom schedule'}
-              {formData.schedule_type === 'manual' && 'Manual execution'}
-            </div>
-            {formData.storage_limit_gb && (
-              <div className="flex items-center gap-1.5">
-                <HardDrive className="w-4 h-4" />
-                {formData.storage_limit_gb}GB limit
-              </div>
-            )}
-            {formData.retention_days && (
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
-                {formData.retention_days} days retention
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700
-                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              disabled={formData.channel_ids.length === 0 && formData.game_ids.length === 0}
-            >
-              <Plus className="w-5 h-5" />
-              {task ? 'Update Task' : 'Create Task'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

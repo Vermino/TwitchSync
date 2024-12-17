@@ -24,11 +24,21 @@ interface TwitchChannel {
 }
 
 interface TwitchGame {
-  genres: any;
   id: string;
   name: string;
   box_art_url: string;
   igdb_id?: string;
+  genres?: string[];
+}
+
+// Extended interface for our enriched game data
+interface EnrichedTwitchGame extends TwitchGame {
+  category?: string;
+  tags?: string[];
+  last_checked?: string;
+  status?: string;
+  is_active?: boolean;
+  genres?: string[];
 }
 
 export class TwitchAPIService {
@@ -102,6 +112,24 @@ export class TwitchAPIService {
     }
   }
 
+  private formatBoxArtUrl(url: string | null | undefined): string {
+    if (!url) {
+      return `/api/placeholder/285/380`;
+    }
+
+    // Convert any sized URL to base IGDB.jpg format
+    if (url.includes('-')) {
+      return url.replace(/-\d+x\d+\.jpg$/, '-IGDB.jpg');
+    }
+
+    // Handle template URLs
+    if (url.includes('{width}') && url.includes('{height}')) {
+      return url.replace('{width}x{height}', 'IGDB');
+    }
+
+    return url;
+  }
+
   async searchChannels(query: string): Promise<TwitchChannel[]> {
     try {
       const response = await this.makeRequest<TwitchChannel>('/search/channels', {
@@ -140,6 +168,56 @@ export class TwitchAPIService {
     }
   }
 
+  async searchGames(query: string): Promise<TwitchGame[]> {
+    try {
+      const searchResponse = await this.makeRequest<TwitchGame>('/search/categories', {
+        query,
+        first: '20'
+      });
+
+      const enrichedGames = await Promise.all(
+        searchResponse.data.map(async (game) => {
+          try {
+            const gameResponse = await this.makeRequest<TwitchGame>('/games', {
+              id: game.id
+            });
+
+            const gameData = gameResponse.data[0] || game;
+
+            // Store original IGDB format URL
+            const baseBoxArtUrl = this.formatBoxArtUrl(gameData.box_art_url || game.box_art_url);
+
+            return {
+              ...gameData,
+              box_art_url: baseBoxArtUrl,
+              category: gameData.name.split(' ')[0].toLowerCase(),
+              tags: [],
+              last_checked: new Date().toISOString(),
+              status: 'active',
+              is_active: true
+            };
+          } catch (error) {
+            logger.error(`Failed to get details for game ${game.name}:`, error);
+            return {
+              ...game,
+              box_art_url: this.formatBoxArtUrl(game.box_art_url),
+              category: game.name.split(' ')[0].toLowerCase(),
+              tags: [],
+              last_checked: new Date().toISOString(),
+              status: 'active',
+              is_active: true
+            };
+          }
+        })
+      );
+
+      return enrichedGames;
+    } catch (error) {
+      logger.error('Error searching games:', error);
+      throw error;
+    }
+  }
+
   async getTopStreams(filters: StreamFilters): Promise<any[]> {
     const params: Record<string, string | number> = {
       first: filters.limit?.toString() || '100'
@@ -157,7 +235,7 @@ export class TwitchAPIService {
     return response.data;
   }
 
-  async getCurrentGame(channelId: string): Promise<TwitchGame | null> {
+  async getCurrentGame(channelId: string): Promise<EnrichedTwitchGame | null> {
     try {
       const response = await this.makeRequest<any>('/streams', { user_id: channelId });
       if (response.data.length === 0) {
@@ -166,9 +244,51 @@ export class TwitchAPIService {
 
       const stream = response.data[0];
       const gameResponse = await this.makeRequest<TwitchGame>('/games', { id: stream.game_id });
-      return gameResponse.data[0] || null;
+
+      if (gameResponse.data.length === 0) {
+        return null;
+      }
+
+      const gameData = gameResponse.data[0];
+      const enrichedGame: EnrichedTwitchGame = {
+        ...gameData,
+        box_art_url: this.formatBoxArtUrl(gameData.box_art_url),
+        category: gameData.name.split(' ')[0].toLowerCase(),
+        tags: [],
+        last_checked: new Date().toISOString(),
+        status: 'active',
+        is_active: true
+      };
+
+      return enrichedGame;
     } catch (error) {
       logger.error('Failed to get current game:', error);
+      return null;
+    }
+  }
+
+  async getGameById(gameId: string): Promise<EnrichedTwitchGame | null> {
+    try {
+      const response = await this.makeRequest<TwitchGame>('/games', { id: gameId });
+
+      if (response.data.length === 0) {
+        return null;
+      }
+
+      const gameData = response.data[0];
+      const enrichedGame: EnrichedTwitchGame = {
+        ...gameData,
+        box_art_url: this.formatBoxArtUrl(gameData.box_art_url),
+        category: gameData.name.split(' ')[0].toLowerCase(),
+        tags: [],
+        last_checked: new Date().toISOString(),
+        status: 'active',
+        is_active: true
+      };
+
+      return enrichedGame;
+    } catch (error) {
+      logger.error(`Failed to get game by ID ${gameId}:`, error);
       return null;
     }
   }

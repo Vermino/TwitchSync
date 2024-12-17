@@ -1,6 +1,6 @@
 // frontend/src/App.tsx
 
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -47,20 +47,26 @@ function App() {
 
               {/* Protected routes */}
               <Route
-                path="/"
                 element={
                   <ProtectedRoute>
                     <Layout />
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Dashboard />} />
-                <Route path="channels" element={<Channels />} />
-                <Route path="games" element={<Games />} />
-                <Route path="discovery" element={<ContentDiscovery />} />
-                <Route path="tasks" element={<TaskManager />} />
-                <Route path="settings" element={<Settings />} />
+                {/* Root redirect */}
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+                {/* Main routes */}
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/channels" element={<Channels />} />
+                <Route path="/games" element={<Games />} />
+                <Route path="/discovery" element={<ContentDiscovery />} />
+                <Route path="/tasks" element={<TaskManager />} />
+                <Route path="/settings" element={<Settings />} />
               </Route>
+
+              {/* Catch all redirect */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </AuthProvider>
         </Router>

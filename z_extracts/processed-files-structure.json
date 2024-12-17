@@ -1,8 +1,16 @@
 {
-  "updated_at": "2024-12-17T03:39:58.809468",
+  "updated_at": "2024-12-17T12:31:30.084862",
   "tree": {
-    "frontend/src/_files": [
-      "App.tsx"
-    ]
+    "frontend": {
+      "src/components/_files": [
+        "TaskModal.tsx",
+        "GameSearchModal.tsx"
+      ]
+    },
+    "backend": {
+      "src/types/_files": [
+        "database.ts"
+      ]
+    }
   }
 }

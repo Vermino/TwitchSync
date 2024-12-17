@@ -200,6 +200,7 @@ export interface ChatMessage {
 export type TaskType = 'channel' | 'game' | 'combined';
 export type TaskScheduleType = 'interval' | 'cron' | 'manual';
 export type TaskStatus = 'pending' | 'active' | 'completed' | 'failed';
+export type TaskPriority = 'low' | 'medium' | 'high';
 
 export interface Task {
   id: number;
@@ -216,7 +217,7 @@ export interface Task {
   auto_delete: boolean;
   is_active: boolean;
   status: TaskStatus;
-  priority: number;
+  priority: TaskPriority;
   last_run: Date | null;
   next_run: Date | null;
   created_at: Date;
@@ -349,7 +350,7 @@ export interface CreateTaskRequest {
   storage_limit_gb?: number;
   retention_days?: number;
   auto_delete?: boolean;
-  priority?: number;
+  priority?: TaskPriority;
 }
 
 export interface UpdateTaskRequest {
@@ -363,7 +364,7 @@ export interface UpdateTaskRequest {
   retention_days?: number;
   auto_delete?: boolean;
   is_active?: boolean;
-  priority?: number;
+  priority?: TaskPriority;
 }
 
 // Discovery types

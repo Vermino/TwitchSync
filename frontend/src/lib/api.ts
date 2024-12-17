@@ -1,7 +1,7 @@
 // frontend/src/lib/api.ts
 
 import axios from 'axios';
-import type { Channel, Game, Task } from '../types';
+import type { Channel, Game, Task, CreateTaskRequest, UpdateTaskRequest } from '../types';
 import type { SystemSettings, StorageStats } from '../types/settings';
 import type {
   ChannelRecommendation,
@@ -15,6 +15,7 @@ import type {
   TrendingCategory,
   UpdatePreferencesResponse
 } from '../types/discovery';
+import {CreateTaskRequest, TaskDetails, TaskProgress, TaskStorage, UpdateTaskRequest} from "../types/task.ts";
 
 
 interface DashboardStats {
@@ -207,7 +208,14 @@ class ApiClient {
         params: { query },
         headers: this.getHeaders()
       });
-      return response.data;
+      return response.data.map((game: any) => ({
+        ...game,
+        box_art_url: game.box_art_url || null,
+        category: game.category || game.name.split(' ')[0].toLowerCase(),
+        tags: game.tags || [],
+        status: game.status || 'active',
+        is_active: true
+      }));
     } catch (error) {
       console.error('Error searching Twitch games:', error);
       throw this.handleError(error);
@@ -298,11 +306,28 @@ class ApiClient {
     }
   }
 
-  async createGame(data: { twitch_game_id: string; name: string }): Promise<Game> {
+  async createGame(data: {
+    twitch_game_id: string;
+    name: string;
+    box_art_url?: string;
+    category?: string;
+    tags?: string[];
+    status?: string;
+    is_active?: boolean;
+  }): Promise<Game> {
     try {
       const response = await axios.post(
         `${this.baseURL}/games`,
-        data,
+        {
+          twitch_game_id: data.twitch_game_id,
+          name: data.name,
+          box_art_url: data.box_art_url,
+          category: data.category || data.name.split(' ')[0].toLowerCase(),
+          tags: data.tags || [],
+          status: data.status || 'active',
+          is_active: data.is_active !== undefined ? data.is_active : true,
+          last_checked: new Date().toISOString()
+        },
         { headers: this.getHeaders() }
       );
       return response.data;
@@ -350,14 +375,30 @@ class ApiClient {
     }
   }
 
-  async createTask(data: {
-    type: string;
-    config: Record<string, any>;
-  }): Promise<Task> {
+  async getTaskDetails(id: number): Promise<TaskDetails> {
     try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/details`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching task details:', error);
+      throw this.handleError(error);
+    }
+  }
+
+   async createTask(data: CreateTaskRequest): Promise<Task> {
+    try {
+      // Ensure priority is a valid string value
+      const requestData = {
+        ...data,
+        priority: data.priority || 'low'  // Default to 'low' if not specified
+      };
+
       const response = await axios.post(
         `${this.baseURL}/tasks`,
-        data,
+        requestData,
         { headers: this.getHeaders() }
       );
       return response.data;
@@ -367,16 +408,35 @@ class ApiClient {
     }
   }
 
-  async updateTask(id: number, data: Partial<Task>): Promise<Task> {
+  async updateTask(id: number, data: UpdateTaskRequest): Promise<Task> {
     try {
+      // Ensure priority is a valid string value if provided
+      const requestData = {
+        ...data,
+        priority: data.priority || undefined  // Only include if specified
+      };
+
       const response = await axios.put(
         `${this.baseURL}/tasks/${id}`,
-        data,
+        requestData,
         { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
       console.error('Error updating task:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async updateTaskPath(id: number, path: string): Promise<void> {
+    try {
+      await axios.put(
+        `${this.baseURL}/tasks/${id}/path`,
+        { path },
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error updating task path:', error);
       throw this.handleError(error);
     }
   }
@@ -391,6 +451,45 @@ class ApiClient {
       throw this.handleError(error);
     }
   }
+
+  async getTaskProgress(id: number): Promise<TaskProgress> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/progress`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching task progress:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getTaskStorage(id: number): Promise<TaskStorage> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/storage`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching task storage:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async runTask(id: number): Promise<void> {
+  try {
+    await axios.post(
+      `${this.baseURL}/tasks/${id}/run`,
+      {},
+      { headers: this.getHeaders() }
+    );
+  } catch (error) {
+    console.error('Error running task:', error);
+    throw this.handleError(error);
+  }
+}
 
   // Discovery Methods
   async getDiscoveryFeed(): Promise<DiscoveryFeedResponse> {

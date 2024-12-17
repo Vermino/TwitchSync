@@ -1,4 +1,4 @@
-// filepath: frontend/src/pages/Games.tsx
+// Filepath: frontend/src/pages/Games.tsx
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +16,12 @@ interface Game {
   last_checked: string | null;
   created_at: string;
 }
+
+// Constants for box art dimensions
+const BOX_ART_DIMENSIONS = {
+  THUMBNAIL: { width: 52, height: 72 },
+  DEFAULT: { width: 285, height: 380 }
+};
 
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center h-64">
@@ -41,15 +47,14 @@ const Games = () => {
     queryFn: () => api.getGames(),
   });
 
-  console.log("Games data:", games);
-
   // Add game mutation
   const addGameMutation = useMutation({
-    mutationFn: (selectedGames: Array<{ id: string, name: string }>) =>
+    mutationFn: (selectedGames: Array<{ id: string; name: string; box_art_url: string }>) =>
       Promise.all(selectedGames.map(game =>
         api.createGame({
           twitch_game_id: game.id,
-          name: game.name
+          name: game.name,
+          box_art_url: game.box_art_url,
         })
       )),
     onSuccess: () => {
@@ -75,6 +80,23 @@ const Games = () => {
     },
   });
 
+  const formatBoxArtUrl = (url: string | undefined, dimensions: { width: number; height: number }) => {
+    if (!url) {
+      return `/api/placeholder/${dimensions.width}/${dimensions.height}`;
+    }
+
+    // Check if URL already has dimensions
+    if (url.includes('http') && !url.includes('{width}x{height}')) {
+      return url;
+    }
+
+    return url.replace('{width}x{height}', `${dimensions.width}x${dimensions.height}`);
+  };
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, dimensions: { width: number; height: number }) => {
+    e.currentTarget.src = `/api/placeholder/${dimensions.width}/${dimensions.height}`;
+  };
+
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorDisplay error={error as Error} />;
 
@@ -96,7 +118,7 @@ const Games = () => {
         <table className="min-w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Game</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Twitch ID</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Added</th>
@@ -106,17 +128,19 @@ const Games = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {games && games.length > 0 ? (
               games.map((game) => (
-                <tr key={game.id}>
+                <tr key={game.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-3">
-                      {/* Render box_art_url image if available */}
-                      {game.box_art_url && (
+                      <div className="h-[72px] w-[52px] flex-shrink-0 overflow-hidden rounded">
                         <img
-                          src={game.box_art_url.replace('{width}', '52').replace('{height}', '72')}
+                          src={formatBoxArtUrl(game.box_art_url, BOX_ART_DIMENSIONS.THUMBNAIL)}
                           alt={game.name}
-                          className="w-13 h-18 rounded object-cover"
+                          className="h-full w-full object-cover"
+                          style={{ aspectRatio: '52/72' }}
+                          onError={(e) => handleImageError(e, BOX_ART_DIMENSIONS.THUMBNAIL)}
+                          loading="lazy"
                         />
-                      )}
+                      </div>
                       <div className="text-sm font-medium text-gray-900">{game.name}</div>
                     </div>
                   </td>
@@ -151,7 +175,7 @@ const Games = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <button
                       onClick={() => deleteGameMutation.mutate(game.id)}
-                      className="text-red-600 hover:text-red-900"
+                      className="text-red-600 hover:text-red-900 transition-colors"
                     >
                       <Trash2 className="w-5 h-5" />
                     </button>
@@ -183,8 +207,8 @@ const Games = () => {
 // Wrap with error boundary
 export default function GamesWrapper() {
   return (
-      <ErrorBoundary FallbackComponent={ErrorDisplay}>
-        <Games/>
-      </ErrorBoundary>
+    <ErrorBoundary FallbackComponent={ErrorDisplay}>
+      <Games />
+    </ErrorBoundary>
   );
 }

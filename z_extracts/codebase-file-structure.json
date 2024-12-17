@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-17T03:39:58.808466",
+  "updated_at": "2024-12-17T12:31:30.084862",
   "tree": {
     "backend": {
       "_files": [
@@ -31,6 +31,7 @@
             "006_missing_tables.ts",
             "007_discovery_preferences_tables.ts",
             "008_discovery_stats_tables.ts",
+            "009_task_priority_enum.ts",
             "runner.ts"
           ]
         },
@@ -137,9 +138,10 @@
             "ChannelSearchModal.tsx",
             "DownloadManager.tsx",
             "GameSearchModal.tsx",
-            "Navbar.tsx",
+            "QueueDisplay.tsx",
             "SettingsManager.tsx",
             "StatusBar.tsx",
+            "TaskAccordion.tsx",
             "TaskModal.tsx",
             "TwitchConnect.tsx",
             "UserMenu.tsx",
@@ -158,6 +160,7 @@
           },
           "ui": {
             "_files": [
+              "accordion.tsx",
               "alert.tsx",
               "avatar.tsx",
               "badge.tsx",
@@ -165,12 +168,14 @@
               "card.tsx",
               "dialog.tsx",
               "dropdown-menu.tsx",
+              "input.tsx",
               "label.tsx",
               "progress.tsx",
               "select.tsx",
               "slider.tsx",
               "switch.tsx",
               "tabs.tsx",
+              "textarea.tsx",
               "toast.tsx",
               "toaster.tsx",
               "tooltip.tsx",
