@@ -9,7 +9,16 @@ import { promisify } from 'util';
 import { Transform, pipeline } from 'stream';
 import { logger } from '../utils/logger';
 import { TwitchAPIService } from './twitch/api';
-import { VodStatus, VideoQuality, DownloadPriority } from '../types/database';
+import {
+  VodStatus,
+  VideoQuality,
+  DownloadPriority,
+  TaskProgressInfo,
+  TaskStorageInfo,
+  TaskVODStats,
+  TaskDetails,
+  DatabaseVOD
+} from '../types/database';
 
 const pipelineAsync = promisify(pipeline);
 
@@ -69,11 +78,11 @@ interface DownloadProgress {
 interface DownloadState {
   vodId: number;
   progress: DownloadProgress;
-  resumePosition: number;
   activeSegments: Set<number>;
   completedSegments: Set<number>;
   failedSegments: Set<number>;
   checksums: Map<number, string>;
+  resumePosition: number;
   throttle: {
     enabled: boolean;
     bytesPerSecond: number;
@@ -91,8 +100,7 @@ class DownloadManager {
   private retryAttempts: number;
   private retryDelay: number;
   private twitchAPI: TwitchAPIService;
-  private cleanupInterval: NodeJS.Timeout;
-  private readonly CHUNK_SIZE = 16384; // 16KB chunks for throttling
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   private constructor(
     pool: Pool,
@@ -221,6 +229,190 @@ class DownloadManager {
       duration: playlist.duration,
       quality: selectedQuality.quality
     };
+  }
+
+  async getTaskVODStats(taskId: number): Promise<TaskVODStats> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT 
+          COUNT(*) as total_vods,
+          SUM(file_size) as total_size,
+          AVG(EXTRACT(EPOCH FROM duration::interval)) as average_duration,
+          COUNT(CASE WHEN download_status = 'completed' THEN 1 END)::float / COUNT(*)::float as success_rate,
+          jsonb_object_agg(preferred_quality, quality_count) as vods_by_quality,
+          jsonb_object_agg(language, lang_count) as vods_by_language
+        FROM vods
+        WHERE task_id = $1
+        GROUP BY task_id
+      `, [taskId]);
+
+      return result.rows[0] || {
+        total_vods: 0,
+        total_size: 0,
+        average_duration: 0,
+        download_success_rate: 0,
+        vods_by_quality: {},
+        vods_by_language: {}
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async getTaskDetails(taskId: number): Promise<TaskDetails> {
+    const client = await this.pool.connect();
+    try {
+      const [progress, storage, vodStats] = await Promise.all([
+        this.getTaskProgress(taskId),
+        this.getTaskStorage(taskId),
+        this.getTaskVODStats(taskId)
+      ]);
+
+      return {
+        id: taskId,
+        task_id: taskId,
+        progress,
+        storage,
+        vod_stats: vodStats,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+   private async getTaskProgress(taskId: number): Promise<TaskProgressInfo> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT 
+          COUNT(CASE WHEN download_status = 'completed' THEN 1 END) as completed,
+          COUNT(*) as total,
+          MAX(CASE WHEN download_status = 'downloading' THEN channel_id || ':' || title END) as current_item
+        FROM vods
+        WHERE task_id = $1
+      `, [taskId]);
+
+      const row = result.rows[0];
+      const percentage = row.total > 0 ? (row.completed / row.total) * 100 : 0;
+      const current_item = row.current_item ? {
+        type: 'channel' as const,
+        name: row.current_item.split(':')[1],
+        status: 'downloading' as const
+      } : undefined;
+
+      return {
+        percentage,
+        completed: parseInt(row.completed),
+        total: parseInt(row.total),
+        current_item
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  private async getTaskStorage(taskId: number): Promise<TaskStorageInfo> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT 
+          COALESCE(SUM(file_size), 0) as used_space,
+          MAX(t.storage_limit_gb) * 1024 * 1024 * 1024 as storage_limit
+        FROM vods v
+        JOIN tasks t ON v.task_id = t.id
+        WHERE t.id = $1
+      `, [taskId]);
+
+      const row = result.rows[0];
+      const used = parseInt(row.used_space) || 0;
+      const limit = parseInt(row.storage_limit) || 1024 * 1024 * 1024 * 100; // Default 100GB
+
+      return {
+        used,
+        limit,
+        remaining: Math.max(0, limit - used)
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async trackDownloadProgress(
+    vodId: number,
+    progress: number,
+    status: VodStatus,
+    error?: string
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(`
+        UPDATE vods
+        SET 
+          download_progress = $2,
+          download_status = $3,
+          error_message = $4,
+          updated_at = NOW()
+        WHERE id = $1
+      `, [vodId, progress, status, error || null]);
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateDownloadStats(
+    vodId: number,
+    stats: {
+      file_size?: number;
+      download_speed?: number;
+      preferred_quality?: string;
+      language?: string;
+    }
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      const updates: string[] = [];
+      const values: (number | string | null)[] = [vodId];
+      let paramCount = 2;
+
+      if (stats.file_size !== undefined) {
+        updates.push(`file_size = $${paramCount}`);
+        values.push(stats.file_size);
+        paramCount++;
+      }
+
+      if (stats.download_speed !== undefined) {
+        updates.push(`download_speed = $${paramCount}`);
+        values.push(stats.download_speed);
+        paramCount++;
+      }
+
+      if (stats.preferred_quality !== undefined) {
+        updates.push(`preferred_quality = $${paramCount}`);
+        values.push(stats.preferred_quality);
+        paramCount++;
+      }
+
+      if (stats.language !== undefined) {
+        updates.push(`language = $${paramCount}`);
+        values.push(stats.language);
+        paramCount++;
+      }
+
+      if (updates.length > 0) {
+        await client.query(`
+          UPDATE vods
+          SET 
+            ${updates.join(', ')},
+            updated_at = NOW()
+          WHERE id = $1
+        `, values);
+      }
+    } finally {
+      client.release();
+    }
   }
 
   private async downloadSegment(
@@ -914,6 +1106,7 @@ private async processDownloadQueue(): Promise<void> {
   public destroy(): void {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
     this.activeDownloads.clear();
   }
@@ -936,5 +1129,5 @@ private async processDownloadQueue(): Promise<void> {
 
 }
 
-export { DownloadManager };  // Changed to named export
+export { DownloadManager };
 export default DownloadManager;

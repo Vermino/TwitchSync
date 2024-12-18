@@ -38,7 +38,7 @@ FILE_TYPES = [".py", ".txt", ".md", ".js", ".html", ".css", ".cs", ".sln", ".csp
 
 # Directories to exclude
 EXCLUDE_DIRS = {"External", "venv", ".venv", "build", ".git", ".idea", "node_modules",
-                "__pycache__", "dist", "bin", "obj", "target", "out", "build", "deps"}
+                "__pycache__", "dist", "bin", "obj", "target", "build", "deps"}
 
 # File exclusions
 EXCLUDE_FILES = {"package-lock.json", "content.py", "README.md", ".DS_Store",

@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-17T16:10:32.521479",
+  "updated_at": "2024-12-17T18:30:12.901527",
   "tree": {
     "backend": {
       "_files": [
@@ -19,6 +19,11 @@
           "_files": [
             "database.ts",
             "twitch.ts"
+          ]
+        },
+        "controllers": {
+          "_files": [
+            "taskController.ts"
           ]
         },
         "database": {
@@ -43,6 +48,77 @@
             "auth.ts",
             "logging.ts"
           ]
+        },
+        "routes": {
+          "auth": {
+            "_files": [
+              "index.ts"
+            ]
+          },
+          "channels": {
+            "_files": [
+              "controller.ts",
+              "index.ts",
+              "validation.ts"
+            ]
+          },
+          "_files": [
+            "dashboard.ts",
+            "discovery.ts",
+            "downloads.ts",
+            "games.ts",
+            "index.ts",
+            "system.ts",
+            "taskRoutes.ts"
+          ],
+          "discovery": {
+            "_files": [
+              "controller.ts",
+              "index.ts",
+              "validation.ts"
+            ]
+          },
+          "downloads": {
+            "_files": [
+              "index.ts"
+            ]
+          },
+          "games": {
+            "_files": [
+              "controller.ts",
+              "index.ts",
+              "validation.ts"
+            ]
+          },
+          "settings": {
+            "_files": [
+              "controller.ts",
+              "index.ts",
+              "validation.ts"
+            ]
+          },
+          "system": {
+            "_files": [
+              "index.ts"
+            ]
+          },
+          "tasks": {
+            "_files": [
+              "controller.ts",
+              "index.ts",
+              "validation.ts"
+            ]
+          },
+          "twitch": {
+            "_files": [
+              "search.ts"
+            ]
+          },
+          "watch": {
+            "_files": [
+              "index.ts"
+            ]
+          }
         },
         "services": {
           "auth": {
@@ -140,6 +216,8 @@
             "ChannelSearchModal.tsx",
             "DownloadManager.tsx",
             "GameSearchModal.tsx",
+            "Layout.tsx",
+            "ProtectedRoute.tsx",
             "QueueDisplay.tsx",
             "SettingsManager.tsx",
             "StatusBar.tsx",
@@ -149,6 +227,11 @@
             "UserMenu.tsx",
             "WatchConfig.tsx"
           ],
+          "TaskModal": {
+            "_files": [
+              "Filters.tsx"
+            ]
+          },
           "discovery": {
             "_files": [
               "DiscoveryHeader.tsx",

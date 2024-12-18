@@ -3,18 +3,16 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
-import { Task, CreateTaskDTO, TaskType } from '../../types/database';
-import { parseExpression } from 'cron-parser';
-
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: number;
-    twitch_id?: string;
-  };
-}
+import { DownloadManager } from '../../services/downloadManager';
+import {
+  Task,
+  CreateTaskRequest,
+  UpdateTaskRequest,
+  TaskDetails
+} from '../../types/database';
 
 export class TasksController {
-  constructor(private pool: Pool) {
+  constructor(private pool: Pool, private downloadManager: DownloadManager) {
     // Bind all methods to preserve 'this' context
     this.getAllTasks = this.getAllTasks.bind(this);
     this.getTaskById = this.getTaskById.bind(this);
@@ -22,10 +20,11 @@ export class TasksController {
     this.updateTask = this.updateTask.bind(this);
     this.deleteTask = this.deleteTask.bind(this);
     this.getTaskHistory = this.getTaskHistory.bind(this);
+    this.getTaskDetails = this.getTaskDetails.bind(this);
     this.manualRunTask = this.manualRunTask.bind(this);
   }
 
-  async getAllTasks(req: AuthenticatedRequest, res: Response) {
+  async getAllTasks(req: Request, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -56,7 +55,7 @@ export class TasksController {
     }
   }
 
-  async getTaskById(req: AuthenticatedRequest, res: Response) {
+  async getTaskById(req: Request, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -67,7 +66,7 @@ export class TasksController {
         return;
       }
 
-      const result = await client.query<Task>(`
+      const result = await client.query(`
         SELECT t.*,
                COUNT(th.id) as total_runs,
                COUNT(CASE WHEN th.status = 'success' THEN 1 END) as successful_runs,
@@ -92,7 +91,7 @@ export class TasksController {
     }
   }
 
- async createTask(req: AuthenticatedRequest, res: Response) {
+  async createTask(req: Request, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -102,19 +101,20 @@ export class TasksController {
         return;
       }
 
-      const taskData: CreateTaskDTO = {
+      const taskData: CreateTaskRequest = {
         ...req.body,
+        channel_ids: req.body.channel_ids || [],
+        game_ids: req.body.game_ids || [],
         user_id: userId
       };
 
-      // Validate required fields
+      // Determine task type based on channel_ids and game_ids
       if (!taskData.task_type) {
-        // Determine task type based on channel_ids and game_ids
-        if (taskData.channel_ids?.length > 0 && taskData.game_ids?.length > 0) {
+        if (taskData.channel_ids.length > 0 && taskData.game_ids.length > 0) {
           taskData.task_type = 'combined';
-        } else if (taskData.channel_ids?.length > 0) {
+        } else if (taskData.channel_ids.length > 0) {
           taskData.task_type = 'channel';
-        } else if (taskData.game_ids?.length > 0) {
+        } else if (taskData.game_ids.length > 0) {
           taskData.task_type = 'game';
         } else {
           res.status(400).json({ error: 'At least one channel or game must be selected' });
@@ -122,11 +122,11 @@ export class TasksController {
         }
       }
 
-      // Set default name if not provided
+      // Generate default name if not provided
       if (!taskData.name) {
         const typeLabel = taskData.task_type === 'combined' ? 'Combined' :
                          taskData.task_type === 'channel' ? 'Channel' : 'Game';
-        const itemCount = (taskData.channel_ids?.length || 0) + (taskData.game_ids?.length || 0);
+        const itemCount = taskData.channel_ids.length + taskData.game_ids.length;
         const scheduleLabel = taskData.schedule_type === 'interval' ?
           `Every ${parseInt(taskData.schedule_value) / 3600} hours` :
           'Custom schedule';
@@ -134,23 +134,7 @@ export class TasksController {
         taskData.name = `${typeLabel} Task: ${itemCount} items - ${scheduleLabel}`;
       }
 
-      // Validate schedule value based on type
-      if (taskData.schedule_type === 'cron') {
-        try {
-          parseExpression(taskData.schedule_value);
-        } catch (error) {
-          res.status(400).json({ error: 'Invalid cron expression' });
-          return;
-        }
-      } else if (taskData.schedule_type === 'interval') {
-        const interval = parseInt(taskData.schedule_value);
-        if (isNaN(interval) || interval < 60) {
-          res.status(400).json({ error: 'Invalid interval. Must be at least 60 seconds.' });
-          return;
-        }
-      }
-
-      const result = await client.query<Task>(`
+      const result = await client.query(`
         INSERT INTO tasks (
           name,
           description,
@@ -168,23 +152,26 @@ export class TasksController {
           status,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::task_priority_level, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 
+          $12::task_priority_level, $13, 'pending', 
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
         RETURNING *
       `, [
         taskData.name,
         taskData.description,
         taskData.task_type,
-        taskData.channel_ids || [],
-        taskData.game_ids || [],
+        taskData.channel_ids,
+        taskData.game_ids,
         taskData.schedule_type,
         taskData.schedule_value,
         taskData.storage_limit_gb,
         taskData.retention_days,
         taskData.auto_delete || false,
-        taskData.is_active !== undefined ? taskData.is_active : true,
+        taskData.is_active ?? true,
         taskData.priority || 'low',
-        taskData.user_id,
-        'pending'
+        taskData.user_id
       ]);
 
       logger.info('Task created successfully', {
@@ -200,7 +187,7 @@ export class TasksController {
     }
   }
 
-  async updateTask(req: AuthenticatedRequest, res: Response) {
+  async updateTask(req: Request, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -222,59 +209,32 @@ export class TasksController {
         return;
       }
 
-      const updates = req.body;
+      const updates: UpdateTaskRequest = req.body;
 
-      // Validate priority if provided
-      if (updates.priority && !['low', 'medium', 'high'].includes(updates.priority)) {
-        res.status(400).json({ error: 'Invalid priority level. Must be one of: low, medium, high' });
-        return;
-      }
+      // Cast priority to enum type if it's being updated
+      const priorityClause = updates.priority ?
+        `, priority = '${updates.priority}'::task_priority_level` : '';
 
-      // Validate schedule if being updated
-      if (updates.schedule_type && updates.schedule_value) {
-        if (updates.schedule_type === 'cron') {
-          try {
-            parseExpression(updates.schedule_value);
-          } catch (error) {
-            res.status(400).json({ error: 'Invalid cron expression' });
-            return;
-          }
-        } else if (updates.schedule_type === 'interval') {
-          const interval = parseInt(updates.schedule_value);
-          if (isNaN(interval) || interval < 60) {
-            res.status(400).json({ error: 'Invalid interval. Must be at least 60 seconds.' });
-            return;
-          }
+      // Build dynamic update query
+      const setValues: any[] = [];
+      const setClauses: string[] = [];
+      let paramCount = 1;
+
+      for (const [key, value] of Object.entries(updates)) {
+        if (key !== 'priority' && value !== undefined) {
+          setClauses.push(`${key} = $${paramCount}`);
+          setValues.push(value);
+          paramCount++;
         }
       }
 
-      // Cast priority to enum type if it's being updated
-      if (updates.priority) {
-        updates.priority = `${updates.priority}::task_priority_level`;
-      }
-
-      // Build dynamic update query
-      const setClause = Object.entries(updates)
-        .map(([key, value], index) => {
-          if (key === 'priority') {
-            // Priority is already cast to enum type
-            return `${key} = ${value}`;
-          }
-          return `${key} = $${index + 3}`;
-        })
-        .join(', ');
-
-      // Filter out priority from values as it's handled in the query
-      const updateValues = Object.entries(updates)
-        .filter(([key]) => key !== 'priority')
-        .map(([_, value]) => value);
-
-      const result = await client.query<Task>(`
+      const result = await client.query(`
         UPDATE tasks 
-        SET ${setClause}, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND user_id = $2
+        SET ${setClauses.join(', ')}${priorityClause},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $${paramCount} AND user_id = $${paramCount + 1}
         RETURNING *
-      `, [taskId, userId, ...updateValues]);
+      `, [...setValues, taskId, userId]);
 
       res.json(result.rows[0]);
     } catch (error) {
@@ -285,7 +245,7 @@ export class TasksController {
     }
   }
 
-  async deleteTask(req: AuthenticatedRequest, res: Response) {
+  async deleteTask(req: Request, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -315,7 +275,7 @@ export class TasksController {
     }
   }
 
-  async getTaskHistory(req: AuthenticatedRequest, res: Response) {
+  async getTaskHistory(req: Request, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -355,7 +315,7 @@ export class TasksController {
     }
   }
 
-  async manualRunTask(req: AuthenticatedRequest, res: Response) {
+  async getTaskDetails(req: Request, res: Response) {
     const client = await this.pool.connect();
     try {
       const userId = req.user?.id;
@@ -367,7 +327,40 @@ export class TasksController {
       }
 
       // Verify task exists and belongs to user
-      const taskCheck = await client.query<Task>(
+      const taskCheck = await client.query(
+        'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
+        [taskId, userId]
+      );
+
+      if (taskCheck.rows.length === 0) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+      }
+
+      // Get task details from download manager
+      const details = await this.downloadManager.getTaskDetails(taskId);
+      res.json(details);
+    } catch (error) {
+      logger.error('Error fetching task details:', error);
+      res.status(500).json({ error: 'Failed to fetch task details' });
+    } finally {
+      client.release();
+    }
+  }
+
+  async manualRunTask(req: Request, res: Response) {
+    const client = await this.pool.connect();
+    try {
+      const userId = req.user?.id;
+      const taskId = parseInt(req.params.id);
+
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      // Verify task exists and belongs to user
+      const taskCheck = await client.query(
         'SELECT * FROM tasks WHERE id = $1 AND user_id = $2',
         [taskId, userId]
       );
@@ -414,4 +407,5 @@ export class TasksController {
   }
 }
 
-export const createTasksController = (pool: Pool) => new TasksController(pool);
+export const createTasksController = (pool: Pool, downloadManager: DownloadManager) =>
+  new TasksController(pool, downloadManager);

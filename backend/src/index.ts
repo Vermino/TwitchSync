@@ -20,8 +20,11 @@ import { authenticate } from "./middleware/auth";
 import { loggingMiddleware } from './middleware/logging';
 import { setupTwitchSearchRoutes } from './routes/twitch/search';
 import { createDiscoveryRouter } from './routes/discovery';
+import { EventEmitter } from 'events';
 import { DownloadManager } from './services/downloadManager';
 
+
+EventEmitter.defaultMaxListeners = 15;
 dotenv.config();
 
 const app = express();
@@ -90,7 +93,7 @@ app.use('/api/watch', authenticate(pool), setupWatchRoutes(pool));
 app.use('/api/system', authenticate(pool), setupSystemRoutes(pool));
 app.use('/api/downloads', authenticate(pool), createDownloadsRouter(pool, downloadManager));
 app.use('/api/settings', authenticate(pool), setupSettingsRoutes(pool));
-app.use('/api/tasks', authenticate(pool), setupTaskRoutes(pool));
+app.use('/api/tasks', authenticate(pool), setupTaskRoutes(pool));  // Removed extra parameter
 app.use('/api/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));
 app.use('/api/discovery', createDiscoveryRouter(pool));
 

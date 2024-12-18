@@ -2,44 +2,13 @@
 
 import React from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { HardDrive, Users, Gamepad2, Clock, Calendar, PlayCircle, Trash2 } from 'lucide-react';
+import { HardDrive, Users, Gamepad2, Clock, Calendar, PlayCircle, Trash2, Settings2 } from 'lucide-react';
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-
-interface Task {
-  id: number;
-  name: string;
-  description: string | null;
-  task_type: 'channel' | 'game' | 'combined';
-  channel_ids: number[];
-  game_ids: number[];
-  schedule_type: 'interval' | 'cron' | 'manual';
-  schedule_value: string;
-  storage_limit_gb: number | null;
-  retention_days: number | null;
-  auto_delete: boolean;
-  priority: number;
-}
-
-interface TaskProgress {
-  percentage: number;
-  completed: number;
-  total: number;
-  current_item?: {
-    type: 'channel' | 'game';
-    name: string;
-    status: string;
-  };
-}
-
-interface TaskStorage {
-  used: number;
-  limit: number;
-  remaining: number;
-}
+import type { Task, TaskProgress, TaskStorage } from '@/types/task';
 
 interface TaskAccordionProps {
   task: Task;
@@ -115,6 +84,9 @@ export const TaskAccordion: React.FC<TaskAccordionProps> = ({
                 <Gamepad2 className="h-4 w-4" />
                 {task.game_ids.length}
               </div>
+              {progress.percentage > 0 && (
+                <Progress value={progress.percentage} className="w-24 h-2" />
+              )}
             </div>
           </div>
         </AccordionTrigger>
@@ -235,6 +207,7 @@ export const TaskAccordion: React.FC<TaskAccordionProps> = ({
                   onClick={onEdit}
                   className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
                 >
+                  <Settings2 className="h-4 w-4 mr-2" />
                   Edit Settings
                 </Button>
               </div>

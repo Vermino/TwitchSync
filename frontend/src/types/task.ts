@@ -50,23 +50,28 @@ export interface TaskStorage {
   };
 }
 
-export interface TaskDetails extends Task {
-  progress: TaskProgress;
-  storage: TaskStorage;
+export interface TaskFilters {
+  minimum_followers?: number;
+  minimum_views?: number;
+  minimum_duration?: number;
+  languages?: string[];
+  quality_preference?: VideoQuality;
+  content_tags?: string[];
+  schedule_preference?: 'any' | 'live_only' | 'vod_only';
 }
 
 export interface CreateTaskRequest {
-  name: string;
+  name?: string;
   description?: string;
-  task_type: Task['task_type'];
-  channel_ids: number[];
-  game_ids: number[];
-  schedule_type: Task['schedule_type'];
+  channel_ids?: number[];
+  game_ids?: number[];
+  schedule_type: 'interval' | 'cron' | 'manual';
   schedule_value: string;
   storage_limit_gb?: number;
   retention_days?: number;
   auto_delete?: boolean;
-  priority?: number;
+  priority?: 'low' | 'medium' | 'high';
+  filters: TaskFilters;
 }
 
 export interface UpdateTaskRequest {
@@ -74,11 +79,47 @@ export interface UpdateTaskRequest {
   description?: string;
   channel_ids?: number[];
   game_ids?: number[];
-  schedule_type?: Task['schedule_type'];
+  schedule_type?: 'interval' | 'cron' | 'manual';
   schedule_value?: string;
   storage_limit_gb?: number;
   retention_days?: number;
   auto_delete?: boolean;
-  priority?: number;
-  is_active?: boolean;
+  priority?: 'low' | 'medium' | 'high';
+  filters?: Partial<TaskFilters>;
+}
+
+export interface TaskDetails {
+  id: number;
+  task_id: number;
+  progress: TaskProgress;
+  storage: TaskStorage;
+  vod_stats: TaskVODStats;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TaskProgress {
+  percentage: number;
+  completed: number;
+  total: number;
+  current_item?: {
+    type: 'channel' | 'game';
+    name: string;
+    status: string;
+  };
+}
+
+export interface TaskStorage {
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+export interface TaskVODStats {
+  total_vods: number;
+  total_size: number;
+  average_duration: number;
+  download_success_rate: number;
+  vods_by_quality: Record<string, number>;
+  vods_by_language: Record<string, number>;
 }

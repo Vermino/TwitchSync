@@ -374,7 +374,7 @@ class ApiClient {
       throw this.handleError(error);
     }
   }
-
+  
   async getTaskDetails(id: number): Promise<TaskDetails> {
     try {
       const response = await axios.get(
@@ -479,17 +479,17 @@ class ApiClient {
   }
 
   async runTask(id: number): Promise<void> {
-  try {
-    await axios.post(
-      `${this.baseURL}/tasks/${id}/run`,
-      {},
-      { headers: this.getHeaders() }
-    );
-  } catch (error) {
-    console.error('Error running task:', error);
-    throw this.handleError(error);
+    try {
+      await axios.post(
+        `${this.baseURL}/tasks/${id}/run`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error running task:', error);
+      throw this.handleError(error);
+    }
   }
-}
 
   // Discovery Methods
   async getDiscoveryFeed(): Promise<DiscoveryFeedResponse> {

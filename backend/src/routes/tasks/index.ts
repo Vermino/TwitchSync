@@ -1,34 +1,34 @@
-// backend/src/routes/tasks/index.ts
+// Filepath: backend/src/routes/tasks/index.ts
 
 import { Router } from 'express';
 import { Pool } from 'pg';
-import { createTasksController } from './controller';
 import { authenticate } from '../../middleware/auth';
+import { createTasksController } from './controller';
+import { validateIdParam } from './validation';
+import { DownloadManager } from '../../services/downloadManager';
 
-const validateIdParam = (req: any, res: any, next: any) => {
-  const id = parseInt(req.params.id);
-  if (isNaN(id)) {
-    return res.status(400).json({ error: 'Invalid task ID' });
-  }
-  next();
-};
-
-export const setupTaskRoutes = (pool: Pool) => {
+export function setupTaskRoutes(pool: Pool) {
   const router = Router();
-  const controller = createTasksController(pool);
-
-  router.use(authenticate(pool));
+  const downloadManager = DownloadManager.getInstance(pool, {
+    tempDir: process.env.TEMP_DIR || './temp',
+    maxConcurrent: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '3'),
+    retryAttempts: parseInt(process.env.DOWNLOAD_RETRY_ATTEMPTS || '3'),
+    retryDelay: parseInt(process.env.DOWNLOAD_RETRY_DELAY || '5000'),
+    cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600')
+  });
+  const controller = createTasksController(pool, downloadManager);
 
   // Use bound methods from the controller instance
   router.get('/', controller.getAllTasks);
   router.post('/', controller.createTask);
   router.get('/:id', validateIdParam, controller.getTaskById);
+  router.get('/:id/details', validateIdParam, controller.getTaskDetails);
   router.put('/:id', validateIdParam, controller.updateTask);
   router.delete('/:id', validateIdParam, controller.deleteTask);
   router.get('/:id/history', validateIdParam, controller.getTaskHistory);
   router.post('/:id/run', validateIdParam, controller.manualRunTask);
 
   return router;
-};
+}
 
 export default setupTaskRoutes;

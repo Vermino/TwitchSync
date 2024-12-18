@@ -54,6 +54,22 @@ export type VodStatus = 'pending' | 'queued' | 'downloading' | 'processing' | 'c
 export type VideoQuality = 'source' | '1080p60' | '1080p' | '720p60' | '720p' | '480p' | '360p' | '160p';
 export type DownloadPriority = 'low' | 'normal' | 'high' | 'critical';
 
+export interface DatabaseVOD {
+  id: number;
+  task_id: number;
+  channel_id: number;
+  title: string;
+  download_status: VodStatus;
+  preferred_quality: string;
+  language: string;
+  file_size: number;
+  download_speed: number | null;
+  download_progress: number;
+  error_message: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface VOD {
   id: number;
   twitch_id: string;
@@ -224,6 +240,65 @@ export interface Task {
   updated_at: Date;
 }
 
+export interface TaskProgressInfo {
+  percentage: number;
+  completed: number;
+  total: number;
+  current_item?: {
+    type: 'channel' | 'game';
+    name: string;
+    status: string;
+  };
+}
+
+export interface TaskStorageInfo {
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+export interface TaskVODStats {
+  total_vods: number;
+  total_size: number;
+  average_duration: number;
+  download_success_rate: number;
+  vods_by_quality: Record<string, number>;
+  vods_by_language: Record<string, number>;
+}
+
+export interface TaskDetails {
+  id: number;
+  task_id: number;
+  progress: TaskProgressInfo;
+  storage: TaskStorageInfo;
+  vod_stats: TaskVODStats;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TaskDetails {
+  id: number;
+  task_id: number;
+  progress: {
+    percentage: number;
+    completed: number;
+    total: number;
+    current_item?: {
+      type: 'channel' | 'game';
+      name: string;
+      status: string;
+    };
+  };
+  storage: {
+    used: number;
+    limit: number;
+    remaining: number;
+  };
+  vod_stats: TaskVODStats;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface TaskHistory {
   id: number;
   task_id: number;
@@ -233,6 +308,42 @@ export interface TaskHistory {
   error_message: string | null;
   details: Record<string, unknown> | null;
   created_at: Date;
+}
+
+export interface TaskProgress {
+  percentage: number;
+  completed: number;
+  total: number;
+  current_item?: {
+    type: 'channel' | 'game';
+    name: string;
+    status: string;
+  };
+}
+
+export interface TaskStorage {
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+export interface TaskVODStats {
+  total_vods: number;
+  total_size: number;
+  average_duration: number;
+  download_success_rate: number;
+  vods_by_quality: Record<string, number>;
+  vods_by_language: Record<string, number>;
+}
+
+export interface TaskDetails {
+  id: number;
+  task_id: number;
+  progress: TaskProgress;
+  storage: TaskStorage;
+  vod_stats: TaskVODStats;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface UserVODPreferences {
@@ -340,17 +451,19 @@ export interface SystemSettings {
 export type CreateTaskDTO = Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_run' | 'next_run'>;
 
 export interface CreateTaskRequest {
-  name: string;
+  name?: string;
   description?: string;
-  task_type: TaskType;
-  channel_ids?: number[];
-  game_ids?: number[];
-  schedule_type: TaskScheduleType;
+  task_type?: 'channel' | 'game' | 'combined';
+  channel_ids: number[];  // Make this required but can be empty
+  game_ids: number[];     // Make this required but can be empty
+  schedule_type: 'interval' | 'cron' | 'manual';
   schedule_value: string;
   storage_limit_gb?: number;
   retention_days?: number;
   auto_delete?: boolean;
-  priority?: TaskPriority;
+  priority?: 'low' | 'medium' | 'high';
+  is_active?: boolean;
+  user_id?: number;       // Added for internal use
 }
 
 export interface UpdateTaskRequest {
@@ -358,13 +471,13 @@ export interface UpdateTaskRequest {
   description?: string;
   channel_ids?: number[];
   game_ids?: number[];
-  schedule_type?: TaskScheduleType;
+  schedule_type?: 'interval' | 'cron' | 'manual';
   schedule_value?: string;
   storage_limit_gb?: number;
   retention_days?: number;
   auto_delete?: boolean;
+  priority?: 'low' | 'medium' | 'high';
   is_active?: boolean;
-  priority?: TaskPriority;
 }
 
 // Discovery types
