@@ -454,8 +454,8 @@ export interface CreateTaskRequest {
   name?: string;
   description?: string;
   task_type?: 'channel' | 'game' | 'combined';
-  channel_ids: number[];  // Make this required but can be empty
-  game_ids: number[];     // Make this required but can be empty
+  channel_ids: number[];
+  game_ids: number[];
   schedule_type: 'interval' | 'cron' | 'manual';
   schedule_value: string;
   storage_limit_gb?: number;
@@ -463,7 +463,7 @@ export interface CreateTaskRequest {
   auto_delete?: boolean;
   priority?: 'low' | 'medium' | 'high';
   is_active?: boolean;
-  user_id?: number;       // Added for internal use
+  user_id?: number;
 }
 
 export interface UpdateTaskRequest {
