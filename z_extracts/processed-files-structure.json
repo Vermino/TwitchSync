@@ -1,14 +1,16 @@
 {
-  "updated_at": "2024-12-17T18:30:12.902531",
+  "updated_at": "2024-12-18T06:00:50.624706",
   "tree": {
-    "backend/src/routes/_files": [
-      "dashboard.ts",
-      "discovery.ts",
-      "downloads.ts",
-      "games.ts",
-      "index.ts",
-      "system.ts",
-      "taskRoutes.ts"
-    ]
+    "frontend": {
+      "src/components/_files": [
+        "TaskModal.tsx",
+        "TaskAccordion.tsx"
+      ]
+    },
+    "backend": {
+      "src/types/_files": [
+        "database.ts"
+      ]
+    }
   }
 }

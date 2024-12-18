@@ -1,7 +1,7 @@
 // Filepath: frontend/src/components/TaskModal.tsx
 
 import React, { useState, useEffect } from 'react';
-import { X, Users, Gamepad2, Settings, Search, Check } from 'lucide-react';
+import { Users, Gamepad2, Settings, Search, Check, Filter, Shield } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { Task } from '@/types/task';
+import ConditionsTab from './TaskModal/ConditionsTab';
+import RestrictionsTab from './TaskModal/RestrictionsTab';
+import type { Task, TaskConditions, TaskRestrictions } from '@/types/task';
+import {Label} from "./ui/label.tsx";
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: any) => void;
+  onSubmit: (data: unknown) => void;
   task?: Task | null;
 }
 
@@ -38,7 +41,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
     storage_limit_gb: '',
     retention_days: '',
     auto_delete: false,
-    priority: 1
+    priority: 'low',
+    conditions: {} as TaskConditions,
+    restrictions: {} as TaskRestrictions
   });
 
   // Fetch all channels and games
@@ -50,6 +55,13 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const { data: games, isLoading: gamesLoading } = useQuery({
     queryKey: ['games'],
     queryFn: () => api.getGames()
+  });
+
+  // Fetch task details if editing
+  const { data: taskDetails } = useQuery({
+    queryKey: ['taskDetails', task?.id],
+    queryFn: () => task ? api.getTaskDetails(task.id) : null,
+    enabled: !!task
   });
 
   // Filter channels and games based on search
@@ -74,7 +86,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
         storage_limit_gb: task.storage_limit_gb?.toString() || '',
         retention_days: task.retention_days?.toString() || '',
         auto_delete: task.auto_delete,
-        priority: task.priority.toString()
+        priority: task.priority,
+        conditions: task.conditions || {},
+        restrictions: task.restrictions || {}
       });
     } else {
       setFormData({
@@ -87,7 +101,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
         storage_limit_gb: '',
         retention_days: '',
         auto_delete: false,
-        priority: 'low'
+        priority: 'low',
+        conditions: {},
+        restrictions: {}
       });
     }
     setActiveTab('channels');
@@ -117,13 +133,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
     onSubmit({
       ...formData,
       storage_limit_gb: formData.storage_limit_gb ? parseInt(formData.storage_limit_gb) : null,
-      retention_days: formData.retention_days ? parseInt(formData.retention_days) : null
+      retention_days: formData.retention_days ? parseInt(formData.retention_days) : null,
+      conditions: Object.keys(formData.conditions).length > 0 ? formData.conditions : undefined,
+      restrictions: Object.keys(formData.restrictions).length > 0 ? formData.restrictions : undefined
     });
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
+      <DialogContent className="w-[1000px] max-h-[90vh] overflow-auto">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -174,6 +192,14 @@ const TaskModal: React.FC<TaskModalProps> = ({
               <Gamepad2 className="h-4 w-4" />
               Games
             </TabsTrigger>
+            <TabsTrigger value="conditions" className="flex items-center gap-2">
+              <Filter className="h-4 w-4" />
+              Conditions
+            </TabsTrigger>
+            <TabsTrigger value="restrictions" className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Restrictions
+            </TabsTrigger>
             <TabsTrigger value="settings" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
               Settings
@@ -193,7 +219,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto">
+              <div className="grid grid-cols-5 gap-4 max-h-[400px] overflow-y-auto">
                 {channelsLoading ? (
                   Array(4).fill(0).map((_, i) => (
                     <div key={i} className="animate-pulse flex p-4 border rounded-lg">
@@ -256,7 +282,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4 max-h-[400px] overflow-y-auto">
+              <div className="grid grid-cols-6 gap-4 max-h-[400px] overflow-y-auto">
                 {gamesLoading ? (
                   Array(6).fill(0).map((_, i) => (
                     <div key={i} className="animate-pulse flex flex-col p-4 border rounded-lg">
@@ -304,11 +330,28 @@ const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           </TabsContent>
 
+          {/* Conditions Tab */}
+          <TabsContent value="conditions">
+            <ConditionsTab
+              conditions={formData.conditions}
+              onChange={(conditions) => setFormData(prev => ({ ...prev, conditions }))}
+            />
+          </TabsContent>
+
+          {/* Restrictions Tab */}
+          <TabsContent value="restrictions">
+            <RestrictionsTab
+              restrictions={formData.restrictions}
+              onChange={(restrictions) => setFormData(prev => ({ ...prev, restrictions }))}
+              currentStorage={taskDetails?.storage}
+            />
+          </TabsContent>
+
           {/* Settings Tab */}
           <TabsContent value="settings" className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Schedule Type</label>
+                <Label>Schedule Type</Label>
                 <select
                   value={formData.schedule_type}
                   onChange={e => setFormData(prev => ({ ...prev, schedule_type: e.target.value }))}
@@ -321,9 +364,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <Label>
                   {formData.schedule_type === 'interval' ? 'Interval (seconds)' : 'Cron Expression'}
-                </label>
+                </Label>
                 <Input
                   type={formData.schedule_type === 'interval' ? 'number' : 'text'}
                   value={formData.schedule_value}
@@ -335,7 +378,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Storage Limit (GB)</label>
+                <Label>Storage Limit (GB)</Label>
                 <Input
                   type="number"
                   value={formData.storage_limit_gb}
@@ -346,7 +389,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Retention Period (days)</label>
+                <Label>Retention Period (days)</Label>
                 <Input
                   type="number"
                   value={formData.retention_days}
@@ -358,7 +401,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             </div>
 
             <div className="space-y-2">
-              <label className="flex items-center gap-2">
+              <Label className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={formData.auto_delete}
@@ -366,11 +409,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   className="rounded border-gray-300"
                 />
                 <span className="text-sm">Auto-delete files after retention period</span>
-              </label>
+              </Label>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Priority Level</label>
+              <Label>Priority Level</Label>
               <select
                 value={formData.priority}
                 onChange={e => setFormData(prev => ({ ...prev, priority: e.target.value }))}

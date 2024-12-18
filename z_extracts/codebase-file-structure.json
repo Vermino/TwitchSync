@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-17T18:30:12.901527",
+  "updated_at": "2024-12-18T06:00:50.623705",
   "tree": {
     "backend": {
       "_files": [
@@ -19,11 +19,6 @@
           "_files": [
             "database.ts",
             "twitch.ts"
-          ]
-        },
-        "controllers": {
-          "_files": [
-            "taskController.ts"
           ]
         },
         "database": {
@@ -68,8 +63,7 @@
             "downloads.ts",
             "games.ts",
             "index.ts",
-            "system.ts",
-            "taskRoutes.ts"
+            "system.ts"
           ],
           "discovery": {
             "_files": [
