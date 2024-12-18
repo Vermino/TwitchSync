@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-18T06:00:50.623705",
+  "updated_at": "2024-12-18T08:51:37.837680",
   "tree": {
     "backend": {
       "_files": [
@@ -32,6 +32,9 @@
             "007_discovery_preferences_tables.ts",
             "008_discovery_stats_tables.ts",
             "009_task_priority_enum.ts",
+            "010_task_enhancements.ts",
+            "011_add_task_id_to_vods.ts",
+            "012_add_vod_constraints.ts",
             "runner.ts"
           ]
         },
@@ -223,7 +226,9 @@
           ],
           "TaskModal": {
             "_files": [
-              "Filters.tsx"
+              "ConditionsTab.tsx",
+              "Filters.tsx",
+              "RestrictionsTab.tsx"
             ]
           },
           "discovery": {
