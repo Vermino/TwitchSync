@@ -20,7 +20,7 @@ import { authenticate } from "./middleware/auth";
 import { loggingMiddleware } from './middleware/logging';
 import { setupTwitchSearchRoutes } from './routes/twitch/search';
 import { createDiscoveryRouter } from './routes/discovery';
-import DownloadManager from './services/downloadManager';
+import { DownloadManager } from './services/downloadManager';
 
 dotenv.config();
 
@@ -74,10 +74,11 @@ app.get('/health', (req, res) => {
 
 // Initialize download manager
 const downloadManager = DownloadManager.getInstance(pool, {
-  tempDir: process.env.TEMP_DIR || './tmp',
+  tempDir: process.env.TEMP_DIR || './temp',
   maxConcurrent: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '3'),
   retryAttempts: parseInt(process.env.DOWNLOAD_RETRY_ATTEMPTS || '3'),
-  retryDelay: parseInt(process.env.DOWNLOAD_RETRY_DELAY || '300')
+  retryDelay: parseInt(process.env.DOWNLOAD_RETRY_DELAY || '5000'),
+  cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600')
 });
 
 // Protected routes

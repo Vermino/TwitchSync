@@ -21,19 +21,31 @@ interface GameSearchModalProps {
   onClose: () => void;
   onSelect: (games: Game[]) => void;
   allowMultiple?: boolean;
+  existingGames?: Array<{ twitch_game_id: string }>;
 }
 
 const GameSearchModal: React.FC<GameSearchModalProps> = ({
   isOpen,
   onClose,
   onSelect,
-  allowMultiple = false
+  allowMultiple = false,
+  existingGames = []
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Game[]>([]);
   const [selectedGames, setSelectedGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSearchTerm('');
+      setSelectedGames([]);
+      setSearchResults([]);
+      setError(null);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const searchGames = async () => {
@@ -47,7 +59,11 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
 
       try {
         const data = await api.searchTwitchGames(searchTerm);
-        setSearchResults(data);
+        // Filter out existing games
+        const filteredData = data.filter(
+          game => !existingGames?.some(existing => existing.twitch_game_id === game.id)
+        );
+        setSearchResults(filteredData);
       } catch (err) {
         setError('Failed to search games. Please try again.');
         console.error('Game search error:', err);
@@ -63,7 +79,7 @@ const GameSearchModal: React.FC<GameSearchModalProps> = ({
     }, 300);
 
     return () => clearTimeout(debounceTimer);
-  }, [searchTerm]);
+  }, [searchTerm, existingGames]);
 
   const handleSelectGame = (game: Game) => {
     if (allowMultiple) {

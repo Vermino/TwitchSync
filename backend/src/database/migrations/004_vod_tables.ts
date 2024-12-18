@@ -74,6 +74,7 @@ export async function up(pool: Pool): Promise<void> {
         preferred_quality video_quality DEFAULT 'source',
         download_chat BOOLEAN DEFAULT true,
         download_markers BOOLEAN DEFAULT true,
+        download_chapters BOOLEAN DEFAULT true,
         retry_count INTEGER DEFAULT 0,
         max_retries INTEGER DEFAULT 3,
         last_retry TIMESTAMP,

@@ -199,6 +199,7 @@ const Games = () => {
         onClose={() => setIsSearchModalOpen(false)}
         onSelect={(selectedGames) => addGameMutation.mutate(selectedGames)}
         allowMultiple={true}
+        existingGames={games}  // Pass the entire games array
       />
     </div>
   );

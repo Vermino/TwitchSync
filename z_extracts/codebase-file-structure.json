@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-17T12:31:30.084862",
+  "updated_at": "2024-12-17T16:10:32.521479",
   "tree": {
     "backend": {
       "_files": [
@@ -96,7 +96,9 @@
             "auth.ts",
             "database.ts",
             "discovery.ts",
-            "settings.ts"
+            "downloadManager.ts",
+            "settings.ts",
+            "twitch.ts"
           ]
         },
         "utils": {
@@ -191,6 +193,7 @@
         "lib": {
           "_files": [
             "api.ts",
+            "constants.ts",
             "utils.ts"
           ]
         },

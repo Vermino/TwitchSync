@@ -180,6 +180,7 @@ const TaskManager = () => {
     },
   });
 
+  // Implement Run Now mutation
   const runTaskMutation = useMutation({
     mutationFn: (id: number) => api.runTask(id),
     onSuccess: () => {
@@ -215,6 +216,11 @@ const TaskManager = () => {
 
   const handleRunTask = async (id: number) => {
     runTaskMutation.mutate(id);
+  };
+
+  const handleEditTask = (task: Task) => {
+    setSelectedTask(task);
+    setIsModalOpen(true);
   };
 
   if (error) {

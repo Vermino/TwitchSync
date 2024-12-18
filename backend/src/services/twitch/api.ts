@@ -3,11 +3,32 @@
 import axios, { AxiosResponse } from 'axios';
 import { logger } from '../../utils/logger';
 import { StreamFilters } from '../../types/discovery';
+import {
+  ChapterInfo,
+  VODInfo,
+  VODPlaylist,
+  VODMarker,
+  ChatMessage,
+  VODQuality,
+  VODSegment
+} from '../../types/twitch';
 
 interface TwitchAPIResponse<T> {
   data: T[];
   pagination?: {
     cursor?: string;
+  };
+}
+
+interface TwitchPlaylistResponse {
+  data: {
+    qualities: Array<{
+      name: string;
+      segments: Array<{
+        url: string;
+        duration: number;
+      }>;
+    }>;
   };
 }
 
@@ -130,6 +151,18 @@ export class TwitchAPIService {
     return url;
   }
 
+  private async getChannelFollowers(channelId: string): Promise<number> {
+    try {
+      const response = await this.makeRequest<{ total: number }>('/users/follows', {
+        to_id: channelId
+      });
+      return response.data[0]?.total || 0;
+    } catch (error) {
+      logger.error(`Failed to get follower count for channel ${channelId}:`, error);
+      return 0;
+    }
+  }
+
   async searchChannels(query: string): Promise<TwitchChannel[]> {
     try {
       const response = await this.makeRequest<TwitchChannel>('/search/channels', {
@@ -137,31 +170,21 @@ export class TwitchAPIService {
         first: '20'
       });
 
-      logger.info('Raw Twitch API response:', response);
-
-      // Get follower counts for each channel
+      // Get follower counts for all channels in parallel
       const enrichedChannels = await Promise.all(
         response.data.map(async (channel) => {
-          try {
-            const followersResponse = await this.makeRequest<{ total: number }>('/users/follows', {
-              to_id: channel.id
-            });
-
-            return {
-              ...channel,
-              follower_count: followersResponse.data.length
-            };
-          } catch (error) {
-            logger.error(`Failed to get follower count for channel ${channel.display_name}:`, error);
-            return {
-              ...channel,
-              follower_count: 0
-            };
-          }
+          const followerCount = await this.getChannelFollowers(channel.id);
+          return {
+            ...channel,
+            follower_count: followerCount
+          };
         })
       );
 
-      return enrichedChannels;
+      // Sort channels by follower count in descending order
+      return enrichedChannels.sort((a, b) => {
+        return (b.follower_count || 0) - (a.follower_count || 0);
+      });
     } catch (error) {
       logger.error('Error searching channels:', error);
       throw error;
@@ -292,6 +315,109 @@ export class TwitchAPIService {
       return null;
     }
   }
+
+  async getVODInfo(vodId: string): Promise<any> {
+    try {
+      const response = await this.makeRequest<any>(`/videos/${vodId}`);
+      return response.data[0];
+    } catch (error) {
+      logger.error(`Failed to get VOD info for ${vodId}:`, error);
+      throw error;
+    }
+  }
+
+  async getVODPlaylist(vodId: string, quality?: string): Promise<{
+    qualities: Record<string, { segments: { url: string; duration: number; }[] }>;
+    duration: number;
+  } | null> {
+    try {
+      const response = await this.makeRequest<TwitchPlaylistResponse>(`/videos/${vodId}/playlist`);
+
+      // Transform the raw response into the expected format
+      const playlistData = {
+        qualities: {} as Record<string, { segments: { url: string; duration: number; }[] }>,
+        duration: 0
+      };
+
+      if (response.data && Array.isArray(response.data)) {
+        // Handle the case where response.data is an array
+        const playlistResponse = response.data[0] as any;
+
+        if (playlistResponse && Array.isArray(playlistResponse.qualities)) {
+          let totalDuration = 0;
+
+          // Transform qualities data
+          playlistResponse.qualities.forEach((quality: any) => {
+            if (quality.name && Array.isArray(quality.segments)) {
+              playlistData.qualities[quality.name] = {
+                segments: quality.segments.map((segment: any) => ({
+                  url: segment.url || '',
+                  duration: parseFloat(segment.duration) || 0
+                }))
+              };
+
+              // Update total duration based on the first quality's segments
+              if (totalDuration === 0) {
+                totalDuration = playlistData.qualities[quality.name].segments.reduce(
+                  (sum: number, segment: { duration: number }) => sum + segment.duration,
+                  0
+                );
+              }
+            }
+          });
+
+          playlistData.duration = totalDuration;
+
+          // If specific quality is requested, filter to only that quality
+          if (quality && playlistData.qualities[quality]) {
+            return {
+              qualities: { [quality]: playlistData.qualities[quality] },
+              duration: playlistData.duration
+            };
+          }
+
+          return playlistData;
+        }
+      }
+
+      logger.error(`Invalid playlist data format for VOD ${vodId}`);
+      return null;
+    } catch (error) {
+      logger.error(`Failed to get VOD playlist for ${vodId}:`, error);
+      return null;
+    }
+  }
+
+  async getVODChat(vodId: string): Promise<any[]> {
+    try {
+      const response = await this.makeRequest<any>(`/videos/${vodId}/chat`);
+      return response.data;
+    } catch (error) {
+      logger.error(`Failed to get VOD chat for ${vodId}:`, error);
+      throw error;
+    }
+  }
+
+  async getVODMarkers(vodId: string): Promise<any[]> {
+    try {
+      const response = await this.makeRequest<any>(`/videos/${vodId}/markers`);
+      return response.data;
+    } catch (error) {
+      logger.error(`Failed to get VOD markers for ${vodId}:`, error);
+      throw error;
+    }
+  }
+
+  async getVODChapters(vodId: string): Promise<ChapterInfo[]> {
+    try {
+      const response = await this.makeRequest<any>(`/videos/${vodId}/chapters`);
+      return response.data;
+    } catch (error) {
+      logger.error(`Failed to get VOD chapters for ${vodId}:`, error);
+      throw error;
+    }
+  }
+
 }
 
 export const twitchAPI = TwitchAPIService.getInstance();
