@@ -234,20 +234,66 @@ class DownloadManager {
   async getTaskVODStats(taskId: number): Promise<TaskVODStats> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(`
+      // First get the basic stats
+      const basicStats = await client.query(`
         SELECT 
           COUNT(*) as total_vods,
-          SUM(file_size) as total_size,
-          AVG(EXTRACT(EPOCH FROM duration::interval)) as average_duration,
-          COUNT(CASE WHEN download_status = 'completed' THEN 1 END)::float / COUNT(*)::float as success_rate,
-          jsonb_object_agg(preferred_quality, quality_count) as vods_by_quality,
-          jsonb_object_agg(language, lang_count) as vods_by_language
-        FROM vods
-        WHERE task_id = $1
-        GROUP BY task_id
+          COALESCE(SUM(file_size), 0) as total_size,
+          COALESCE(AVG(EXTRACT(EPOCH FROM duration::interval)), 0) as average_duration,
+          CASE 
+            WHEN COUNT(*) = 0 THEN 0
+            ELSE COUNT(CASE WHEN download_status = 'completed' THEN 1 END)::float / COUNT(*)::float 
+          END as success_rate
+        FROM vods v
+        WHERE v.channel_id IN (
+          SELECT unnest(channel_ids) FROM tasks WHERE id = $1
+        )
+        OR v.game_id IN (
+          SELECT unnest(game_ids) FROM tasks WHERE id = $1
+        )
       `, [taskId]);
 
-      return result.rows[0] || {
+      // Get quality stats
+      const qualityStats = await client.query(`
+        SELECT jsonb_object_agg(preferred_quality, cnt) as vods_by_quality
+        FROM (
+          SELECT preferred_quality, COUNT(*) as cnt
+          FROM vods v
+          WHERE (
+            v.channel_id IN (SELECT unnest(channel_ids) FROM tasks WHERE id = $1)
+            OR v.game_id IN (SELECT unnest(game_ids) FROM tasks WHERE id = $1)
+          )
+          AND preferred_quality IS NOT NULL
+          GROUP BY preferred_quality
+        ) q
+      `, [taskId]);
+
+      // Get language stats
+      const languageStats = await client.query(`
+        SELECT jsonb_object_agg(language, cnt) as vods_by_language
+        FROM (
+          SELECT language, COUNT(*) as cnt
+          FROM vods v
+          WHERE (
+            v.channel_id IN (SELECT unnest(channel_ids) FROM tasks WHERE id = $1)
+            OR v.game_id IN (SELECT unnest(game_ids) FROM tasks WHERE id = $1)
+          )
+          AND language IS NOT NULL
+          GROUP BY language
+        ) l
+      `, [taskId]);
+
+      return {
+        total_vods: parseInt(basicStats.rows[0]?.total_vods) || 0,
+        total_size: parseInt(basicStats.rows[0]?.total_size) || 0,
+        average_duration: parseFloat(basicStats.rows[0]?.average_duration) || 0,
+        download_success_rate: parseFloat(basicStats.rows[0]?.success_rate) || 0,
+        vods_by_quality: qualityStats.rows[0]?.vods_by_quality || {},
+        vods_by_language: languageStats.rows[0]?.vods_by_language || {}
+      };
+    } catch (error) {
+      logger.error('Error getting task VOD stats:', error);
+      return {
         total_vods: 0,
         total_size: 0,
         average_duration: 0,
@@ -283,16 +329,22 @@ class DownloadManager {
     }
   }
 
-   private async getTaskProgress(taskId: number): Promise<TaskProgressInfo> {
+  private async getTaskProgress(taskId: number): Promise<TaskProgressInfo> {
     const client = await this.pool.connect();
     try {
       const result = await client.query(`
         SELECT 
-          COUNT(CASE WHEN download_status = 'completed' THEN 1 END) as completed,
+          COUNT(CASE WHEN v.download_status = 'completed' THEN 1 END) as completed,
           COUNT(*) as total,
-          MAX(CASE WHEN download_status = 'downloading' THEN channel_id || ':' || title END) as current_item
-        FROM vods
-        WHERE task_id = $1
+          MAX(CASE WHEN v.download_status = 'downloading' THEN CONCAT(c.username, ':', v.title) END) as current_item
+        FROM vods v
+        LEFT JOIN channels c ON v.channel_id = c.id
+        WHERE v.channel_id IN (
+          SELECT unnest(channel_ids) FROM tasks WHERE id = $1
+        )
+        OR v.game_id IN (
+          SELECT unnest(game_ids) FROM tasks WHERE id = $1
+        )
       `, [taskId]);
 
       const row = result.rows[0];
@@ -305,8 +357,8 @@ class DownloadManager {
 
       return {
         percentage,
-        completed: parseInt(row.completed),
-        total: parseInt(row.total),
+        completed: parseInt(row.completed) || 0,
+        total: parseInt(row.total) || 0,
         current_item
       };
     } finally {
@@ -318,23 +370,155 @@ class DownloadManager {
     const client = await this.pool.connect();
     try {
       const result = await client.query(`
+        WITH task_vods AS (
+          SELECT v.*
+          FROM vods v
+          WHERE v.channel_id IN (
+            SELECT unnest(channel_ids) FROM tasks WHERE id = $1
+          )
+          OR v.game_id IN (
+            SELECT unnest(game_ids) FROM tasks WHERE id = $1
+          )
+        )
         SELECT 
           COALESCE(SUM(file_size), 0) as used_space,
-          MAX(t.storage_limit_gb) * 1024 * 1024 * 1024 as storage_limit
-        FROM vods v
-        JOIN tasks t ON v.task_id = t.id
-        WHERE t.id = $1
+          COALESCE((SELECT storage_limit_gb * 1024 * 1024 * 1024 FROM tasks WHERE id = $1), 107374182400) as storage_limit
+        FROM task_vods
       `, [taskId]);
 
       const row = result.rows[0];
       const used = parseInt(row.used_space) || 0;
-      const limit = parseInt(row.storage_limit) || 1024 * 1024 * 1024 * 100; // Default 100GB
+      const limit = parseInt(row.storage_limit) || 100 * 1024 * 1024 * 1024; // Default 100GB
 
       return {
         used,
         limit,
         remaining: Math.max(0, limit - used)
       };
+    } finally {
+      client.release();
+    }
+  }
+
+  async executeTask(taskId: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      // Get task information
+      const taskResult = await client.query(`
+        SELECT * FROM tasks WHERE id = $1
+      `, [taskId]);
+
+      if (taskResult.rows.length === 0) {
+        throw new Error(`Task ${taskId} not found`);
+      }
+
+      const task = taskResult.rows[0];
+      logger.info(`Starting execution of task ${taskId}`);
+
+      // Process channels
+      if (task.channel_ids && task.channel_ids.length > 0) {
+        for (const channelId of task.channel_ids) {
+          try {
+            // Get channel info
+            const channelResult = await client.query('SELECT * FROM channels WHERE id = $1', [channelId]);
+            if (channelResult.rows.length === 0) continue;
+
+            const channel = channelResult.rows[0];
+            logger.info(`Processing channel ${channel.username} for task ${taskId}`);
+
+            // Get recent VODs for channel
+            const channelVods = await this.twitchAPI.getChannelVODs(channel.twitch_id);
+
+            for (const vod of channelVods) {
+              // Add VOD to download queue if it matches task criteria
+              await client.query(`
+                INSERT INTO vods (
+                  task_id,
+                  channel_id,
+                  title,
+                  download_status,
+                  preferred_quality,
+                  created_at,
+                  updated_at
+                ) VALUES ($1, $2, $3, 'pending', $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT DO NOTHING
+              `, [
+                taskId,
+                channelId,
+                vod.title,
+                task.preferred_quality || 'source'
+              ]);
+            }
+          } catch (error) {
+            logger.error(`Error processing channel ${channelId} for task ${taskId}:`, error);
+            continue;
+          }
+        }
+      }
+
+      // Process games
+      if (task.game_ids && task.game_ids.length > 0) {
+        for (const gameId of task.game_ids) {
+          try {
+            // Get game info
+            const gameResult = await client.query('SELECT * FROM games WHERE id = $1', [gameId]);
+            if (gameResult.rows.length === 0) continue;
+
+            const game = gameResult.rows[0];
+            logger.info(`Processing game ${game.name} for task ${taskId}`);
+
+            // Get recent VODs for game
+            const gameVods = await this.twitchAPI.getGameVODs(game.twitch_game_id);
+
+            for (const vod of gameVods) {
+              // Add VOD to download queue if it matches task criteria
+              await client.query(`
+                INSERT INTO vods (
+                  task_id,
+                  channel_id,
+                  game_id,
+                  title,
+                  download_status,
+                  preferred_quality,
+                  created_at,
+                  updated_at
+                ) VALUES ($1, $2, $3, $4, 'pending', $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT DO NOTHING
+              `, [
+                taskId,
+                vod.channel_id,
+                gameId,
+                vod.title,
+                task.preferred_quality || 'source'
+              ]);
+            }
+          } catch (error) {
+            logger.error(`Error processing game ${gameId} for task ${taskId}:`, error);
+            continue;
+          }
+        }
+      }
+
+      // Update task status
+      await client.query(`
+        UPDATE tasks 
+        SET status = 'completed',
+            last_run = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [taskId]);
+
+      logger.info(`Task ${taskId} execution completed`);
+
+    } catch (error) {
+      logger.error(`Error executing task ${taskId}:`, error);
+      await client.query(`
+        UPDATE tasks 
+        SET status = 'failed',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [taskId]);
+      throw error;
     } finally {
       client.release();
     }

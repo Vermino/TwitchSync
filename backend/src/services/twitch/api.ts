@@ -12,6 +12,7 @@ import {
   VODQuality,
   VODSegment
 } from '../../types/twitch';
+import {QueryArrayResult, QueryResult} from "pg";
 
 interface TwitchAPIResponse<T> {
   data: T[];
@@ -50,6 +51,24 @@ interface TwitchGame {
   box_art_url: string;
   igdb_id?: string;
   genres?: string[];
+}
+
+interface TwitchVOD {
+  channel_id: string | string[];
+  id: string;
+  user_id: string;
+  user_name: string;
+  title: string;
+  description: string;
+  created_at: string;
+  published_at: string;
+  url: string;
+  thumbnail_url: string;
+  viewable: string;
+  view_count: number;
+  language: string;
+  type: 'upload' | 'archive' | 'highlight';
+  duration: string;
 }
 
 // Extended interface for our enriched game data
@@ -172,13 +191,13 @@ export class TwitchAPIService {
 
       // Get follower counts for all channels in parallel
       const enrichedChannels = await Promise.all(
-        response.data.map(async (channel) => {
-          const followerCount = await this.getChannelFollowers(channel.id);
-          return {
-            ...channel,
-            follower_count: followerCount
-          };
-        })
+          response.data.map(async (channel) => {
+            const followerCount = await this.getChannelFollowers(channel.id);
+            return {
+              ...channel,
+              follower_count: followerCount
+            };
+          })
       );
 
       // Sort channels by follower count in descending order
@@ -199,39 +218,39 @@ export class TwitchAPIService {
       });
 
       const enrichedGames = await Promise.all(
-        searchResponse.data.map(async (game) => {
-          try {
-            const gameResponse = await this.makeRequest<TwitchGame>('/games', {
-              id: game.id
-            });
+          searchResponse.data.map(async (game) => {
+            try {
+              const gameResponse = await this.makeRequest<TwitchGame>('/games', {
+                id: game.id
+              });
 
-            const gameData = gameResponse.data[0] || game;
+              const gameData = gameResponse.data[0] || game;
 
-            // Store original IGDB format URL
-            const baseBoxArtUrl = this.formatBoxArtUrl(gameData.box_art_url || game.box_art_url);
+              // Store original IGDB format URL
+              const baseBoxArtUrl = this.formatBoxArtUrl(gameData.box_art_url || game.box_art_url);
 
-            return {
-              ...gameData,
-              box_art_url: baseBoxArtUrl,
-              category: gameData.name.split(' ')[0].toLowerCase(),
-              tags: [],
-              last_checked: new Date().toISOString(),
-              status: 'active',
-              is_active: true
-            };
-          } catch (error) {
-            logger.error(`Failed to get details for game ${game.name}:`, error);
-            return {
-              ...game,
-              box_art_url: this.formatBoxArtUrl(game.box_art_url),
-              category: game.name.split(' ')[0].toLowerCase(),
-              tags: [],
-              last_checked: new Date().toISOString(),
-              status: 'active',
-              is_active: true
-            };
-          }
-        })
+              return {
+                ...gameData,
+                box_art_url: baseBoxArtUrl,
+                category: gameData.name.split(' ')[0].toLowerCase(),
+                tags: [],
+                last_checked: new Date().toISOString(),
+                status: 'active',
+                is_active: true
+              };
+            } catch (error) {
+              logger.error(`Failed to get details for game ${game.name}:`, error);
+              return {
+                ...game,
+                box_art_url: this.formatBoxArtUrl(game.box_art_url),
+                category: game.name.split(' ')[0].toLowerCase(),
+                tags: [],
+                last_checked: new Date().toISOString(),
+                status: 'active',
+                is_active: true
+              };
+            }
+          })
       );
 
       return enrichedGames;
@@ -260,13 +279,13 @@ export class TwitchAPIService {
 
   async getCurrentGame(channelId: string): Promise<EnrichedTwitchGame | null> {
     try {
-      const response = await this.makeRequest<any>('/streams', { user_id: channelId });
+      const response = await this.makeRequest<any>('/streams', {user_id: channelId});
       if (response.data.length === 0) {
         return null;
       }
 
       const stream = response.data[0];
-      const gameResponse = await this.makeRequest<TwitchGame>('/games', { id: stream.game_id });
+      const gameResponse = await this.makeRequest<TwitchGame>('/games', {id: stream.game_id});
 
       if (gameResponse.data.length === 0) {
         return null;
@@ -292,7 +311,7 @@ export class TwitchAPIService {
 
   async getGameById(gameId: string): Promise<EnrichedTwitchGame | null> {
     try {
-      const response = await this.makeRequest<TwitchGame>('/games', { id: gameId });
+      const response = await this.makeRequest<TwitchGame>('/games', {id: gameId});
 
       if (response.data.length === 0) {
         return null;
@@ -359,8 +378,8 @@ export class TwitchAPIService {
               // Update total duration based on the first quality's segments
               if (totalDuration === 0) {
                 totalDuration = playlistData.qualities[quality.name].segments.reduce(
-                  (sum: number, segment: { duration: number }) => sum + segment.duration,
-                  0
+                    (sum: number, segment: { duration: number }) => sum + segment.duration,
+                    0
                 );
               }
             }
@@ -371,7 +390,7 @@ export class TwitchAPIService {
           // If specific quality is requested, filter to only that quality
           if (quality && playlistData.qualities[quality]) {
             return {
-              qualities: { [quality]: playlistData.qualities[quality] },
+              qualities: {[quality]: playlistData.qualities[quality]},
               duration: playlistData.duration
             };
           }
@@ -418,6 +437,82 @@ export class TwitchAPIService {
     }
   }
 
+  async getChannelVODs(twitch_id: string): Promise<TwitchVOD[]> {
+    try {
+      const response = await this.makeRequest<TwitchVOD>('/videos', {
+        user_id: twitch_id,
+        first: '100',
+        type: 'all'
+      });
+
+      if (!response.data) {
+        logger.warn(`No VODs found for channel ${twitch_id}`);
+        return [];
+      }
+
+      // Filter out any non-downloadable VODs and enrich with additional data
+      const downloadableVODs = response.data.filter(vod =>
+          vod.viewable === 'public' &&
+          ['archive', 'highlight', 'upload'].includes(vod.type)
+      );
+
+      logger.info(`Found ${downloadableVODs.length} downloadable VODs for channel ${twitch_id}`);
+      return downloadableVODs;
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`Error fetching VODs for channel ${twitch_id}:`, error);
+        throw new Error(`Failed to fetch VODs for channel: ${error.message}`);
+      } else {
+        logger.error(`Unknown error fetching VODs for channel ${twitch_id}:`, error);
+        throw new Error('Failed to fetch VODs for channel due to an unknown error.');
+      }
+    }
+  }
+
+
+  async getGameVODs(twitch_game_id: string): Promise<TwitchVOD[]> {
+    try {
+      const streamsResponse = await this.makeRequest<any>('/streams', {
+        game_id: twitch_game_id,
+        first: '100'
+      });
+
+      if (!streamsResponse.data || streamsResponse.data.length === 0) {
+        logger.warn(`No active streams found for game ${twitch_game_id}`);
+        return [];
+      }
+
+      const channelIds = [...new Set(streamsResponse.data.map(stream => stream.user_id))];
+      const vods: TwitchVOD[] = [];
+      for (const channelId of channelIds) {
+        try {
+          const channelVods = await this.getChannelVODs(channelId);
+          const gameVods = channelVods.filter(vod =>
+              vod.type === 'archive' && vod.viewable === 'public'
+          );
+          vods.push(...gameVods);
+        } catch (error) {
+          if (error instanceof Error) {
+            logger.error(`Error fetching VODs for channel ${channelId} in game ${twitch_game_id}:`, error);
+          } else {
+            logger.error(`Unknown error fetching VODs for channel ${channelId} in game ${twitch_game_id}:`, error);
+          }
+          continue;
+        }
+      }
+
+      logger.info(`Found ${vods.length} total VODs for game ${twitch_game_id}`);
+      return vods;
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`Error fetching VODs for game ${twitch_game_id}:`, error);
+        throw new Error(`Failed to fetch game VODs: ${error.message}`);
+      } else {
+        logger.error(`Unknown error fetching VODs for game ${twitch_game_id}:`, error);
+        throw new Error('Failed to fetch game VODs due to an unknown error.');
+      }
+    }
+  }
 }
 
 export const twitchAPI = TwitchAPIService.getInstance();
