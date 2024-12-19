@@ -20,7 +20,7 @@ interface TwitchSearchResult {
   id: string;
   broadcaster_login: string;
   display_name: string;
-  thumbnail_url: string;  // This is the profile image URL from Twitch
+  thumbnail_url: string;
   broadcaster_type: string;
   description?: string;
   game_id?: string;
@@ -29,7 +29,7 @@ interface TwitchSearchResult {
 }
 
 interface Channel {
-  thumbnail_url: any;
+  thumbnail_url: unknown;
   id: string;
   login: string;
   display_name: string;
@@ -84,7 +84,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
         console.log('Twitch search results:', data); // Debug log
         const processedData = Array.isArray(data) ? data.map(channel => ({
           ...channel,
-          login: channel.login || '', // Ensure login is always present
+          login: channel.login || '',
         })) : [];
         console.log('Processed search results:', processedData); // Debug log
         setSearchResults(processedData);
@@ -111,7 +111,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
     id: channel.id,
     login: channel.broadcaster_login,
     display_name: channel.display_name,
-    profile_image_url: channel.thumbnail_url,  // Map the thumbnail URL to profile image
+    profile_image_url: channel.thumbnail_url,
     broadcaster_type: channel.broadcaster_type || '',
     description: channel.description || '',
     view_count: 0,

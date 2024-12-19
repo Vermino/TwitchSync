@@ -1,16 +1,8 @@
 {
-  "updated_at": "2024-12-18T08:51:37.842682",
+  "updated_at": "2024-12-18T14:35:35.387234",
   "tree": {
-    "backend": {
-      "src/services/_files": [
-        "downloadManager.ts"
-      ]
-    },
-    "frontend": {
-      "src/components/_files": [
-        "TaskModal.tsx",
-        "TaskAccordion.tsx"
-      ]
-    }
+    "backend/src/services/_files": [
+      "downloadManager.ts"
+    ]
   }
 }

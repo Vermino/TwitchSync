@@ -1,6 +1,6 @@
 // Filepath: backend/src/services/downloadManager.ts
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
@@ -17,7 +17,7 @@ import {
   TaskStorageInfo,
   TaskVODStats,
   TaskDetails,
-  DatabaseVOD
+  TaskStatus
 } from '../types/database';
 
 const pipelineAsync = promisify(pipeline);
@@ -214,6 +214,116 @@ class DownloadManager {
         bytesSinceLastCheck: 0
       }
     };
+  }
+
+   /**
+   * Enhanced error handling for download failures
+   */
+  private async handleDownloadError(
+    vodId: number,
+    error: Error,
+    client: PoolClient
+  ): Promise<void> {
+    try {
+      await client.query('BEGIN');
+
+      // Get current VOD status
+      const vodResult = await client.query(`
+        SELECT retry_count, max_retries, error_message
+        FROM vods 
+        WHERE id = $1
+      `, [vodId]);
+
+      if (vodResult.rows.length === 0) {
+        throw new Error(`VOD ${vodId} not found`);
+      }
+
+      const vod = vodResult.rows[0];
+      const retryCount = (vod.retry_count || 0) + 1;
+      const shouldRetry = retryCount < vod.max_retries;
+
+      // Update VOD status
+      await client.query(`
+        UPDATE vods
+        SET download_status = CASE 
+          WHEN $2 < max_retries THEN 'pending'
+          ELSE 'failed'
+        END,
+        retry_count = $2,
+        error_message = $3,
+        last_retry = NOW(),
+        updated_at = NOW()
+        WHERE id = $1
+      `, [vodId, retryCount, error.message]);
+
+      // Log error event
+      await client.query(`
+        INSERT INTO vod_events (
+          vod_id,
+          event_type,
+          details,
+          created_at
+        ) VALUES ($1, 'error', $2, NOW())
+      `, [vodId, JSON.stringify({
+        error: error.message,
+        retry_count: retryCount,
+        will_retry: shouldRetry,
+        stack: error.stack
+      })]);
+
+      await client.query('COMMIT');
+
+      // Schedule retry if applicable
+      if (shouldRetry) {
+        setTimeout(() => {
+          this.retryFailedDownload(vodId).catch(err => {
+            logger.error(`Auto-retry failed for VOD ${vodId}:`, err);
+          });
+        }, this.retryDelay);
+      }
+    } catch (err) {
+      await client.query('ROLLBACK');
+      logger.error('Error handling download failure:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Enhanced progress tracking with detailed statistics
+   */
+  private async updateDownloadProgress(
+    vodId: number,
+    progress: number,
+    speed: number,
+    client: PoolClient
+  ): Promise<void> {
+    try {
+      await client.query(`
+        UPDATE vods
+        SET download_progress = $2,
+            download_speed = $3,
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vodId, progress, speed]);
+
+      // Log progress event every 10%
+      if (Math.floor(progress * 10) > Math.floor((progress - 0.1) * 10)) {
+        await client.query(`
+          INSERT INTO vod_events (
+            vod_id,
+            event_type,
+            details,
+            created_at
+          ) VALUES ($1, 'progress', $2, NOW())
+        `, [vodId, JSON.stringify({
+          progress: progress * 100,
+          speed: speed,
+          timestamp: new Date().toISOString()
+        })]);
+      }
+    } catch (error) {
+      logger.error(`Error updating download progress for VOD ${vodId}:`, error);
+    }
   }
 
   private async getVODPlaylist(vodId: string, preferredQuality: VideoQuality): Promise<SegmentedPlaylist> {
@@ -418,12 +528,21 @@ class DownloadManager {
 
   async executeTask(taskId: number): Promise<void> {
     const client = await this.pool.connect();
+
     try {
       await client.query('BEGIN');
 
       // Get task information
       const taskResult = await client.query(`
-        SELECT * FROM tasks WHERE id = $1
+        SELECT 
+          t.*,
+          json_agg(DISTINCT c.*) as channels,
+          json_agg(DISTINCT g.*) as games
+        FROM tasks t
+        LEFT JOIN channels c ON c.id = ANY(t.channel_ids)
+        LEFT JOIN games g ON g.id = ANY(t.game_ids)
+        WHERE t.id = $1
+        GROUP BY t.id
       `, [taskId]);
 
       if (taskResult.rows.length === 0) {
@@ -431,18 +550,63 @@ class DownloadManager {
       }
 
       const task = taskResult.rows[0];
-      logger.info(`Starting execution of task ${taskId}`);
+      logger.info(`Starting execution of task ${taskId}`, {
+        taskName: task.name,
+        channelCount: task.channel_ids?.length || 0,
+        gameCount: task.game_ids?.length || 0
+      });
+
+      // Update task status to running
+      await client.query(`
+        UPDATE tasks 
+        SET status = 'running',
+            last_run = NOW(),
+            next_run = CASE 
+              WHEN schedule_type = 'interval' THEN 
+                NOW() + (schedule_value || ' seconds')::interval
+              WHEN schedule_type = 'cron' THEN 
+                NOW()
+              ELSE NULL 
+            END,
+            updated_at = NOW()
+        WHERE id = $1
+      `, [taskId]);
+
+      // Create task history entry
+      await client.query(`
+        INSERT INTO task_history (
+          task_id, 
+          status, 
+          start_time, 
+          details
+        ) VALUES ($1, 'running', NOW(), $2)
+      `, [taskId, {
+        trigger: 'system',
+        task_config: {
+          channel_ids: task.channel_ids,
+          game_ids: task.game_ids,
+          preferred_quality: task.preferred_quality,
+          storage_limit_gb: task.storage_limit_gb
+        }
+      }]);
 
       let successfulInserts = 0;
       let failedInserts = 0;
+      let errors: Error[] = [];
 
       // Process channels
-      if (task.channel_ids && task.channel_ids.length > 0) {
+      if (task.channel_ids?.length > 0) {
         for (const channelId of task.channel_ids) {
           try {
-            // Get channel info
-            const channelResult = await client.query('SELECT * FROM channels WHERE id = $1', [channelId]);
-            if (channelResult.rows.length === 0) continue;
+            const channelResult = await client.query(
+              'SELECT * FROM channels WHERE id = $1',
+              [channelId]
+            );
+
+            if (channelResult.rows.length === 0) {
+              logger.warn(`Channel ${channelId} not found, skipping`);
+              continue;
+            }
 
             const channel = channelResult.rows[0];
             logger.info(`Processing channel ${channel.username} for task ${taskId}`);
@@ -453,77 +617,173 @@ class DownloadManager {
 
             for (const vod of channelVods) {
               try {
+                // Apply task filters if configured
+                if (task.conditions) {
+                  const { language, minimum_views, duration_minutes } = task.conditions;
+
+                  if (language && vod.language !== language) {
+                    continue;
+                  }
+
+                  if (minimum_views && vod.view_count < minimum_views) {
+                    continue;
+                  }
+
+                  if (duration_minutes) {
+                    const vodDuration = this.parseDuration(vod.duration);
+                    if (vodDuration < duration_minutes * 60) {
+                      continue;
+                    }
+                  }
+                }
+
                 // Check if VOD already exists
                 const existingVod = await client.query(`
                   SELECT id FROM vods 
-                  WHERE task_id = $1 AND channel_id = $2 AND twitch_id = $3
+                  WHERE task_id = $1 
+                  AND channel_id = $2 
+                  AND twitch_id = $3
+                  AND NOT (status = 'failed' AND retry_count >= max_retries)
                 `, [taskId, channelId, vod.id]);
 
                 if (existingVod.rows.length === 0) {
+                  // Check storage limits if configured
+                  if (task.storage_limit_gb) {
+                    const storageUsed = await this.getTaskStorageUsage(taskId);
+                    const storageLimit = task.storage_limit_gb * 1024 * 1024 * 1024; // Convert GB to bytes
+
+                    if (storageUsed >= storageLimit) {
+                      logger.warn(`Storage limit reached for task ${taskId}, skipping remaining VODs`);
+                      break;
+                    }
+                  }
+
                   await client.query(`
                     INSERT INTO vods (
                       task_id,
                       channel_id,
                       twitch_id,
                       title,
+                      description,
                       duration,
+                      language,
+                      view_count,
                       download_status,
                       preferred_quality,
                       content_type,
+                      published_at,
                       created_at,
                       updated_at,
-                      published_at,
-                      processing_options
+                      download_priority,
+                      retry_count,
+                      max_retries,
+                      processing_options,
+                      retention_days
                     ) VALUES (
-                      $1, $2, $3, $4, $5, 'pending', $6, 'stream', 
-                      NOW(), NOW(), NOW(),
-                      '{"transcode": false, "extract_chat": true}'
+                      $1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10,
+                      $11, NOW(), NOW(), $12, 0, $13,
+                      $14::jsonb,
+                      $15
                     )
                   `, [
                     taskId,
                     channelId,
                     vod.id,
                     vod.title,
+                    vod.description,
                     vod.duration || '0:00:00',
-                    task.preferred_quality || 'source'
+                    vod.language,
+                    vod.view_count,
+                    task.preferred_quality || 'source',
+                    vod.type,
+                    vod.published_at,
+                    task.priority || 'normal',
+                    task.max_retries || 3,
+                    JSON.stringify({
+                      transcode: false,
+                      extract_chat: true,
+                      download_markers: true,
+                      download_chapters: true
+                    }),
+                    task.retention_days
                   ]);
                   successfulInserts++;
                 }
               } catch (error) {
                 logger.error(`Error inserting VOD ${vod.id} for channel ${channelId}:`, error);
+                errors.push(error instanceof Error ? error : new Error(String(error)));
                 failedInserts++;
                 continue;
               }
             }
           } catch (error) {
             logger.error(`Error processing channel ${channelId} for task ${taskId}:`, error);
+            errors.push(error instanceof Error ? error : new Error(String(error)));
             continue;
           }
         }
       }
 
       // Process games
-      if (task.game_ids && task.game_ids.length > 0) {
+      if (task.game_ids?.length > 0) {
         for (const gameId of task.game_ids) {
           try {
-            // Get game info
-            const gameResult = await client.query('SELECT * FROM games WHERE id = $1', [gameId]);
-            if (gameResult.rows.length === 0) continue;
+            const gameResult = await client.query(
+              'SELECT * FROM games WHERE id = $1',
+              [gameId]
+            );
+
+            if (gameResult.rows.length === 0) {
+              logger.warn(`Game ${gameId} not found, skipping`);
+              continue;
+            }
 
             const game = gameResult.rows[0];
             logger.info(`Processing game ${game.name} for task ${taskId}`);
 
-            // Get recent VODs for game
             const gameVods = await this.twitchAPI.getGameVODs(game.twitch_game_id);
             logger.info(`Found ${gameVods.length} downloadable VODs for game ${game.twitch_game_id}`);
 
             for (const vod of gameVods) {
               try {
-                // Check if VOD already exists
+                // Apply task filters if configured
+                if (task.conditions) {
+                  const { language, minimum_views, duration_minutes } = task.conditions;
+
+                  if (language && vod.language !== language) {
+                    continue;
+                  }
+
+                  if (minimum_views && vod.view_count < minimum_views) {
+                    continue;
+                  }
+
+                  if (duration_minutes) {
+                    const vodDuration = this.parseDuration(vod.duration);
+                    if (vodDuration < duration_minutes * 60) {
+                      continue;
+                    }
+                  }
+                }
+
+                // Check storage limits
+                if (task.storage_limit_gb) {
+                  const storageUsed = await this.getTaskStorageUsage(taskId);
+                  const storageLimit = task.storage_limit_gb * 1024 * 1024 * 1024;
+
+                  if (storageUsed >= storageLimit) {
+                    logger.warn(`Storage limit reached for task ${taskId}, skipping remaining VODs`);
+                    break;
+                  }
+                }
+
                 const existingVod = await client.query(`
                   SELECT id FROM vods 
-                  WHERE task_id = $1 AND channel_id = $2 AND twitch_id = $3
-                `, [taskId, vod.channel_id, vod.id]);
+                  WHERE task_id = $1 
+                  AND game_id = $2 
+                  AND twitch_id = $3
+                  AND NOT (status = 'failed' AND retry_count >= max_retries)
+                `, [taskId, gameId, vod.id]);
 
                 if (existingVod.rows.length === 0) {
                   await client.query(`
@@ -533,18 +793,26 @@ class DownloadManager {
                       game_id,
                       twitch_id,
                       title,
+                      description,
                       duration,
+                      language,
+                      view_count,
                       download_status,
                       preferred_quality,
                       content_type,
+                      published_at,
                       created_at,
                       updated_at,
-                      published_at,
-                      processing_options
+                      download_priority,
+                      retry_count,
+                      max_retries,
+                      processing_options,
+                      retention_days
                     ) VALUES (
-                      $1, $2, $3, $4, $5, $6, 'pending', $7, 'stream',
-                      NOW(), NOW(), NOW(),
-                      '{"transcode": false, "extract_chat": true}'
+                      $1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11,
+                      $12, NOW(), NOW(), $13, 0, $14,
+                      $15::jsonb,
+                      $16
                     )
                   `, [
                     taskId,
@@ -552,126 +820,368 @@ class DownloadManager {
                     gameId,
                     vod.id,
                     vod.title,
+                    vod.description,
                     vod.duration || '0:00:00',
-                    task.preferred_quality || 'source'
+                    vod.language,
+                    vod.view_count,
+                    task.preferred_quality || 'source',
+                    vod.type,
+                    vod.published_at,
+                    task.priority || 'normal',
+                    task.max_retries || 3,
+                    JSON.stringify({
+                      transcode: false,
+                      extract_chat: true,
+                      download_markers: true,
+                      download_chapters: true
+                    }),
+                    task.retention_days
                   ]);
                   successfulInserts++;
                 }
               } catch (error) {
                 logger.error(`Error inserting VOD ${vod.id} for game ${gameId}:`, error);
+                errors.push(error instanceof Error ? error : new Error(String(error)));
                 failedInserts++;
                 continue;
               }
             }
           } catch (error) {
             logger.error(`Error processing game ${gameId} for task ${taskId}:`, error);
+            errors.push(error instanceof Error ? error : new Error(String(error)));
             continue;
           }
         }
       }
 
+      // Determine final task status
+      let finalStatus = 'completed';
+      let errorMessage: string | null = null;
+
+      if (failedInserts > 0 && successfulInserts === 0) {
+        finalStatus = 'failed';
+        errorMessage = errors.map(e => e.message).join('; ');
+      } else if (failedInserts > 0) {
+        finalStatus = 'completed_with_errors';
+        errorMessage = `Completed with ${failedInserts} failed inserts`;
+      }
+
       // Update task status
-      const status = failedInserts > 0 ? 'completed_with_errors' : 'completed';
       await client.query(`
         UPDATE tasks 
         SET status = $1,
+            error_message = $2,
             last_run = NOW(),
+            next_run = CASE 
+              WHEN schedule_type = 'interval' THEN 
+                NOW() + (schedule_value || ' seconds')::interval
+              WHEN schedule_type = 'cron' THEN 
+                NOW()
+              ELSE NULL 
+            END,
             updated_at = NOW()
-        WHERE id = $2
-      `, [status, taskId]);
+        WHERE id = $3
+      `, [finalStatus, errorMessage, taskId]);
+
+      // Update task history
+      await client.query(`
+        UPDATE task_history
+        SET status = $1,
+            end_time = NOW(),
+            details = jsonb_set(
+              COALESCE(details, '{}'::jsonb),
+              '{execution_summary}',
+              $2::jsonb
+            )
+        WHERE task_id = $3
+        AND end_time IS NULL
+      `, [
+        finalStatus,
+        JSON.stringify({
+          successful_inserts: successfulInserts,
+          failed_inserts: failedInserts,
+          error_count: errors.length,
+          completion_time: new Date().toISOString()
+        }),
+        taskId
+      ]);
 
       await client.query('COMMIT');
 
-      logger.info(`Task ${taskId} execution completed. Successful inserts: ${successfulInserts}, Failed inserts: ${failedInserts}`);
+      logger.info(`Task ${taskId} execution completed`, {
+        taskId,
+        status: finalStatus,
+        successfulInserts,
+        failedInserts
+      });
 
     } catch (error) {
-      await client.query('ROLLBACK');
       logger.error(`Error during task execution:`, error);
 
-      // Update task status to failed
+      try {
+        // Rollback the transaction
+        await client.query('ROLLBACK');
+
+        // Update task status to failed outside the failed transaction
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error during task execution';
+        await this.pool.query(`
+          UPDATE tasks 
+          SET status = 'failed',
+              error_message = $2,
+              updated_at = NOW(),
+              last_run = NOW()
+          WHERE id = $1
+        `, [taskId, errorMessage]);
+
+        // Update task history
+        await this.pool.query(`
+          UPDATE task_history
+          SET status = 'failed',
+              end_time = NOW(),
+              details = jsonb_set(
+                COALESCE(details, '{}'::jsonb),
+                '{error}',
+                $2::jsonb
+              )
+          WHERE task_id = $1
+          AND end_time IS NULL
+        `, [
+          taskId,
+          JSON.stringify({
+            error: errorMessage,
+            error_time: new Date().toISOString(),
+            stack_trace: error instanceof Error ? error.stack : undefined
+          })
+        ]);
+
+        // Cleanup any orphaned VODs
+        await this.pool.query(`
+          DELETE FROM vods
+          WHERE task_id = $1
+          AND created_at > (
+            SELECT start_time
+            FROM task_history
+            WHERE task_id = $1
+            AND end_time IS NULL
+            ORDER BY start_time DESC
+            LIMIT 1
+          )
+        `, [taskId]);
+
+        throw error;
+      } catch (rollbackError) {
+        logger.error('Error during rollback:', rollbackError);
+        throw rollbackError;
+      }
+    } finally {
+      client.release();
+    }
+  }
+
+  private parseDuration(duration: string): number {
+    // Parse Twitch duration format (e.g., "1h2m3s") to seconds
+    const hours = duration.match(/(\d+)h/)?.[1] || '0';
+    const minutes = duration.match(/(\d+)m/)?.[1] || '0';
+    const seconds = duration.match(/(\d+)s/)?.[1] || '0';
+
+    return (
+      parseInt(hours) * 3600 +
+      parseInt(minutes) * 60 +
+      parseInt(seconds)
+    );
+  }
+
+  private async getTaskStorageUsage(taskId: number): Promise<number> {
+    const result = await this.pool.query(`
+      SELECT COALESCE(SUM(file_size), 0) as total_size
+      FROM vods
+      WHERE task_id = $1
+      AND download_status = 'completed'
+    `, [taskId]);
+
+    return parseInt(result.rows[0].total_size) || 0;
+  }
+
+  private async updateTaskProgress(
+    taskId: number,
+    progress: {
+      completed: number;
+      total: number;
+      current_item?: {
+        type: 'channel' | 'game';
+        name: string;
+        status: string;
+      };
+    }
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(`
+        UPDATE tasks
+        SET progress = $1::jsonb,
+            updated_at = NOW()
+        WHERE id = $2
+      `, [JSON.stringify(progress), taskId]);
+    } finally {
+      client.release();
+    }
+  }
+
+  private async shouldProcessVOD(
+    vod: any,
+    task: any,
+    storageUsed: number
+  ): Promise<{
+    should_process: boolean;
+    skip_reason?: string;
+  }> {
+    // Check task conditions if configured
+    if (task.conditions) {
+      const { language, minimum_views, duration_minutes } = task.conditions;
+
+      if (language && vod.language !== language) {
+        return {
+          should_process: false,
+          skip_reason: 'Language mismatch'
+        };
+      }
+
+      if (minimum_views && vod.view_count < minimum_views) {
+        return {
+          should_process: false,
+          skip_reason: 'Below minimum views threshold'
+        };
+      }
+
+      if (duration_minutes) {
+        const vodDuration = this.parseDuration(vod.duration);
+        if (vodDuration < duration_minutes * 60) {
+          return {
+            should_process: false,
+            skip_reason: 'Below minimum duration'
+          };
+        }
+      }
+    }
+
+    // Check storage limits
+    if (task.storage_limit_gb) {
+      const storageLimit = task.storage_limit_gb * 1024 * 1024 * 1024;
+      if (storageUsed >= storageLimit) {
+        return {
+          should_process: false,
+          skip_reason: 'Storage limit reached'
+        };
+      }
+    }
+
+    return { should_process: true };
+  }
+
+  private async checkVODExists(
+    taskId: number,
+    channelId: number | null,
+    gameId: number | null,
+    twitchId: string
+  ): Promise<boolean> {
+    const result = await this.pool.query(`
+      SELECT id 
+      FROM vods 
+      WHERE task_id = $1 
+      AND twitch_id = $2
+      AND (
+        ($3::int IS NOT NULL AND channel_id = $3)
+        OR 
+        ($4::int IS NOT NULL AND game_id = $4)
+      )
+      AND NOT (status = 'failed' AND retry_count >= max_retries)
+    `, [taskId, twitchId, channelId, gameId]);
+
+    return result.rows.length > 0;
+  }
+
+  private getProcessingOptions(task: any): any {
+    return {
+      transcode: false,
+      extract_chat: true,
+      download_markers: true,
+      download_chapters: true,
+      custom_options: task.processing_options || {}
+    };
+  }
+
+  private async logTaskEvent(
+    taskId: number,
+    event: string,
+    details: any
+  ): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO task_events (
+        task_id,
+        event_type,
+        details,
+        created_at
+      ) VALUES ($1, $2, $3::jsonb, NOW())
+    `, [taskId, event, JSON.stringify(details)]);
+  }
+
+  private async cleanupFailedTask(
+    taskId: number,
+    error: Error
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Update task status
       await client.query(`
         UPDATE tasks 
         SET status = 'failed',
-            updated_at = NOW()
+            error_message = $2,
+            updated_at = NOW(),
+            last_run = NOW()
         WHERE id = $1
+      `, [taskId, error.message]);
+
+      // Update task history
+      await client.query(`
+        UPDATE task_history
+        SET status = 'failed',
+            end_time = NOW(),
+            details = jsonb_set(
+              COALESCE(details, '{}'::jsonb),
+              '{error}',
+              $2::jsonb
+            )
+        WHERE task_id = $1
+        AND end_time IS NULL
+      `, [
+        taskId,
+        JSON.stringify({
+          error: error.message,
+          error_time: new Date().toISOString(),
+          stack_trace: error.stack
+        })
+      ]);
+
+      // Clean up any orphaned VODs
+      await client.query(`
+        DELETE FROM vods
+        WHERE task_id = $1
+        AND created_at > (
+          SELECT start_time
+          FROM task_history
+          WHERE task_id = $1
+          AND end_time IS NULL
+          ORDER BY start_time DESC
+          LIMIT 1
+        )
       `, [taskId]);
 
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async trackDownloadProgress(
-    vodId: number,
-    progress: number,
-    status: VodStatus,
-    error?: string
-  ): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query(`
-        UPDATE vods
-        SET 
-          download_progress = $2,
-          download_status = $3,
-          error_message = $4,
-          updated_at = NOW()
-        WHERE id = $1
-      `, [vodId, progress, status, error || null]);
-    } finally {
-      client.release();
-    }
-  }
-
-  async updateDownloadStats(
-    vodId: number,
-    stats: {
-      file_size?: number;
-      download_speed?: number;
-      preferred_quality?: string;
-      language?: string;
-    }
-  ): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      const updates: string[] = [];
-      const values: (number | string | null)[] = [vodId];
-      let paramCount = 2;
-
-      if (stats.file_size !== undefined) {
-        updates.push(`file_size = $${paramCount}`);
-        values.push(stats.file_size);
-        paramCount++;
-      }
-
-      if (stats.download_speed !== undefined) {
-        updates.push(`download_speed = $${paramCount}`);
-        values.push(stats.download_speed);
-        paramCount++;
-      }
-
-      if (stats.preferred_quality !== undefined) {
-        updates.push(`preferred_quality = $${paramCount}`);
-        values.push(stats.preferred_quality);
-        paramCount++;
-      }
-
-      if (stats.language !== undefined) {
-        updates.push(`language = $${paramCount}`);
-        values.push(stats.language);
-        paramCount++;
-      }
-
-      if (updates.length > 0) {
-        await client.query(`
-          UPDATE vods
-          SET 
-            ${updates.join(', ')},
-            updated_at = NOW()
-          WHERE id = $1
-        `, values);
-      }
+      await client.query('COMMIT');
+    } catch (cleanupError) {
+      await client.query('ROLLBACK');
+      logger.error('Error during task cleanup:', cleanupError);
     } finally {
       client.release();
     }
@@ -788,48 +1298,6 @@ class DownloadManager {
     }
   }
 
-  private async mergeSegments(vodId: number, segmentDir: string, outputPath: string): Promise<void> {
-    const state = this.activeDownloads.get(vodId);
-    if (!state) throw new Error(`No download state found for VOD ${vodId}`);
-
-    try {
-      await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-
-      const files = await fs.promises.readdir(segmentDir);
-      const segmentFiles = files
-        .filter(f => f.startsWith('segment-') && f.endsWith('.ts'))
-        .sort((a, b) => {
-          const indexA = parseInt(a.match(/segment-(\d+)\.ts/)?.[1] || '0');
-          const indexB = parseInt(b.match(/segment-(\d+)\.ts/)?.[1] || '0');
-          return indexA - indexB;
-        });
-
-      const outputStream = fs.createWriteStream(outputPath);
-
-      for (const file of segmentFiles) {
-        const segmentPath = path.join(segmentDir, file);
-        const segmentData = await fs.promises.readFile(segmentPath);
-        await new Promise<void>((resolve, reject) => {
-          outputStream.write(segmentData, (error) => {
-            if (error) reject(error);
-            else resolve();
-          });
-        });
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        outputStream.end((error?: Error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-
-    } catch (error) {
-      logger.error(`Error merging segments for VOD ${vodId}:`, error);
-      throw error;
-    }
-  }
-
   private async downloadChat(vodId: string, outputDir: string): Promise<void> {
     try {
       const chat = await this.twitchAPI.getVODChat(vodId);
@@ -849,113 +1317,6 @@ class DownloadManager {
     } catch (error) {
       logger.error(`Error downloading markers for VOD ${vodId}:`, error);
       throw error;
-    }
-  }
-
-  public async downloadVOD(vodId: string, options: VODDownloadOptions = {}): Promise<void> {
-    const client = await this.pool.connect();
-
-    try {
-      await client.query('BEGIN');
-
-      // Create VOD entry
-      const result = await client.query(
-        `INSERT INTO vods (
-          twitch_id,
-          download_status,
-          download_priority,
-          preferred_quality,
-          download_chat,
-          download_markers,
-          download_chapters,
-          max_retries,
-          created_at,
-          updated_at
-        ) VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7, NOW(), NOW())
-        RETURNING id`,
-        [
-          vodId,
-          options.priority || 'normal',
-          options.quality || 'source',
-          options.downloadChat || false,
-          options.downloadMarkers || false,
-          options.downloadChapters || false,
-          this.retryAttempts
-        ]
-      );
-
-      const downloadId = result.rows[0].id;
-
-      // Get VOD playlist
-      const playlist = await this.getVODPlaylist(vodId, options.quality || 'source');
-      const tempDir = path.join(this.tempDir, `vod-${downloadId}`);
-      await fs.promises.mkdir(tempDir, { recursive: true });
-
-      // Initialize download state
-      const state = this.createDownloadState(downloadId, playlist.segments.length);
-      this.activeDownloads.set(downloadId, state);
-
-      // Update status to downloading
-      await client.query(
-        `UPDATE vods 
-         SET download_status = 'downloading',
-             started_at = NOW()
-         WHERE id = $1`,
-        [downloadId]
-      );
-
-      await client.query('COMMIT');
-
-      // Start download process
-      try {
-        await this.downloadSegmentsInParallel(
-          downloadId,
-          playlist.segments,
-          tempDir,
-          options.maxConcurrentSegments || 3,
-          options.throttleSpeed
-        );
-      if (options.downloadChat) {
-          await this.downloadChat(vodId, tempDir);
-        }
-
-        if (options.downloadMarkers) {
-          await this.downloadMarkers(vodId, tempDir);
-        }
-
-        // Update status to completed
-        await client.query(
-          `UPDATE vods 
-           SET download_status = 'completed',
-               completed_at = NOW(),
-               updated_at = NOW()
-           WHERE id = $1`,
-          [downloadId]
-        );
-
-      } catch (error) {
-        // Update status to failed
-        await client.query(
-          `UPDATE vods 
-           SET download_status = 'failed',
-               error_message = $1,
-               updated_at = NOW()
-           WHERE id = $2`,
-          [(error as Error).message, downloadId]
-        );
-
-        throw error;
-      } finally {
-        // Cleanup
-        await fs.promises.rm(tempDir, { recursive: true, force: true });
-        this.activeDownloads.delete(downloadId);
-      }
-
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
     }
   }
 
@@ -1215,58 +1576,6 @@ class DownloadManager {
       };
     } catch (error) {
       logger.error('Error getting queue status:', error);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  public async getDownloadProgress(vodId: number): Promise<DownloadProgress | null> {
-    const state = this.activeDownloads.get(vodId);
-    return state ? state.progress : null;
-  }
-
-  public async pauseQueue(): Promise<void> {
-    const client = await this.pool.connect();
-
-    try {
-      await client.query(
-        `UPDATE vods
-         SET download_status = 'queued',
-             updated_at = NOW()
-         WHERE download_status = 'downloading'`
-      );
-
-      // Clear active downloads
-      this.activeDownloads.clear();
-    } catch (error) {
-      logger.error('Error pausing download queue:', error);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  public async resumeQueue(): Promise<void> {
-    try {
-      await this.processDownloadQueue();
-    } catch (error) {
-      logger.error('Error resuming download queue:', error);
-      throw error;
-    }
-  }
-
-  public async removeFailedDownloads(): Promise<void> {
-    const client = await this.pool.connect();
-
-    try {
-      await client.query(
-        `DELETE FROM vods
-         WHERE download_status = 'failed'
-         AND updated_at < NOW() - INTERVAL '24 hours'`
-      );
-    } catch (error) {
-      logger.error('Error removing failed downloads:', error);
       throw error;
     } finally {
       client.release();

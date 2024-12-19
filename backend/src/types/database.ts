@@ -215,7 +215,13 @@ export interface ChatMessage {
 // Task related types
 export type TaskType = 'channel' | 'game' | 'combined';
 export type TaskScheduleType = 'interval' | 'cron' | 'manual';
-export type TaskStatus = 'pending' | 'active' | 'completed' | 'failed';
+export type TaskStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'failed';
+
 export type TaskPriority = 'low' | 'medium' | 'high';
 
 export interface Task {
