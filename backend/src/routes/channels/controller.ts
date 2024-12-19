@@ -36,24 +36,32 @@ export class ChannelsController {
   getAllChannels = async (req: Request, res: Response): Promise<void> => {
     try {
       const result = await this.pool.query(`
-        WITH channel_premieres AS (
+        WITH first_premieres AS (
+          SELECT DISTINCT ON (channel_id) 
+            channel_id,
+            game_id,
+            started_at,
+            duration,
+            peak_viewers
+          FROM channel_game_history
+          WHERE is_premiere = true
+          ORDER BY channel_id, started_at ASC
+        ),
+        channel_premieres AS (
           SELECT 
-            ch.channel_id,
-            jsonb_agg(
-              jsonb_build_object(
-                'game', jsonb_build_object(
-                  'id', g3.id,
-                  'name', g3.name,
-                  'box_art_url', g3.box_art_url
-                ),
-                'date', ch.started_at,
-                'duration', ch.duration,
-                'viewers', ch.peak_viewers
-              ) ORDER BY ch.started_at DESC
-            ) FILTER (WHERE ch.is_premiere = true) AS premiere_data
-          FROM channel_game_history ch
-          JOIN games g3 ON ch.game_id = g3.id
-          GROUP BY ch.channel_id
+            fp.channel_id,
+            jsonb_build_object(
+              'game', jsonb_build_object(
+                'id', g.id,
+                'name', g.name,
+                'box_art_url', g.box_art_url
+              ),
+              'date', fp.started_at,
+              'duration', fp.duration,
+              'viewers', fp.peak_viewers
+            ) as premiere_data
+          FROM first_premieres fp
+          JOIN games g ON fp.game_id = g.id
         ),
         channel_most_played AS (
           SELECT DISTINCT ON (channel_id)
@@ -67,41 +75,45 @@ export class ChannelsController {
           FROM channel_game_stats stats
           JOIN games g2 ON stats.game_id = g2.id
           ORDER BY channel_id, total_time DESC
+        ),
+        last_stream AS (
+          SELECT DISTINCT ON (channel_id)
+            channel_id,
+            game_id,
+            started_at as last_stream_date,
+            COALESCE(is_live, false) as is_live
+          FROM channel_game_history
+          ORDER BY channel_id, started_at DESC
         )
         SELECT 
           c.*,
+          COALESCE(ls.is_live, false) as is_live,
+          ls.last_stream_date,
           g.id as last_game_id,
           g.name as last_game_name,
           g.box_art_url as last_game_box_art,
-          stats.total_streams,
-          stats.total_time,
           cmp.game_data as most_played_game,
-          cp.premiere_data as premieres
+          CASE 
+            WHEN cp.premiere_data IS NOT NULL 
+            THEN ARRAY[cp.premiere_data] 
+            ELSE ARRAY[]::jsonb[] 
+          END as premieres
         FROM channels c
-        LEFT JOIN games g ON c.last_stream_game_id = g.id
-        LEFT JOIN channel_game_stats stats ON c.id = stats.channel_id
+        LEFT JOIN last_stream ls ON c.id = ls.channel_id
+        LEFT JOIN games g ON ls.game_id = g.id
         LEFT JOIN channel_most_played cmp ON c.id = cmp.channel_id
         LEFT JOIN channel_premieres cp ON c.id = cp.channel_id
         ORDER BY c.follower_count DESC
       `);
 
-      // Transform the results to ensure premieres is always an array
-      const transformedResults = result.rows.map(row => ({
-        ...row,
-        premieres: row.premieres || []
-      }));
-
-      res.json(transformedResults);
+      res.json(result.rows);
     } catch (error) {
       logger.error('Error fetching channels:', error);
-      res.status(500).json({
-        error: 'Failed to fetch channels',
-        details: getErrorMessage(error)
-      });
+      res.status(500).json({ error: 'Failed to fetch channels' });
     }
   };
 
-  addChannel = async (req: Request, res: Response): Promise<void> => {
+  async addChannel(req: Request, res: Response): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -136,6 +148,7 @@ export class ChannelsController {
       // Get fresh follower count from Twitch
       try {
         const followerCount = await twitchAPI.getChannelFollowers(channelData.twitch_id);
+        console.log(`Fetched follower count for ${channelData.username}:`, followerCount);
         channelData.follower_count = followerCount;
       } catch (error) {
         logger.warn(`Could not fetch follower count for channel ${channelData.username}:`, error);
@@ -176,31 +189,8 @@ export class ChannelsController {
       logger.error('Error adding channel:', error);
       res.status(500).json({
         error: 'Failed to add channel',
-        details: getErrorMessage(error)
+        details: error instanceof Error ? error.message : 'Unknown error'
       });
-    } finally {
-      client.release();
-    }
-  };
-
-  async updateFollowerCounts(): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      const channels = await client.query('SELECT twitch_id, username FROM channels');
-
-      for (const channel of channels.rows) {
-        try {
-          const followerCount = await twitchAPI.getChannelFollowers(channel.twitch_id);
-          await client.query(
-            'UPDATE channels SET follower_count = $1, updated_at = CURRENT_TIMESTAMP WHERE twitch_id = $2',
-            [followerCount, channel.twitch_id]
-          );
-        } catch (error) {
-          logger.error(`Failed to update follower count for channel ${channel.username}:`, error);
-        }
-      }
-    } catch (error) {
-      logger.error('Error updating follower counts:', error);
     } finally {
       client.release();
     }
@@ -212,17 +202,16 @@ export class ChannelsController {
       await client.query('BEGIN');
 
       const { id } = req.params;
-      const { is_active, current_game_id } = req.body;
+      const { is_active } = req.body;
 
       const result = await client.query(`
         UPDATE channels 
         SET 
           is_active = COALESCE($1, is_active),
-          current_game_id = COALESCE($2, current_game_id),
           updated_at = CURRENT_TIMESTAMP 
-        WHERE id = $3 
+        WHERE id = $2 
         RETURNING *`,
-        [is_active, current_game_id, id]
+        [is_active, id]
       );
 
       if (result.rows.length === 0) {
@@ -249,19 +238,20 @@ export class ChannelsController {
     try {
       await client.query('BEGIN');
 
-      const { id } = req.params;
+      // First delete related records from dependent tables
+      await client.query(`
+        DELETE FROM channel_game_history WHERE channel_id = $1;
+        DELETE FROM channel_game_stats WHERE channel_id = $1;
+      `, [req.params.id]);
 
-      // Delete channel and related data
+      // Then delete the channel
       const result = await client.query(`
-        WITH deleted_channel AS (
-          DELETE FROM channels
-          WHERE id = $1
-          RETURNING *
-        )
-        SELECT COUNT(*) > 0 as deleted FROM deleted_channel
-      `, [id]);
+        DELETE FROM channels
+        WHERE id = $1
+        RETURNING id
+      `, [req.params.id]);
 
-      if (!result.rows[0].deleted) {
+      if (result.rows.length === 0) {
         res.status(404).json({ error: 'Channel not found' });
         return;
       }

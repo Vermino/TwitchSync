@@ -1,3 +1,5 @@
+// Filepath: frontend/src/components/ChannelSearchModal.tsx
+
 import React, { useState, useEffect } from 'react';
 import {
   Search,
@@ -6,7 +8,7 @@ import {
   X,
   Loader2,
   Users,
-  GamepadIcon
+  GamepadIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -16,24 +18,28 @@ import { AlertCircle } from 'lucide-react';
 
 interface TwitchChannel {
   id: string;
-  broadcaster_login: string;
+  username: string;
   display_name: string;
   thumbnail_url: string;
+  broadcaster_login?: string;
   broadcaster_type: string;
-  tags?: string[];
-  follower_count?: number;
+  follower_count: number;
+  view_count: number;
   current_game?: {
     id: string;
     name: string;
     box_art_url: string;
   };
+  tags?: string[];
+  is_live?: boolean;
 }
 
 interface ChannelSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (channels: TwitchChannel[]) => void;
+  onSelect: (channels: TwitchChannel[]) => Promise<void>;
   allowMultiple?: boolean;
+  existingChannels?: Array<{ twitch_id: string }>;
 }
 
 const formatNumber = (num: number | undefined | null): string => {
@@ -47,7 +53,8 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
   isOpen,
   onClose,
   onSelect,
-  allowMultiple = false
+  allowMultiple = false,
+  existingChannels = []
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<TwitchChannel[]>([]);
@@ -62,6 +69,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
       setSearchResults([]);
       setSelectedChannels([]);
       setError(null);
+      setIsSubmitting(false);
     }
   }, [isOpen]);
 
@@ -77,13 +85,11 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
 
       try {
         const data = await api.searchTwitchChannels(searchTerm);
-        const processedResults = data.map(channel => ({
-          ...channel,
-          broadcaster_login: channel.broadcaster_login || channel.login || '',
-          follower_count: channel.follower_count || 0,
-          tags: channel.tags || []
-        }));
-        setSearchResults(processedResults);
+        // Filter out existing channels
+        const filteredResults = data.filter(channel =>
+          !existingChannels?.some(existing => existing.twitch_id === channel.id)
+        );
+        setSearchResults(filteredResults);
       } catch (err) {
         console.error('Channel search error:', err);
         setError('Failed to search channels. Please try again.');
@@ -113,6 +119,19 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
       });
     } else {
       setSelectedChannels([channel]);
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setIsSubmitting(true);
+      await onSelect(selectedChannels);
+      onClose();
+    } catch (error) {
+      console.error('Error saving channels:', error);
+      setError('Failed to save channels. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -170,44 +189,49 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
                       : 'hover:bg-gray-50'
                   }`}
                 >
-                  <Avatar className="w-16 h-16">
-                    <AvatarImage
-                      src={channel.thumbnail_url}
-                      alt={channel.display_name}
-                    />
-                    <AvatarFallback>
-                      {channel.display_name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="relative">
+                    <Avatar className="w-16 h-16">
+                      <AvatarImage
+                        src={channel.thumbnail_url}
+                        alt={channel.display_name}
+                      />
+                      <AvatarFallback>
+                        {channel.display_name.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    {channel.is_live && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+                    )}
+                  </div>
 
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <h3 className="font-semibold text-lg">{channel.display_name}</h3>
-                        <span className="text-gray-500 text-sm">@{channel.broadcaster_login}</span>
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <h3 className="font-semibold text-lg">{channel.display_name}</h3>
+                          <span className="text-gray-500 text-sm">@{channel.username}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-sm text-gray-600">
+                          <Users className="w-4 h-4" />
+                          <span>{formatNumber(channel.follower_count)} followers</span>
+                        </div>
                       </div>
                       {selectedChannels.some(c => c.id === channel.id) && (
                         <Check className="w-6 h-6 text-purple-600" />
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 mt-2">
-                      <div className="flex items-center gap-1 text-sm text-gray-600">
-                        <Users className="w-4 h-4" />
-                        {formatNumber(channel.follower_count)}
+                    {channel.current_game && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <GamepadIcon className="w-4 h-4 text-gray-600" />
+                        <img
+                          src={channel.current_game.box_art_url}
+                          alt={channel.current_game.name}
+                          className="w-8 h-10 rounded"
+                        />
+                        <span className="text-sm text-gray-600">{channel.current_game.name}</span>
                       </div>
-
-                      {channel.current_game && (
-                        <div className="flex items-center gap-2">
-                          <GamepadIcon className="w-4 h-4 text-gray-600" />
-                          <img
-                            src={channel.current_game.box_art_url}
-                            alt={channel.current_game.name}
-                            className="w-8 h-10 rounded"
-                          />
-                        </div>
-                      )}
-                    </div>
+                    )}
 
                     {channel.tags && channel.tags.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
@@ -240,11 +264,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
               Cancel
             </button>
             <button
-              onClick={() => {
-                setIsSubmitting(true);
-                onSelect(selectedChannels)
-                  .finally(() => setIsSubmitting(false));
-              }}
+              onClick={handleSubmit}
               disabled={selectedChannels.length === 0 || isSubmitting}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >

@@ -1,3 +1,5 @@
+// Filepath: backend/src/routes/channels/index.ts
+
 import { Router } from 'express';
 import { Pool } from 'pg';
 import { ChannelsController } from './controller';
@@ -7,7 +9,7 @@ export function setupChannelRoutes(pool: Pool): Router {
   const router = Router();
   const controller = new ChannelsController(pool);
 
-  // Add search route
+  // Search route
   router.get('/search', controller.searchChannels);
 
   // Get all channels
@@ -16,7 +18,6 @@ export function setupChannelRoutes(pool: Pool): Router {
   // Create new channel
   router.post('/', async (req, res) => {
     try {
-      console.log('Received channel creation request:', req.body); // Debug log
       await controller.addChannel(req, res);
     } catch (error) {
       console.error('Error in channel creation route:', error);

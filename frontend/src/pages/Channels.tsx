@@ -1,98 +1,48 @@
-import React, { useState } from 'react';
+// Filepath: frontend/src/pages/Channels.tsx
+
+import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusCircle, Trash2, GamepadIcon, ClockIcon } from 'lucide-react';
+import { PlusCircle, Trash2, Users, Clock, GamepadIcon } from 'lucide-react';
 import ChannelSearchModal from '../components/ChannelSearchModal';
 import { api } from '../lib/api';
 import { ErrorBoundary } from 'react-error-boundary';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
-import { Badge } from '../components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '../components/ui/tooltip';
+import { Badge } from '../components/ui/badge';
 
-const LoadingSpinner = () => (
-  <div className="flex justify-center items-center h-64">
-    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
-  </div>
-);
+const GameBox = ({ game, className = "" }) => {
+  if (!game?.box_art_url) return <span className="text-gray-500">No data</span>;
 
-const ErrorDisplay: React.FC<{ error: Error }> = ({ error }) => (
-  <div className="p-4">
-    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-      {error.message}
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <img
+        src={game.box_art_url}
+        alt={game.name}
+        className="w-8 h-10 rounded"
+      />
+      <span className="text-sm text-gray-900">{game.name}</span>
     </div>
-  </div>
-);
+  );
+};
 
-const GameBox: React.FC<{
-  game: {
-    id: string;
-    name: string;
-    box_art_url: string;
-  };
-  tooltipContent?: React.ReactNode;
-}> = ({ game, tooltipContent }) => (
-  <TooltipProvider>
-    <Tooltip>
-      <TooltipTrigger className="flex items-center gap-2">
-        <img
-          src={game.box_art_url}
-          alt={game.name}
-          className="w-8 h-10 rounded"
-        />
-        <span className="text-sm text-gray-900">{game.name}</span>
-      </TooltipTrigger>
-      {tooltipContent && (
-        <TooltipContent>
-          <div className="text-sm">
-            {tooltipContent}
-          </div>
-        </TooltipContent>
-      )}
-    </Tooltip>
-  </TooltipProvider>
-);
-
-const formatNumber = (num: number) => {
+const formatNumber = (num: number): string => {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
   return num.toString();
 };
 
 const Channels = () => {
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const { data: channels, isLoading, error } = useQuery({
+  const { data: channels, isLoading } = useQuery({
     queryKey: ['channels'],
     queryFn: () => api.getChannels(),
-  });
-
-  const addChannelMutation = useMutation({
-    mutationFn: (selectedChannels: Array<{
-      id: string;
-      broadcaster_login: string;
-      display_name: string;
-      thumbnail_url: string;
-      broadcaster_type: string;
-      follower_count: number;
-    }>) =>
-      Promise.all(
-        selectedChannels.map(channel => api.createChannel({
-          twitch_id: channel.id,
-          username: channel.broadcaster_login,
-          display_name: channel.display_name,
-          profile_image_url: channel.thumbnail_url,
-          follower_count: channel.follower_count
-        }))
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['channels'] });
-      setIsSearchModalOpen(false);
-    }
   });
 
   const deleteChannelMutation = useMutation({
@@ -102,8 +52,37 @@ const Channels = () => {
     },
   });
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error) return <ErrorDisplay error={error as Error} />;
+  const addChannelMutation = useMutation({
+    mutationFn: (selectedChannels) => Promise.all(
+      selectedChannels.map(channel => api.createChannel({
+        twitch_id: channel.id,
+        username: channel.username || channel.display_name.toLowerCase(), // Ensure we have a username
+        display_name: channel.display_name,
+        profile_image_url: channel.thumbnail_url,
+        follower_count: channel.follower_count || 0
+      }))
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['channels'] });
+      setIsSearchModalOpen(false);
+    }
+  });
+
+  const handleDeleteChannel = async (id: number) => {
+    try {
+      await deleteChannelMutation.mutateAsync(id);
+    } catch (error) {
+      console.error('Error deleting channel:', error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4">
@@ -132,128 +111,117 @@ const Channels = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {channels && channels.length > 0 ? (
-              channels.map((channel) => (
-                <tr key={channel.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <Avatar className="h-10 w-10 mr-3">
+            {channels?.map((channel) => (
+              <tr key={channel.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <div className="relative">
+                      <Avatar className="h-10 w-10">
                         <AvatarImage src={channel.profile_image_url} alt={channel.display_name} />
                         <AvatarFallback>{channel.display_name[0].toUpperCase()}</AvatarFallback>
                       </Avatar>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{channel.display_name}</div>
-                        <div className="text-sm text-gray-500">@{channel.username}</div>
-                      </div>
+                      {channel.is_live && (
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+                      )}
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{formatNumber(channel.follower_count || 0)}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {channel.last_stream_game ? (
-                      <GameBox
-                        game={channel.last_stream_game}
-                        tooltipContent={
-                          <>
-                            <p className="font-medium">{channel.last_stream_game.name}</p>
-                            {channel.last_stream_duration && (
-                              <p className="text-gray-500">Duration: {channel.last_stream_duration}</p>
-                            )}
-                          </>
+                    <div className="ml-4">
+                      <div className="text-sm font-medium text-gray-900">{channel.display_name}</div>
+                      <div className="text-sm text-gray-500">@{channel.username}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{formatNumber(channel.follower_count)}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {channel.last_game_id ? (
+                    <GameBox game={{
+                      id: channel.last_game_id,
+                      name: channel.last_game_name,
+                      box_art_url: channel.last_game_box_art
+                    }} />
+                  ) : (
+                    <span className="text-sm text-gray-500">No data</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger className="flex items-center gap-2 text-sm text-gray-900">
+                        <Clock className="w-4 h-4" />
+                        {channel.last_stream_date
+                          ? new Date(channel.last_stream_date).toLocaleDateString()
+                          : 'Never'
                         }
-                      />
-                    ) : (
-                      <span className="text-sm text-gray-500">No data</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                      </TooltipTrigger>
+                      {channel.last_stream_date && (
+                        <TooltipContent>
+                          {new Date(channel.last_stream_date).toLocaleString()}
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {channel.most_played_game ? (
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger className="flex items-center gap-2 text-sm text-gray-900">
-                          <ClockIcon className="w-4 h-4" />
-                          {channel.last_stream_date
-                            ? new Date(channel.last_stream_date).toLocaleDateString()
-                            : 'Never'
-                          }
+                        <TooltipTrigger asChild>
+                          <div>
+                            <GameBox game={channel.most_played_game} />
+                          </div>
                         </TooltipTrigger>
-                        {channel.last_stream_date && (
-                          <TooltipContent>
-                            {new Date(channel.last_stream_date).toLocaleString()}
-                          </TooltipContent>
-                        )}
+                        <TooltipContent>
+                          <p>{channel.most_played_game.hours.toFixed(1)} hours streamed</p>
+                        </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {channel.most_played_game ? (
-                      <GameBox
-                        game={channel.most_played_game}
-                        tooltipContent={
-                          <>
-                            <p className="font-medium">{channel.most_played_game.name}</p>
-                            <p className="text-gray-500">
-                              {channel.most_played_game.hours.toFixed(1)} hours streamed
-                            </p>
-                          </>
-                        }
-                      />
-                    ) : (
-                      <span className="text-sm text-gray-500">No data</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {channel.premieres && channel.premieres.length > 0 ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Badge variant="secondary" className="flex items-center gap-1">
-                              <GamepadIcon className="w-3 h-3" />
-                              {channel.premieres.length}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <div className="p-2 space-y-2">
-                              {channel.premieres.map((premiere, index) => (
-                                <div key={index} className="flex items-center gap-2">
-                                  <img
-                                    src={premiere.game.box_art_url}
-                                    alt={premiere.game.name}
-                                    className="w-8 h-10 rounded"
-                                  />
-                                  <div className="text-sm">
-                                    <p className="font-medium">{premiere.game.name}</p>
-                                    <p className="text-gray-500">
-                                      {new Date(premiere.date).toLocaleDateString()}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : (
-                      <span className="text-sm text-gray-500">None</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button
-                      onClick={() => deleteChannelMutation.mutate(channel.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
-                  No channels added yet. Click &#34;Add Channels&#34; to start tracking channels!
+                  ) : (
+                    <span className="text-sm text-gray-500">No data</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {channel.premieres && channel.premieres.length > 0 ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Badge variant="secondary" className="cursor-pointer">
+                            {channel.premieres.length} premiere{channel.premieres.length !== 1 ? 's' : ''}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="p-2 space-y-2">
+                            {channel.premieres.map((premiere, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <GameBox game={premiere.game} className="min-w-0" />
+                                <span className="text-sm text-gray-500">
+                                  {new Date(premiere.date).toLocaleDateString()}
+                                </span>
+                                {premiere.viewers && (
+                                  <span className="text-sm text-gray-500">
+                                    {formatNumber(premiere.viewers)} viewers
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <span className="text-sm text-gray-500">None</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right">
+                  <button
+                    onClick={() => handleDeleteChannel(channel.id)}
+                    className="text-red-600 hover:text-red-900"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
                 </td>
               </tr>
-            )}
+            ))}
           </tbody>
         </table>
       </div>
@@ -261,8 +229,11 @@ const Channels = () => {
       <ChannelSearchModal
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
-        onSelect={(selectedChannels) => addChannelMutation.mutate(selectedChannels)}
+        onSelect={addChannelMutation.mutateAsync}
         allowMultiple={true}
+        existingChannels={channels?.map(channel => ({
+          twitch_id: channel.twitch_id
+        })) || []}
       />
     </div>
   );
@@ -270,7 +241,9 @@ const Channels = () => {
 
 export default function ChannelsWrapper() {
   return (
-    <ErrorBoundary FallbackComponent={ErrorDisplay}>
+    <ErrorBoundary FallbackComponent={({ error }) => (
+      <div className="p-4 text-red-500">Error: {error.message}</div>
+    )}>
       <Channels />
     </ErrorBoundary>
   );

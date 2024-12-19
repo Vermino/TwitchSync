@@ -5,14 +5,7 @@ import { logger } from '../../utils/logger';
 import { StreamFilters } from '../../types/discovery';
 import {
   ChapterInfo,
-  VODInfo,
-  VODPlaylist,
-  VODMarker,
-  ChatMessage,
-  VODQuality,
-  VODSegment
 } from '../../types/twitch';
-import {QueryArrayResult, QueryResult} from "pg";
 
 interface TwitchAPIResponse<T> {
   data: T[];
@@ -59,16 +52,32 @@ interface TwitchChannel {
 }
 
 interface TwitchSearchChannel {
-  broadcaster_language: string;
+  id: string;
   broadcaster_login: string;
   display_name: string;
   game_id: string;
   game_name: string;
-  id: string;
-  is_live: boolean;
-  tags: string[];
-  thumbnail_url: string;
   title: string;
+  thumbnail_url: string;
+  tags: string[];
+  is_live: boolean;
+}
+
+interface EnrichedChannel {
+  id: string;
+  twitch_id: string;
+  username: string;
+  display_name: string;
+  description: string;
+  profile_image_url: string;
+  broadcaster_type: string;
+  follower_count: number;
+  view_count: number;
+  current_game?: {
+    id: string;
+    name: string;
+    box_art_url: string;
+  };
 }
 
 interface TwitchChannelInfo {
@@ -235,7 +244,7 @@ export class TwitchAPIService {
         }
       );
 
-      // Get channel details including follower count for each result
+      // Get detailed info for each channel
       const enrichedChannels = await Promise.all(
         searchResponse.data.data.map(async (channel) => {
           try {
@@ -253,47 +262,80 @@ export class TwitchAPIService {
               }
             );
 
-            // Get channel info including profile image
-            const channelResponse = await axios.get<TwitchAPIResponse<any>>(
-              `https://api.twitch.tv/helix/users`,
+            // Get current stream info for live status and current game
+            const streamResponse = await axios.get<TwitchAPIResponse<any>>(
+              'https://api.twitch.tv/helix/streams',
               {
                 headers: {
                   'Authorization': `Bearer ${await this.getAccessToken()}`,
                   'Client-Id': this.clientId
                 },
                 params: {
-                  id: channel.id
+                  user_id: channel.id
                 }
               }
             );
 
-            const followerCount = followerResponse.data.total;
-            const profileData = channelResponse.data.data[0] || {};
+            let currentGame = undefined;
+            const isLive = streamResponse.data.data.length > 0;
+
+            if (isLive && streamResponse.data.data[0].game_id) {
+              const gameResponse = await axios.get<TwitchAPIResponse<TwitchGame>>(
+                'https://api.twitch.tv/helix/games',
+                {
+                  headers: {
+                    'Authorization': `Bearer ${await this.getAccessToken()}`,
+                    'Client-Id': this.clientId
+                  },
+                  params: {
+                    id: streamResponse.data.data[0].game_id
+                  }
+                }
+              );
+
+              if (gameResponse.data.data.length > 0) {
+                const game = gameResponse.data.data[0];
+                currentGame = {
+                  id: game.id,
+                  name: game.name,
+                  box_art_url: this.formatBoxArtUrl(game.box_art_url)
+                };
+              }
+            }
+
+            const followers = followerResponse.data.total;
+            console.log(`Fetched follower count for ${channel.broadcaster_login}:`, followers);
 
             return {
               id: channel.id,
               twitch_id: channel.id,
               username: channel.broadcaster_login,
               display_name: channel.display_name,
-              description: profileData.description || '',
-              profile_image_url: profileData.profile_image_url || channel.thumbnail_url,
-              broadcaster_type: profileData.broadcaster_type || '',
-              follower_count: followerCount || 0,
-              view_count: profileData.view_count || 0
+              thumbnail_url: channel.thumbnail_url,
+              description: '',
+              profile_image_url: channel.thumbnail_url,
+              broadcaster_type: '',
+              follower_count: followers,
+              view_count: 0,
+              is_live: isLive,
+              current_game: currentGame,
+              tags: channel.tags
             };
           } catch (error) {
             logger.error(`Error enriching channel data for ${channel.broadcaster_login}:`, error);
-            // Return basic info if enrichment fails
             return {
               id: channel.id,
               twitch_id: channel.id,
               username: channel.broadcaster_login,
               display_name: channel.display_name,
+              thumbnail_url: channel.thumbnail_url,
               description: '',
               profile_image_url: channel.thumbnail_url,
               broadcaster_type: '',
               follower_count: 0,
-              view_count: 0
+              view_count: 0,
+              is_live: false,
+              tags: channel.tags || []
             };
           }
         })

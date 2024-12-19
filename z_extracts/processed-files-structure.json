@@ -1,11 +1,12 @@
 {
-  "updated_at": "2024-12-18T20:37:03.338699",
+  "updated_at": "2024-12-19T06:23:28.504194",
   "tree": {
     "backend": {
       "src/routes/channels/_files": [
         "controller.ts",
         "index.ts",
-        "validation.ts"
+        "validation.ts",
+        "controller.ts"
       ]
     },
     "frontend": {
