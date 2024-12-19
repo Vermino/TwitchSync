@@ -61,11 +61,11 @@ export function setupDashboardRoutes(pool: Pool): Router {
       // Get task stats with explicit status checking
       const taskStats = await client.query(`
         SELECT 
-          COUNT(CASE WHEN status = 'active' THEN 1 END) as active,
+          COUNT(CASE WHEN status = 'running' THEN 1 END) as active,
           COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
           COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
           COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
-        FROM tasks
+        FROM tasks 
         WHERE user_id = $1
       `, [req.user?.id]);
 

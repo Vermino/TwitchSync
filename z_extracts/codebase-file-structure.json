@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-18T14:35:35.386234",
+  "updated_at": "2024-12-18T20:37:03.337696",
   "tree": {
     "backend": {
       "_files": [
@@ -37,6 +37,8 @@
             "012_add_vod_constraints.ts",
             "013_add_task_status_enum.ts",
             "014_add_error_message_column.ts",
+            "015_task_monitoring_tables.ts",
+            "016_channel_game_tracking.ts",
             "runner.ts"
           ]
         },
@@ -134,6 +136,10 @@
             "downloadManager.ts",
             "gameMonitor.ts",
             "mediaServer.ts",
+            "taskMonitor.ts",
+            "taskNotifications.ts",
+            "taskQueueManager.ts",
+            "taskRunner.ts",
             "twitch.ts"
           ],
           "media": {
@@ -260,6 +266,7 @@
               "select.tsx",
               "slider.tsx",
               "switch.tsx",
+              "table.tsx",
               "tabs.tsx",
               "textarea.tsx",
               "toast.tsx",
@@ -274,24 +281,33 @@
             "AuthContext.tsx"
           ]
         },
+        "hooks": {
+          "_files": [
+            "useTaskMonitoring.ts"
+          ]
+        },
         "lib": {
           "_files": [
             "api.ts",
             "constants.ts",
             "utils.ts"
-          ]
+          ],
+          "api": {
+            "_files": [
+              "taskMonitoring.ts"
+            ]
+          }
         },
         "pages": {
           "_files": [
             "Channels.tsx",
-            "ConnectTwitch.tsx",
             "ContentDiscovery.tsx",
             "Dashboard.tsx",
             "Games.tsx",
             "Login.tsx",
             "Settings.tsx",
             "TaskManager.tsx",
-            "Watch.tsx"
+            "TaskMonitoring.tsx"
           ]
         },
         "services": {

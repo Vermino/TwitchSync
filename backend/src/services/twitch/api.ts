@@ -33,6 +33,19 @@ interface TwitchPlaylistResponse {
   };
 }
 
+interface TwitchFollowerResponse {
+  data: Array<{
+    user_id: string;
+    user_login: string;
+    user_name: string;
+    followed_at: string;
+  }>;
+  pagination: {
+    cursor?: string;
+  };
+  total: number;
+}
+
 interface TwitchChannel {
   id: string;
   login: string;
@@ -43,6 +56,46 @@ interface TwitchChannel {
   view_count: number;
   broadcaster_type: string;
   follower_count?: number;
+}
+
+interface TwitchSearchChannel {
+  broadcaster_language: string;
+  broadcaster_login: string;
+  display_name: string;
+  game_id: string;
+  game_name: string;
+  id: string;
+  is_live: boolean;
+  tags: string[];
+  thumbnail_url: string;
+  title: string;
+}
+
+interface TwitchChannelInfo {
+  broadcaster_id: string;
+  broadcaster_login: string;
+  broadcaster_name: string;
+  broadcaster_language: string;
+  game_id: string;
+  game_name: string;
+  title: string;
+  delay: number;
+  tags: string[];
+  follower_count: number;
+  profile_image_url: string;
+}
+
+interface TwitchChannelFollowers {
+  total: number;
+  data: Array<{
+    user_id: string;
+    user_login: string;
+    user_name: string;
+    followed_at: string;
+  }>;
+  pagination: {
+    cursor?: string;
+  };
 }
 
 interface TwitchGame {
@@ -79,6 +132,18 @@ interface EnrichedTwitchGame extends TwitchGame {
   status?: string;
   is_active?: boolean;
   genres?: string[];
+}
+
+interface EnrichedChannel {
+  id: string;
+  twitch_id: string;
+  username: string;
+  display_name: string;
+  description: string;
+  profile_image_url: string;
+  broadcaster_type: string;
+  follower_count: number;
+  view_count: number;
 }
 
 export class TwitchAPIService {
@@ -135,23 +200,6 @@ export class TwitchAPIService {
     return this.accessToken;
   }
 
-  private async makeRequest<T>(endpoint: string, params: Record<string, string | number> = {}): Promise<TwitchAPIResponse<T>> {
-    try {
-      const token = await this.getAccessToken();
-      const response = await axios.get<TwitchAPIResponse<T>>(`https://api.twitch.tv/helix${endpoint}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Client-Id': this.clientId
-        },
-        params
-      });
-      return response.data;
-    } catch (error) {
-      logger.error(`Twitch API request failed for ${endpoint}:`, error);
-      throw error;
-    }
-  }
-
   private formatBoxArtUrl(url: string | null | undefined): string {
     if (!url) {
       return `/api/placeholder/285/380`;
@@ -170,42 +218,131 @@ export class TwitchAPIService {
     return url;
   }
 
-  private async getChannelFollowers(channelId: string): Promise<number> {
+  async searchChannels(query: string): Promise<EnrichedChannel[]> {
     try {
-      const response = await this.makeRequest<{ total: number }>('/users/follows', {
-        to_id: channelId
-      });
-      return response.data[0]?.total || 0;
+      // First get basic channel info
+      const searchResponse = await axios.get<TwitchAPIResponse<TwitchSearchChannel>>(
+        'https://api.twitch.tv/helix/search/channels',
+        {
+          headers: {
+            'Authorization': `Bearer ${await this.getAccessToken()}`,
+            'Client-Id': this.clientId
+          },
+          params: {
+            query,
+            first: '20'
+          }
+        }
+      );
+
+      // Get channel details including follower count for each result
+      const enrichedChannels = await Promise.all(
+        searchResponse.data.data.map(async (channel) => {
+          try {
+            // Get follower count
+            const followerResponse = await axios.get<TwitchChannelFollowers>(
+              `https://api.twitch.tv/helix/channels/followers`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${await this.getAccessToken()}`,
+                  'Client-Id': this.clientId
+                },
+                params: {
+                  broadcaster_id: channel.id
+                }
+              }
+            );
+
+            // Get channel info including profile image
+            const channelResponse = await axios.get<TwitchAPIResponse<any>>(
+              `https://api.twitch.tv/helix/users`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${await this.getAccessToken()}`,
+                  'Client-Id': this.clientId
+                },
+                params: {
+                  id: channel.id
+                }
+              }
+            );
+
+            const followerCount = followerResponse.data.total;
+            const profileData = channelResponse.data.data[0] || {};
+
+            return {
+              id: channel.id,
+              twitch_id: channel.id,
+              username: channel.broadcaster_login,
+              display_name: channel.display_name,
+              description: profileData.description || '',
+              profile_image_url: profileData.profile_image_url || channel.thumbnail_url,
+              broadcaster_type: profileData.broadcaster_type || '',
+              follower_count: followerCount || 0,
+              view_count: profileData.view_count || 0
+            };
+          } catch (error) {
+            logger.error(`Error enriching channel data for ${channel.broadcaster_login}:`, error);
+            // Return basic info if enrichment fails
+            return {
+              id: channel.id,
+              twitch_id: channel.id,
+              username: channel.broadcaster_login,
+              display_name: channel.display_name,
+              description: '',
+              profile_image_url: channel.thumbnail_url,
+              broadcaster_type: '',
+              follower_count: 0,
+              view_count: 0
+            };
+          }
+        })
+      );
+
+      // Sort by follower count
+      return enrichedChannels.sort((a, b) => (b.follower_count || 0) - (a.follower_count || 0));
     } catch (error) {
-      logger.error(`Failed to get follower count for channel ${channelId}:`, error);
+      logger.error('Error searching channels:', error);
+      throw error;
+    }
+  }
+
+  async getChannelFollowers(channelId: string): Promise<number> {
+    try {
+      const response = await axios.get<TwitchChannelFollowers>(
+        'https://api.twitch.tv/helix/channels/followers',
+        {
+          headers: {
+            'Authorization': `Bearer ${await this.getAccessToken()}`,
+            'Client-Id': this.clientId
+          },
+          params: {
+            broadcaster_id: channelId
+          }
+        }
+      );
+
+      return response.data.total;
+    } catch (error) {
+      logger.error(`Error fetching followers for channel ${channelId}:`, error);
       return 0;
     }
   }
 
-  async searchChannels(query: string): Promise<TwitchChannel[]> {
+  // Make the makeRequest method more specific for different response types
+  private async makeRequest<T>(endpoint: string, params: Record<string, string | number> = {}): Promise<TwitchAPIResponse<T>> {
     try {
-      const response = await this.makeRequest<TwitchChannel>('/search/channels', {
-        query,
-        first: '20'
+      const token = await this.getAccessToken();
+      const response = await axios.get<TwitchAPIResponse<T>>(`https://api.twitch.tv/helix${endpoint}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Client-Id': this.clientId
+        },
+        params
       });
-
-      // Get follower counts for all channels in parallel
-      const enrichedChannels = await Promise.all(
-          response.data.map(async (channel) => {
-            const followerCount = await this.getChannelFollowers(channel.id);
-            return {
-              ...channel,
-              follower_count: followerCount
-            };
-          })
-      );
-
-      // Sort channels by follower count in descending order
-      return enrichedChannels.sort((a, b) => {
-        return (b.follower_count || 0) - (a.follower_count || 0);
-      });
+      return response.data;
     } catch (error) {
-      logger.error('Error searching channels:', error);
+      logger.error(`Twitch API request failed for ${endpoint}:`, error);
       throw error;
     }
   }

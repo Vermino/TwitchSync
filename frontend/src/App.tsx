@@ -9,7 +9,6 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import CallbackHandler from './components/CallbackHandler';
 import Login from './pages/Login';
-import ConnectTwitch from './pages/ConnectTwitch';
 import Dashboard from './pages/Dashboard';
 import Channels from './pages/Channels';
 import Games from './pages/Games';
@@ -41,7 +40,6 @@ function App() {
             <Routes>
               {/* Public routes */}
               <Route path="/login" element={<Login />} />
-              <Route path="/connect-twitch" element={<ConnectTwitch />} />
               <Route path="/auth/callback" element={<CallbackHandler />} />
 
               {/* Protected routes */}

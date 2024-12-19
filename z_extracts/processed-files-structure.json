@@ -1,8 +1,17 @@
 {
-  "updated_at": "2024-12-18T14:35:35.387234",
+  "updated_at": "2024-12-18T20:37:03.338699",
   "tree": {
-    "backend/src/services/_files": [
-      "downloadManager.ts"
-    ]
+    "backend": {
+      "src/routes/channels/_files": [
+        "controller.ts",
+        "index.ts",
+        "validation.ts"
+      ]
+    },
+    "frontend": {
+      "src/components/_files": [
+        "ChannelSearchModal.tsx"
+      ]
+    }
   }
 }

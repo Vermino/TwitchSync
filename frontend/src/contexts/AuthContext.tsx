@@ -1,9 +1,9 @@
 // Filepath: frontend/src/contexts/AuthContext.tsx
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, {createContext, useContext, useEffect, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import api from '../lib/api';
-import { logger } from '../utils/logger';
+import {logger} from '../utils/logger';
 
 interface User {
   id: number;
@@ -89,11 +89,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       return await fn();
     } catch (error) {
-      if (attempt < MAX_RETRY_ATTEMPTS && error.code === 'ERR_NETWORK') {
+      // Narrow the type of error
+      if (error instanceof Error && attempt < MAX_RETRY_ATTEMPTS && error.message.includes('ERR_NETWORK')) {
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
         return retryWithDelay(fn, attempt + 1);
       }
-      throw error;
+      throw error; // Re-throw the error if it's not recoverable
     }
   };
 
@@ -170,14 +171,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const redirectUri = import.meta.env.VITE_TWITCH_REDIRECT_URI;
     const scope = 'user:read:email user:read:follows';
 
-    const authUrl = `https://id.twitch.tv/oauth2/authorize?` +
-      `client_id=${clientId}&` +
-      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-      `response_type=code&` +
-      `scope=${encodeURIComponent(scope)}&` +
-      `force_verify=true`;
-
-    window.location.href = authUrl;
+    window.location.href = `https://id.twitch.tv/oauth2/authorize?` +
+        `client_id=${clientId}&` +
+        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+        `response_type=code&` +
+        `scope=${encodeURIComponent(scope)}&` +
+        `force_verify=true`;
   };
 
   const disconnectTwitch = async () => {
