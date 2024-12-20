@@ -1,8 +1,13 @@
 {
-  "updated_at": "2024-12-20T08:43:25.138904",
+  "updated_at": "2024-12-20T13:48:03.537086",
   "tree": {
-    "frontend/src/services/auth/_files": [
-      "twitch.ts"
+    "frontend/src/components/TaskModal/_files": [
+      "ConditionsTab.tsx",
+      "index.tsx",
+      "ConditionsTab.tsx",
+      "Filters.tsx",
+      "index.tsx",
+      "RestrictionsTab.tsx"
     ]
   }
 }

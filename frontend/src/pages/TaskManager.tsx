@@ -1,3 +1,5 @@
+// Filepath: frontend/src/pages/TaskManager.tsx
+
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -37,40 +39,52 @@ import {
 } from "@/components/ui/accordion";
 import { api } from '@/lib/api';
 import TaskModal from '@/components/TaskModal';
+import { Task, Channel, Game } from '@/types/task';
 
 const STATUS_CYCLE = {
   'running': 'pending',
   'pending': 'inactive',
   'inactive': 'running'
-};
+} as const;
 
 export default function TaskManager() {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [selectedTask, setSelectedTask] = React.useState(null);
+  const [selectedTask, setSelectedTask] = React.useState<Task | null>(null);
   const [expandedTasks, setExpandedTasks] = React.useState<number[]>([]);
   const [hoveredItem, setHoveredItem] = React.useState<{ type: 'channel' | 'game', id: number } | null>(null);
 
-  const { data: tasks, isLoading, refetch } = useQuery({
+  const { data: tasks = [], isLoading, refetch } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => api.getTasks()
   });
 
-  const { data: channels } = useQuery({
+  const { data: channelsData } = useQuery<Channel[]>({
     queryKey: ['channels'],
-    queryFn: () => api.getChannels()
+    queryFn: async () => {
+      const response = await api.getChannels();
+      console.log('Raw channels response:', response);
+      return Array.isArray(response) ? response : [];
+    }
   });
 
-  const { data: games } = useQuery({
+  const { data: gamesData } = useQuery<Game[]>({
     queryKey: ['games'],
-    queryFn: () => api.getGames()
+    queryFn: async () => {
+      const response = await api.getGames();
+      console.log('Raw games response:', response);
+      return Array.isArray(response) ? response : [];
+    }
   });
 
-  const { data: vods } = useQuery({
+  const { data: vods = [] } = useQuery({
     queryKey: ['vods'],
     queryFn: () => api.getVods()
   });
 
-  const handleStatusToggle = async (taskId: number, currentStatus: string) => {
+  const channels = channelsData || [];
+  const games = gamesData || [];
+
+  const handleStatusToggle = async (taskId: number, currentStatus: keyof typeof STATUS_CYCLE) => {
     try {
       await api.updateTask(taskId, { status: STATUS_CYCLE[currentStatus] });
       refetch();
@@ -79,48 +93,50 @@ export default function TaskManager() {
     }
   };
 
-  const getTaskChannels = (channelIds: number[]) => {
-    return channels?.filter(channel => channelIds.includes(channel.id)) || [];
+  const getTaskChannels = (channelIds: number[] = []) => {
+    return channels.filter(channel => channelIds.includes(channel.id));
   };
 
-  const getTaskGames = (gameIds: number[]) => {
-    return games?.filter(game => gameIds.includes(game.id)) || [];
+  const getTaskGames = (gameIds: number[] = []) => {
+    return games.filter(game => gameIds.includes(game.id));
   };
 
   const getTaskVods = (taskId: number) => {
-    return vods?.filter(vod => vod.task_id === taskId) || [];
+    return vods.filter(vod => vod.task_id === taskId);
   };
 
-  const renderHoverCard = (item: any, type: 'channel' | 'game') => {
+  const renderHoverCard = (item: Channel | Game, type: 'channel' | 'game') => {
     if (type === 'channel') {
+      const channel = item as Channel;
       return (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg w-64">
           <div className="flex items-center gap-3">
             <img
-              src={item.profile_image_url}
-              alt={item.display_name}
+              src={channel.profile_image_url}
+              alt={channel.display_name}
               className="w-16 h-16 rounded-full"
             />
             <div>
-              <h3 className="font-medium">{item.display_name}</h3>
-              <p className="text-sm text-muted-foreground">{item.description}</p>
+              <h3 className="font-medium">{channel.display_name}</h3>
+              <p className="text-sm text-muted-foreground">{channel.description}</p>
             </div>
           </div>
         </div>
       );
     } else {
+      const game = item as Game;
       return (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg w-64">
           <div className="flex gap-3">
             <img
-              src={item.box_art_url}
-              alt={item.name}
+              src={game.box_art_url}
+              alt={game.name}
               className="w-20 h-24 rounded-lg object-cover"
             />
             <div>
-              <h3 className="font-medium">{item.name}</h3>
+              <h3 className="font-medium">{game.name}</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                {item.category || 'No category'}
+                {game.category || 'No category'}
               </p>
             </div>
           </div>
@@ -128,6 +144,14 @@ export default function TaskManager() {
       );
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -148,7 +172,7 @@ export default function TaskManager() {
           <CardDescription>Monitor and manage your running tasks</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {tasks?.map((task) => (
+          {tasks.map((task) => (
             <Accordion
               key={task.id}
               type="single"
@@ -247,7 +271,7 @@ export default function TaskManager() {
                       </TooltipProvider>
                     </div>
 
-                       <div className="space-y-2">
+                    <div className="space-y-2">
                       <div className="text-sm font-medium flex items-center gap-2">
                         <Gamepad2 className="h-4 w-4" />
                         Games ({task.game_ids?.length || 0})
@@ -411,28 +435,32 @@ export default function TaskManager() {
         </CardContent>
       </Card>
 
-      <TaskModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedTask(null);
-        }}
-        onSubmit={async (data) => {
-          try {
-            if (selectedTask) {
-              await api.updateTask(selectedTask.id, data);
-            } else {
-              await api.createTask(data);
-            }
+      {isModalOpen && (
+        <TaskModal
+          isOpen={isModalOpen}
+          onClose={() => {
             setIsModalOpen(false);
             setSelectedTask(null);
-            refetch();
-          } catch (error) {
-            console.error('Error saving task:', error);
-          }
-        }}
-        task={selectedTask}
-      />
+          }}
+          onSubmit={async (data) => {
+            try {
+              if (selectedTask) {
+                await api.updateTask(selectedTask.id, data);
+              } else {
+                await api.createTask(data);
+              }
+              setIsModalOpen(false);
+              setSelectedTask(null);
+              refetch();
+            } catch (error) {
+              console.error('Error saving task:', error);
+            }
+          }}
+          task={selectedTask}
+          availableChannels={channels}
+          availableGames={games}
+        />
+      )}
     </div>
   );
 }

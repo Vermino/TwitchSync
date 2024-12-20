@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-20T08:43:25.137905",
+  "updated_at": "2024-12-20T13:48:03.536085",
   "tree": {
     "backend": {
       "_files": [
@@ -250,7 +250,8 @@
             "_files": [
               "ConditionsTab.tsx",
               "Filters.tsx",
-              "RestrictionsTab.tsx"
+              "RestrictionsTab.tsx",
+              "index.tsx"
             ]
           },
           "discovery": {
@@ -277,6 +278,7 @@
               "input.tsx",
               "label.tsx",
               "progress.tsx",
+              "scroll-area.tsx",
               "select.tsx",
               "slider.tsx",
               "switch.tsx",

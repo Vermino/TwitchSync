@@ -228,10 +228,11 @@ class ApiClient {
       const response = await axios.get(`${this.baseURL}/channels`, {
         headers: this.getHeaders()
       });
-      return response.data;
+      console.log('API getChannels raw response:', response.data);
+      return Array.isArray(response.data) ? response.data : [];
     } catch (error) {
       console.error('Error fetching channels:', error);
-      throw this.handleError(error);
+      return [];
     }
   }
 
@@ -293,16 +294,16 @@ class ApiClient {
     }
   }
 
-  // Game Methods
   async getGames(): Promise<Game[]> {
     try {
       const response = await axios.get(`${this.baseURL}/games`, {
         headers: this.getHeaders()
       });
-      return response.data;
+      console.log('API getGames raw response:', response.data);
+      return Array.isArray(response.data) ? response.data : [];
     } catch (error) {
       console.error('Error fetching games:', error);
-      throw this.handleError(error);
+      return [];
     }
   }
 
@@ -374,7 +375,7 @@ class ApiClient {
       throw this.handleError(error);
     }
   }
-  
+
   async getTaskDetails(id: number): Promise<TaskDetails> {
     try {
       const response = await axios.get(
