@@ -1,17 +1,18 @@
+// backend/src/config/database.ts
 import { Pool } from 'pg';
-import dotenv from 'dotenv';
+import { config } from './index';
 import { runMigrations } from '../database/migrations/runner';
 import { logger } from '../utils/logger';
 
-dotenv.config();
-
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  host: config.database.host,
+  port: config.database.port,
+  database: config.database.database,
+  user: config.database.user,
+  password: config.database.password,
+  ssl: config.database.ssl,
+  max: config.database.max,
+  idleTimeoutMillis: config.database.idleTimeoutMillis
 });
 
 export const setupDatabase = async () => {
@@ -21,8 +22,11 @@ export const setupDatabase = async () => {
     await client.query('SELECT NOW()');
     client.release();
 
+    logger.info('Database connection established successfully');
+
     // Run migrations
     await runMigrations(pool);
+    logger.info('Database migrations completed successfully');
 
     return true;
   } catch (error) {
@@ -30,5 +34,18 @@ export const setupDatabase = async () => {
     throw error;
   }
 };
+
+// Handle pool errors
+pool.on('error', (err) => {
+  logger.error('Unexpected database pool error:', err);
+});
+
+pool.on('connect', () => {
+  logger.debug('New database connection established');
+});
+
+pool.on('remove', () => {
+  logger.debug('Database connection removed from pool');
+});
 
 export default pool;

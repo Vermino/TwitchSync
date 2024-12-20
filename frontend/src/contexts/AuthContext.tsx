@@ -1,9 +1,10 @@
 // Filepath: frontend/src/contexts/AuthContext.tsx
 
-import React, {createContext, useContext, useEffect, useState} from 'react';
-import {useNavigate} from 'react-router-dom';
-import api from '../lib/api';
-import {logger} from '../utils/logger';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
+import { logger } from '../utils/logger';
+import { twitchAuth } from '../services/auth/twitch';
 
 interface User {
   id: number;
@@ -34,9 +35,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY = 1000; // 1 second
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const [authState, setAuthState] = useState<AuthState>({
@@ -56,7 +54,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const data = await api.checkAuth();
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Session expired');
+        }
+
+        const data = await response.json();
         setAuthState({
           isAuthenticated: true,
           user: data.user,
@@ -81,68 +89,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkAuth();
   }, [navigate]);
 
-  const clearError = () => {
-    setAuthState(prev => ({ ...prev, error: null }));
-  };
-
-  const retryWithDelay = async (fn: () => Promise<any>, attempt: number = 1): Promise<any> => {
-    try {
-      return await fn();
-    } catch (error) {
-      // Narrow the type of error
-      if (error instanceof Error && attempt < MAX_RETRY_ATTEMPTS && error.message.includes('ERR_NETWORK')) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
-        return retryWithDelay(fn, attempt + 1);
-      }
-      throw error; // Re-throw the error if it's not recoverable
-    }
-  };
-
   const login = async (code: string) => {
     try {
-      logger.info('Attempting login with code:', code.substring(0, 6) + '...');
+      logger.info('Starting Twitch login process');
+      const token = await twitchAuth.handleCallback(code);
+      localStorage.setItem('auth_token', token);
 
-      const loginAttempt = async () => {
-        const response = await fetch('http://localhost:3001/auth/twitch/callback', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ code }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Authentication failed');
+      // Fetch user data after successful login
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
+      });
 
-        return await response.json();
-      };
+      if (!response.ok) {
+        throw new Error('Failed to fetch user data');
+      }
 
-      const data = await retryWithDelay(loginAttempt);
-      localStorage.setItem('auth_token', data.token);
-
+      const data = await response.json();
       setAuthState({
         isAuthenticated: true,
         user: data.user,
-        twitchAccount: data.user.twitch_account || null,
+        twitchAccount: data.user.twitch_account,
         isLoading: false,
         error: null,
       });
 
-      navigate('/');
+      navigate('/dashboard');
     } catch (error) {
       logger.error('Login error:', error);
-      const errorMessage = error instanceof Error
-        ? (error.message === 'Network Error'
-            ? 'Unable to connect to authentication server. Please check your connection and try again.'
-            : error.message)
-        : 'Failed to connect to authentication server';
-
       setAuthState(prev => ({
         ...prev,
-        error: errorMessage,
-        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to authenticate'
       }));
       throw error;
     }
@@ -150,7 +128,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await api.logout();
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        await fetch(`${import.meta.env.VITE_API_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      }
     } catch (error) {
       logger.error('Logout error:', error);
     } finally {
@@ -167,21 +153,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const connectTwitch = () => {
-    const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
-    const redirectUri = import.meta.env.VITE_TWITCH_REDIRECT_URI;
-    const scope = 'user:read:email user:read:follows';
-
-    window.location.href = `https://id.twitch.tv/oauth2/authorize?` +
-        `client_id=${clientId}&` +
-        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-        `response_type=code&` +
-        `scope=${encodeURIComponent(scope)}&` +
-        `force_verify=true`;
+    const authUrl = twitchAuth.getAuthUrl();
+    window.location.href = authUrl;
   };
 
   const disconnectTwitch = async () => {
     try {
-      await api.revokeTwitchAccess();
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      await twitchAuth.disconnect(token);
       setAuthState(prev => ({
         ...prev,
         twitchAccount: null,
@@ -190,6 +173,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logger.error('Failed to disconnect Twitch:', error);
       throw error;
     }
+  };
+
+  const clearError = () => {
+    setAuthState(prev => ({ ...prev, error: null }));
   };
 
   return (

@@ -1,18 +1,8 @@
 {
-  "updated_at": "2024-12-19T06:23:28.504194",
+  "updated_at": "2024-12-20T08:43:25.138904",
   "tree": {
-    "backend": {
-      "src/routes/channels/_files": [
-        "controller.ts",
-        "index.ts",
-        "validation.ts",
-        "controller.ts"
-      ]
-    },
-    "frontend": {
-      "src/components/_files": [
-        "ChannelSearchModal.tsx"
-      ]
-    }
+    "frontend/src/services/auth/_files": [
+      "twitch.ts"
+    ]
   }
 }

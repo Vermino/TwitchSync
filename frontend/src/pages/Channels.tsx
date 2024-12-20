@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PlusCircle, Trash2, Users, Clock, GamepadIcon } from 'lucide-react';
+import { PlusCircle, Trash2, Clock, Users } from 'lucide-react';
 import ChannelSearchModal from '../components/ChannelSearchModal';
 import { api } from '../lib/api';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -15,7 +15,41 @@ import {
 } from '../components/ui/tooltip';
 import { Badge } from '../components/ui/badge';
 
-const GameBox = ({ game, className = "" }) => {
+interface Game {
+  id: string;
+  name: string;
+  box_art_url: string;
+}
+
+interface Channel {
+  id: number;
+  twitch_id: string;
+  username: string;
+  display_name: string;
+  profile_image_url: string;
+  description?: string;
+  follower_count: number;
+  is_active: boolean;
+  is_live: boolean;
+  last_stream_date?: string;
+  last_game_id?: string;
+  last_game_name?: string;
+  last_game_box_art?: string;
+  most_played_game?: {
+    id: string;
+    name: string;
+    box_art_url: string;
+    hours: number;
+  };
+  premieres?: Array<{
+    game: Game;
+    date: string;
+    duration: number;
+    viewers?: number;
+  }>;
+}
+
+const GameBox: React.FC<{ game: Game; className?: string }> = ({ game, className = "" }) => {
   if (!game?.box_art_url) return <span className="text-gray-500">No data</span>;
 
   return (
@@ -40,9 +74,10 @@ const Channels = () => {
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const { data: channels, isLoading } = useQuery({
+  const { data: channels, isLoading } = useQuery<Channel[]>({
     queryKey: ['channels'],
     queryFn: () => api.getChannels(),
+    refetchInterval: 60000, // Refetch every minute to update live status
   });
 
   const deleteChannelMutation = useMutation({
@@ -53,13 +88,15 @@ const Channels = () => {
   });
 
   const addChannelMutation = useMutation({
-    mutationFn: (selectedChannels) => Promise.all(
+    mutationFn: (selectedChannels: any[]) => Promise.all(
       selectedChannels.map(channel => api.createChannel({
         twitch_id: channel.id,
-        username: channel.username || channel.display_name.toLowerCase(), // Ensure we have a username
+        username: channel.username || channel.display_name.toLowerCase(),
         display_name: channel.display_name,
         profile_image_url: channel.thumbnail_url,
-        follower_count: channel.follower_count || 0
+        follower_count: channel.follower_count || 0,
+        description: '',
+        is_active: true
       }))
     ),
     onSuccess: () => {
@@ -67,14 +104,6 @@ const Channels = () => {
       setIsSearchModalOpen(false);
     }
   });
-
-  const handleDeleteChannel = async (id: number) => {
-    try {
-      await deleteChannelMutation.mutateAsync(id);
-    } catch (error) {
-      console.error('Error deleting channel:', error);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -131,14 +160,17 @@ const Channels = () => {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">{formatNumber(channel.follower_count)}</div>
+                  <div className="flex items-center gap-1">
+                    <Users className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-900">{formatNumber(channel.follower_count)}</span>
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {channel.last_game_id ? (
                     <GameBox game={{
                       id: channel.last_game_id,
-                      name: channel.last_game_name,
-                      box_art_url: channel.last_game_box_art
+                      name: channel.last_game_name || '',
+                      box_art_url: channel.last_game_box_art || ''
                     }} />
                   ) : (
                     <span className="text-sm text-gray-500">No data</span>
@@ -214,7 +246,7 @@ const Channels = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <button
-                    onClick={() => handleDeleteChannel(channel.id)}
+                    onClick={() => deleteChannelMutation.mutateAsync(channel.id)}
                     className="text-red-600 hover:text-red-900"
                   >
                     <Trash2 className="w-5 h-5" />

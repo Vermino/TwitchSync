@@ -1,60 +1,150 @@
+// Filepath: backend/src/middleware/auth.ts
+
 import { Request, Response, NextFunction } from 'express';
-import { Pool } from 'pg';
+import { Pool, QueryResult } from 'pg';
 import jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
 
+// Define database user interface
+interface DatabaseUser {
+  id: number;
+  twitch_id: string | null;
+  username: string;
+  email: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Define the JWT token payload structure
+interface TokenPayload {
+  id: number;
+  twitch_id: string | null;
+  exp: number;
+}
+
+// Define the shared user interface
+export interface TwitchSyncUser {
+  id: string;
+  twitch_id?: string;
+}
+
+// Update the global Express namespace
 declare global {
   namespace Express {
     interface Request {
-      user?: {
-        id: number;
-        twitch_id?: string;
-      };
+      user?: TwitchSyncUser;
     }
   }
 }
 
+/**
+ * Authentication middleware factory
+ * @param pool - Database connection pool
+ * @returns Express middleware function
+ */
 export const authenticate = (pool: Pool) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
     try {
+      // Extract and validate auth header
       const authHeader = req.headers.authorization;
-
       if (!authHeader) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'No authentication token provided'
+        });
       }
 
-      const token = authHeader.split(' ')[1];
-
-      if (!token) {
-        return res.status(401).json({ error: 'Invalid token format' });
+      // Extract and validate token
+      const [bearer, token] = authHeader.split(' ');
+      if (bearer !== 'Bearer' || !token) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Invalid token format'
+        });
       }
 
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: number; twitch_id?: string };
+        // Verify token
+        const jwtSecret = process.env.JWT_SECRET || 'development-secret';
+        const decoded = jwt.verify(token, jwtSecret) as TokenPayload;
 
-        // Verify user exists in database
-        const result = await pool.query(
-          'SELECT id, twitch_id FROM users WHERE id = $1',
-          [decoded.id]
-        );
+        // Check token expiration
+        const expirationTime = decoded.exp * 1000;
+        const currentTime = Date.now();
+        const timeUntilExpiration = expirationTime - currentTime;
+        const refreshThreshold = 5 * 60 * 1000; // 5 minutes
 
-        if (result.rows.length === 0) {
-          return res.status(401).json({ error: 'User not found' });
+        // Refresh token if it's about to expire
+        if (timeUntilExpiration < refreshThreshold) {
+          const client = await pool.connect();
+          try {
+            // Get user from database
+            const userResult: QueryResult<DatabaseUser> = await client.query(
+              'SELECT * FROM users WHERE id = $1',
+              [decoded.id]
+            );
+
+            if (userResult.rows.length === 0) {
+              return res.status(401).json({
+                error: 'Unauthorized',
+                message: 'User not found'
+              });
+            }
+
+            const user = userResult.rows[0];
+
+            // Generate new token
+            const newToken = jwt.sign(
+              {
+                id: user.id,
+                twitch_id: user.twitch_id
+              },
+              jwtSecret,
+              { expiresIn: '1d' }
+            );
+
+            // Set new token in response header
+            res.setHeader('X-New-Token', newToken);
+          } finally {
+            client.release();
+          }
         }
 
-        req.user = {
-          id: decoded.id,
-          twitch_id: decoded.twitch_id
+        // Set user data in request
+        const userData: TwitchSyncUser = {
+          id: decoded.id.toString(),
+          twitch_id: decoded.twitch_id || undefined
         };
 
+        req.user = userData;
+
+        // Continue to next middleware
         next();
-      } catch (error) {
-        logger.error('Token verification failed:', error);
-        return res.status(401).json({ error: 'Invalid token' });
+      } catch (jwtError) {
+        if (jwtError instanceof jwt.TokenExpiredError) {
+          return res.status(401).json({
+            error: 'Unauthorized',
+            message: 'Token has expired'
+          });
+        }
+
+        if (jwtError instanceof jwt.JsonWebTokenError) {
+          return res.status(401).json({
+            error: 'Unauthorized',
+            message: 'Invalid token'
+          });
+        }
+
+        // Rethrow unexpected errors
+        throw jwtError;
       }
     } catch (error) {
-      logger.error('Authentication middleware error:', error);
-      return res.status(500).json({ error: 'Authentication failed' });
+      // Log and handle any unexpected errors
+      logger.error('Authentication error:', error);
+      return res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'An error occurred during authentication'
+      });
     }
   };
 };

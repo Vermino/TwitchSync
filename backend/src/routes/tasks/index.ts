@@ -4,8 +4,15 @@ import { Router } from 'express';
 import { Pool } from 'pg';
 import { authenticate } from '../../middleware/auth';
 import { createTasksController } from './controller';
-import { validateIdParam } from './validation';
-import { DownloadManager } from '../../services/downloadManager';
+import { validateRequest } from '../../middleware/validation';
+import DownloadManager from '../../services/downloadManager';
+import { TaskError } from './validation';
+import {
+  SearchTaskSchema,
+  CreateTaskSchema,
+  UpdateTaskSchema,
+  DeleteTaskSchema
+} from './validation';
 
 export function setupTaskRoutes(pool: Pool) {
   const router = Router();
@@ -20,13 +27,13 @@ export function setupTaskRoutes(pool: Pool) {
 
   // Use bound methods from the controller instance
   router.get('/', controller.getAllTasks);
-  router.post('/', controller.createTask);
-  router.get('/:id', validateIdParam, controller.getTaskById);
-  router.get('/:id/details', validateIdParam, controller.getTaskDetails);
-  router.put('/:id', validateIdParam, controller.updateTask);
-  router.delete('/:id', validateIdParam, controller.deleteTask);
-  router.get('/:id/history', validateIdParam, controller.getTaskHistory);
-  router.post('/:id/run', validateIdParam, controller.manualRunTask);
+  router.post('/', validateRequest(CreateTaskSchema), controller.createTask);
+  router.get('/:id', validateRequest(DeleteTaskSchema), controller.getTaskById);
+  router.get('/:id/details', validateRequest(DeleteTaskSchema), controller.getTaskDetails);
+  router.put('/:id', validateRequest(UpdateTaskSchema), controller.updateTask);
+  router.delete('/:id', validateRequest(DeleteTaskSchema), controller.deleteTask);
+  router.get('/:id/history', validateRequest(DeleteTaskSchema), controller.getTaskHistory);
+  router.post('/:id/run', validateRequest(DeleteTaskSchema), controller.manualRunTask);
 
   return router;
 }

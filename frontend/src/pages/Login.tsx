@@ -1,3 +1,5 @@
+// Filepath: frontend/src/pages/Login.tsx
+
 import { useAuth } from '../contexts/AuthContext';
 import { LogIn } from 'lucide-react';
 

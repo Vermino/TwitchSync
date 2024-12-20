@@ -39,8 +39,9 @@ interface ChannelSearchModalProps {
   onClose: () => void;
   onSelect: (channels: TwitchChannel[]) => Promise<void>;
   allowMultiple?: boolean;
-  existingChannels?: Array<{ twitch_id: string }>;
+  existingChannels: Array<{ twitch_id: string }>;
 }
+
 
 const formatNumber = (num: number | undefined | null): string => {
   if (num === undefined || num === null) return '0';
@@ -54,7 +55,7 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
   onClose,
   onSelect,
   allowMultiple = false,
-  existingChannels = []
+  existingChannels
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<TwitchChannel[]>([]);

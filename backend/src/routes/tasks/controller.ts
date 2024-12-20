@@ -3,13 +3,8 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
-import { DownloadManager } from '../../services/downloadManager';
-import {
-  Task,
-  CreateTaskRequest,
-  UpdateTaskRequest,
-  TaskDetails
-} from '../../types/database';
+import DownloadManager from '../../services/downloadManager';
+import { Task, CreateTaskSchema, UpdateTaskRequest, TaskDetails } from './validation';
 
 export class TasksController {
   constructor(private pool: Pool, private downloadManager: DownloadManager) {
@@ -30,7 +25,7 @@ export class TasksController {
       const userId = req.user?.id;
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
@@ -49,7 +44,7 @@ export class TasksController {
       res.json(result.rows);
     } catch (error) {
       logger.error('Error fetching tasks:', error);
-      res.status(500).json({error: 'Failed to fetch tasks'});
+      res.status(500).json({ error: 'Failed to fetch tasks' });
     } finally {
       client.release();
     }
@@ -62,7 +57,7 @@ export class TasksController {
       const taskId = parseInt(req.params.id);
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
@@ -79,14 +74,14 @@ export class TasksController {
       `, [taskId, userId]);
 
       if (result.rows.length === 0) {
-        res.status(404).json({error: 'Task not found'});
+        res.status(404).json({ error: 'Task not found' });
         return;
       }
 
       res.json(result.rows[0]);
     } catch (error) {
       logger.error('Error fetching task:', error);
-      res.status(500).json({error: 'Failed to fetch task'});
+      res.status(500).json({ error: 'Failed to fetch task' });
     } finally {
       client.release();
     }
@@ -98,30 +93,20 @@ export class TasksController {
       const userId = req.user?.id;
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
-      const taskData: CreateTaskRequest = {
-        ...req.body,
-        channel_ids: req.body.channel_ids || [],
-        game_ids: req.body.game_ids || [],
+      const result = await CreateTaskSchema.safeParseAsync(req);
+      if (!result.success) {
+        res.status(400).json({ error: 'Invalid task data', details: result.error });
+        return;
+      }
+
+      const taskData = {
+        ...result.data.body,
         user_id: userId
       };
-
-      // Determine task type based on channel_ids and game_ids
-      if (!taskData.task_type) {
-        if (taskData.channel_ids.length > 0 && taskData.game_ids.length > 0) {
-          taskData.task_type = 'combined';
-        } else if (taskData.channel_ids.length > 0) {
-          taskData.task_type = 'channel';
-        } else if (taskData.game_ids.length > 0) {
-          taskData.task_type = 'game';
-        } else {
-          res.status(400).json({error: 'At least one channel or game must be selected'});
-          return;
-        }
-      }
 
       // Generate default name if not provided
       if (!taskData.name) {
@@ -131,30 +116,30 @@ export class TasksController {
         const scheduleLabel = taskData.schedule_type === 'interval' ?
             `Every ${parseInt(taskData.schedule_value) / 3600} hours` :
             'Custom schedule';
-
         taskData.name = `${typeLabel} Task: ${itemCount} items - ${scheduleLabel}`;
       }
 
-      const result = await client.query(`
-        INSERT INTO tasks (name,
-                           description,
-                           task_type,
-                           channel_ids,
-                           game_ids,
-                           schedule_type,
-                           schedule_value,
-                           storage_limit_gb,
-                           retention_days,
-                           auto_delete,
-                           is_active,
-                           priority,
-                           user_id,
-                           status,
-                           created_at,
-                           updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                $12::task_priority_level, $13, 'pending',
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      // Insert task into database
+      const dbResult = await client.query(`
+        INSERT INTO tasks (
+          name,
+          description,
+          task_type,
+          channel_ids,
+          game_ids,
+          schedule_type,
+          schedule_value,
+          storage_limit_gb,
+          retention_days,
+          auto_delete,
+          is_active,
+          priority,
+          user_id,
+          status,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::task_priority_level, $13, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
       `, [
         taskData.name,
@@ -167,19 +152,20 @@ export class TasksController {
         taskData.storage_limit_gb,
         taskData.retention_days,
         taskData.auto_delete || false,
-        taskData.is_active ?? true,
-        taskData.priority || 'low',
+        taskData.is_active,
+        taskData.priority,
         taskData.user_id
       ]);
 
       logger.info('Task created successfully', {
-        taskId: result.rows[0].id,
+        taskId: dbResult.rows[0].id,
         taskType: taskData.task_type
       });
-      res.status(201).json(result.rows[0]);
+
+      res.status(201).json(dbResult.rows[0]);
     } catch (error) {
       logger.error('Error creating task:', error);
-      res.status(500).json({error: 'Failed to create task'});
+      res.status(500).json({ error: 'Failed to create task' });
     } finally {
       client.release();
     }
@@ -192,26 +178,22 @@ export class TasksController {
       const taskId = parseInt(req.params.id);
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
       // Check if task exists and belongs to user
       const taskCheck = await client.query(
-          'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
-          [taskId, userId]
+        'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
+        [taskId, userId]
       );
 
       if (taskCheck.rows.length === 0) {
-        res.status(404).json({error: 'Task not found'});
+        res.status(404).json({ error: 'Task not found' });
         return;
       }
 
-      const updates: UpdateTaskRequest = req.body;
-
-      // Cast priority to enum type if it's being updated
-      const priorityClause = updates.priority ?
-          `, priority = '${updates.priority}'::task_priority_level` : '';
+      const updates = req.body;
 
       // Build dynamic update query
       const setValues: any[] = [];
@@ -226,6 +208,10 @@ export class TasksController {
         }
       }
 
+      // Handle priority separately since it needs type casting
+      const priorityClause = updates.priority ?
+        `, priority = '${updates.priority}'::task_priority_level` : '';
+
       const result = await client.query(`
         UPDATE tasks
         SET ${setClauses.join(', ')}${priorityClause},
@@ -238,7 +224,7 @@ export class TasksController {
       res.json(result.rows[0]);
     } catch (error) {
       logger.error('Error updating task:', error);
-      res.status(500).json({error: 'Failed to update task'});
+      res.status(500).json({ error: 'Failed to update task' });
     } finally {
       client.release();
     }
@@ -251,24 +237,24 @@ export class TasksController {
       const taskId = parseInt(req.params.id);
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
       const result = await client.query(
-          'DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id',
-          [taskId, userId]
+        'DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id',
+        [taskId, userId]
       );
 
       if (result.rows.length === 0) {
-        res.status(404).json({error: 'Task not found'});
+        res.status(404).json({ error: 'Task not found' });
         return;
       }
 
-      res.json({message: 'Task deleted successfully'});
+      res.json({ message: 'Task deleted successfully' });
     } catch (error) {
       logger.error('Error deleting task:', error);
-      res.status(500).json({error: 'Failed to delete task'});
+      res.status(500).json({ error: 'Failed to delete task' });
     } finally {
       client.release();
     }
@@ -282,18 +268,18 @@ export class TasksController {
       const limit = parseInt(req.query.limit as string) || 10;
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
       // Verify task belongs to user
       const taskCheck = await client.query(
-          'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
-          [taskId, userId]
+        'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
+        [taskId, userId]
       );
 
       if (taskCheck.rows.length === 0) {
-        res.status(404).json({error: 'Task not found'});
+        res.status(404).json({ error: 'Task not found' });
         return;
       }
 
@@ -308,7 +294,7 @@ export class TasksController {
       res.json(result.rows);
     } catch (error) {
       logger.error('Error fetching task history:', error);
-      res.status(500).json({error: 'Failed to fetch task history'});
+      res.status(500).json({ error: 'Failed to fetch task history' });
     } finally {
       client.release();
     }
@@ -321,18 +307,18 @@ export class TasksController {
       const taskId = parseInt(req.params.id);
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
       // Verify task exists and belongs to user
       const taskCheck = await client.query(
-          'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
-          [taskId, userId]
+        'SELECT id FROM tasks WHERE id = $1 AND user_id = $2',
+        [taskId, userId]
       );
 
       if (taskCheck.rows.length === 0) {
-        res.status(404).json({error: 'Task not found'});
+        res.status(404).json({ error: 'Task not found' });
         return;
       }
 
@@ -341,7 +327,7 @@ export class TasksController {
       res.json(details);
     } catch (error) {
       logger.error('Error fetching task details:', error);
-      res.status(500).json({error: 'Failed to fetch task details'});
+      res.status(500).json({ error: 'Failed to fetch task details' });
     } finally {
       client.release();
     }
@@ -354,18 +340,18 @@ export class TasksController {
       const taskId = parseInt(req.params.id);
 
       if (!userId) {
-        res.status(401).json({error: 'User not authenticated'});
+        res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
       // Verify task exists and belongs to user
       const taskCheck = await client.query(
-          'SELECT * FROM tasks WHERE id = $1 AND user_id = $2',
-          [taskId, userId]
+        'SELECT * FROM tasks WHERE id = $1 AND user_id = $2',
+        [taskId, userId]
       );
 
       if (taskCheck.rows.length === 0) {
-        res.status(404).json({error: 'Task not found'});
+        res.status(404).json({ error: 'Task not found' });
         return;
       }
 
@@ -373,17 +359,19 @@ export class TasksController {
 
       // Create task history entry
       await client.query(`
-        INSERT INTO task_history (task_id,
-                                  status,
-                                  start_time,
-                                  details)
+        INSERT INTO task_history (
+          task_id,
+          status,
+          start_time,
+          details
+        )
         VALUES ($1, 'running', CURRENT_TIMESTAMP, $2)
-      `, [taskId, {trigger: 'manual', triggered_by: userId}]);
+      `, [taskId, { trigger: 'manual', triggered_by: userId }]);
 
       // Update task status
       await client.query(`
         UPDATE tasks
-        SET status   = 'running',
+        SET status = 'running',
             last_run = CURRENT_TIMESTAMP
         WHERE id = $1
       `, [taskId]);
@@ -391,7 +379,7 @@ export class TasksController {
       await client.query('COMMIT');
 
       // Execute task asynchronously
-      this.downloadManager.executeTask(taskId).catch(error => {
+      this.downloadManager.executeTask(taskId).catch((error: Error) => {
         logger.error(`Error during task execution:`, error);
       });
 
@@ -403,11 +391,14 @@ export class TasksController {
     } catch (error) {
       await client.query('ROLLBACK');
       logger.error('Error running task:', error);
-      res.status(500).json({error: 'Failed to run task'});
+      res.status(500).json({ error: 'Failed to run task' });
     } finally {
       client.release();
     }
   }
 }
+
 export const createTasksController = (pool: Pool, downloadManager: DownloadManager) =>
   new TasksController(pool, downloadManager);
+
+export default TasksController;

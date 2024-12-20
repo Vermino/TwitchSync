@@ -1,6 +1,9 @@
+// Filepath: frontend/src/components/CallbackHandler.tsx
+
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { logger } from '../utils/logger';
 
 const CallbackHandler = () => {
   const location = useLocation();
@@ -17,9 +20,13 @@ const CallbackHandler = () => {
       const params = new URLSearchParams(location.search);
       const code = params.get('code');
       const authError = params.get('error');
+      const errorDescription = params.get('error_description');
+      const state = params.get('state');
 
       if (authError || !code) {
-        setError(authError || 'No authorization code received');
+        const errorMsg = errorDescription || authError || 'No authorization code received';
+        logger.error('Auth error:', errorMsg);
+        setError(errorMsg);
         setTimeout(() => navigate('/login'), 3000);
         return;
       }
@@ -34,8 +41,9 @@ const CallbackHandler = () => {
 
       try {
         await login(code);
+        navigate('/dashboard');
       } catch (err) {
-        console.error('Login error:', err);
+        logger.error('Login error:', err);
         setError(err instanceof Error ? err.message : 'Failed to authenticate with Twitch');
         setTimeout(() => navigate('/login'), 3000);
       } finally {

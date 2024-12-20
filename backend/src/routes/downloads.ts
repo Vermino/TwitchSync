@@ -1,35 +1,47 @@
-// backend/src/routes/downloads.ts
+// Filepath: backend/src/routes/downloads.ts
 
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { authenticate } from '../middleware/auth';
 import DownloadManager from '../services/downloadManager';
+import { VOD, UserVODPreferences, DownloadPriority } from '../types/database';
 import { logger } from '../utils/logger';
-import { VOD, UserVODPreferences } from '../types/database';
+import { QueueStatus, IDownloadManager } from '../types/downloadManager';
 
+// Extend base Request type to include authenticated user
 interface AuthenticatedRequest extends Request {
   user?: {
-    id: number;
+    id: string;
     twitch_id?: string;
   };
 }
 
-export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManager) => {
+// Type for request handler to help with type inference
+type AsyncRequestHandler = (req: AuthenticatedRequest, res: Response) => Promise<void | Response>;
+
+export const createDownloadsRouter = (pool: Pool, downloadManager: IDownloadManager): Router => {
   const router = Router();
 
+  // Helper to wrap async handlers with proper typing
+  const handleAsync = (handler: AsyncRequestHandler) => {
+    return async (req: Request, res: Response) => {
+      try {
+        await handler(req as AuthenticatedRequest, res);
+      } catch (error) {
+        logger.error('Route handler error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    };
+  };
+
   // Get download queue status
-  router.get('/queue/status', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const status = await downloadManager.getQueueStatus();
-      res.json(status);
-    } catch (error) {
-      logger.error('Error getting queue status:', error);
-      res.status(500).json({ error: 'Failed to get queue status' });
-    }
-  });
+  router.get('/queue/status', authenticate(pool), handleAsync(async (req, res) => {
+    const status = await downloadManager.getQueueStatus();
+    res.json(status);
+  }));
 
   // Get download queue items
-  router.get('/queue', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
+  router.get('/queue', authenticate(pool), handleAsync(async (req, res) => {
     const client = await pool.connect();
     try {
       const result = await client.query<VOD>(`
@@ -49,16 +61,13 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
       `);
 
       res.json(result.rows);
-    } catch (error) {
-      logger.error('Error getting download queue:', error);
-      res.status(500).json({ error: 'Failed to get download queue' });
     } finally {
       client.release();
     }
-  });
+  }));
 
   // Add VOD to download queue
-  router.post('/queue/add', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
+  router.post('/queue/add', authenticate(pool), handleAsync(async (req, res) => {
     const client = await pool.connect();
     try {
       const { vodId, priority = 'normal' } = req.body;
@@ -81,49 +90,36 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
       // Get user's preferences for this channel
       const prefsResult = await client.query<UserVODPreferences>(
         'SELECT * FROM user_vod_preferences WHERE user_id = $1 AND channel_id = $2',
-        [userId, vodResult.rows[0].channel_id]
+        [parseInt(userId), vodResult.rows[0].channel_id]
       );
 
       // Use user's preferences or defaults
       const downloadPriority = priority || prefsResult.rows[0]?.download_priority || 'normal';
 
-      await downloadManager.addToQueue(vodId, downloadPriority);
+      await downloadManager.addToQueue(vodId, downloadPriority as DownloadPriority);
 
       res.json({ message: 'VOD added to download queue' });
-    } catch (error) {
-      logger.error('Error adding to download queue:', error);
-      res.status(500).json({ error: 'Failed to add to download queue' });
     } finally {
       client.release();
     }
-  });
+  }));
 
   // Retry failed download
-  router.post('/retry/:vodId', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const vodId = parseInt(req.params.vodId);
-      await downloadManager.retryFailedDownload(vodId);
-      res.json({ message: 'Download retry initiated' });
-    } catch (error) {
-      logger.error('Error retrying download:', error);
-      res.status(500).json({ error: 'Failed to retry download' });
-    }
-  });
+  router.post('/retry/:vodId', authenticate(pool), handleAsync(async (req, res) => {
+    const vodId = parseInt(req.params.vodId);
+    await downloadManager.retryFailedDownload(vodId);
+    res.json({ message: 'Download retry initiated' });
+  }));
 
   // Cancel download
-  router.post('/cancel/:vodId', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const vodId = parseInt(req.params.vodId);
-      await downloadManager.cancelDownload(vodId);
-      res.json({ message: 'Download cancelled' });
-    } catch (error) {
-      logger.error('Error cancelling download:', error);
-      res.status(500).json({ error: 'Failed to cancel download' });
-    }
-  });
+  router.post('/cancel/:vodId', authenticate(pool), handleAsync(async (req, res) => {
+    const vodId = parseInt(req.params.vodId);
+    await downloadManager.cancelDownload(vodId);
+    res.json({ message: 'Download cancelled' });
+  }));
 
   // Get download history
-  router.get('/history', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
+  router.get('/history', authenticate(pool), handleAsync(async (req, res) => {
     const client = await pool.connect();
     try {
       const userId = req.user?.id;
@@ -152,7 +148,7 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
           END,
           v.started_at DESC
         LIMIT $2 OFFSET $3
-      `, [userId, limit, offset]);
+      `, [parseInt(userId), limit, offset]);
 
       const countResult = await client.query(`
         SELECT COUNT(*) as total
@@ -160,7 +156,7 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
         JOIN user_vod_preferences uvp ON v.channel_id = uvp.channel_id
         WHERE uvp.user_id = $1
         AND v.download_status NOT IN ('pending', 'queued')
-      `, [userId]);
+      `, [parseInt(userId)]);
 
       res.json({
         downloads: result.rows,
@@ -170,16 +166,13 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
           offset
         }
       });
-    } catch (error) {
-      logger.error('Error getting download history:', error);
-      res.status(500).json({ error: 'Failed to get download history' });
     } finally {
       client.release();
     }
-  });
+  }));
 
   // Get download statistics
-  router.get('/stats', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
+  router.get('/stats', authenticate(pool), handleAsync(async (req, res) => {
     const client = await pool.connect();
     try {
       const userId = req.user?.id;
@@ -201,19 +194,16 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
         JOIN user_vod_preferences uvp ON v.channel_id = uvp.channel_id
         WHERE uvp.user_id = $1
         AND download_status NOT IN ('pending', 'queued')
-      `, [userId]);
+      `, [parseInt(userId)]);
 
       res.json(result.rows[0]);
-    } catch (error) {
-      logger.error('Error getting download stats:', error);
-      res.status(500).json({ error: 'Failed to get download stats' });
     } finally {
       client.release();
     }
-  });
+  }));
 
   // Update download preferences
-  router.put('/preferences/:channelId', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
+  router.put('/preferences/:channelId', authenticate(pool), handleAsync(async (req, res) => {
     const client = await pool.connect();
     try {
       const userId = req.user?.id;
@@ -252,7 +242,7 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
           updated_at = CURRENT_TIMESTAMP
         RETURNING *
       `, [
-        userId,
+        parseInt(userId),
         channelId,
         auto_download,
         preferred_quality,
@@ -265,16 +255,13 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
       ]);
 
       res.json(result.rows[0]);
-    } catch (error) {
-      logger.error('Error updating download preferences:', error);
-      res.status(500).json({ error: 'Failed to update download preferences' });
     } finally {
       client.release();
     }
-  });
+  }));
 
   // Get download preferences for a channel
-  router.get('/preferences/:channelId', authenticate(pool), async (req: AuthenticatedRequest, res: Response) => {
+  router.get('/preferences/:channelId', authenticate(pool), handleAsync(async (req, res) => {
     const client = await pool.connect();
     try {
       const userId = req.user?.id;
@@ -287,7 +274,7 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
 
       const result = await client.query<UserVODPreferences>(
         'SELECT * FROM user_vod_preferences WHERE user_id = $1 AND channel_id = $2',
-        [userId, channelId]
+        [parseInt(userId), channelId]
       );
 
       if (result.rows.length === 0) {
@@ -309,13 +296,10 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: DownloadManag
       } else {
         res.json(result.rows[0]);
       }
-    } catch (error) {
-      logger.error('Error getting download preferences:', error);
-      res.status(500).json({ error: 'Failed to get download preferences' });
     } finally {
       client.release();
     }
-  });
+  }));
 
   return router;
 };
