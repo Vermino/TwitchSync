@@ -1,18 +1,16 @@
-// backend/src/middleware/validation.ts
+// Filepath: backend/src/middleware/validation.ts
 
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { logger } from '../utils/logger';
 
 export class ValidationError extends Error {
-  constructor(message: string, details?: any) {
+  constructor(message: string, public details?: any) {
     super(message);
     this.name = 'ValidationError';
     this.statusCode = 400;
-    this.details = details;
   }
   statusCode: number;
-  details?: any;
 }
 
 export const validateRequest = (schema: z.ZodSchema) => {
@@ -31,6 +29,7 @@ export const validateRequest = (schema: z.ZodSchema) => {
 
       next();
     } catch (error) {
+      logger.error('Validation error:', error);
       if (error instanceof z.ZodError) {
         next(new ValidationError('Validation failed', error.errors));
       } else {

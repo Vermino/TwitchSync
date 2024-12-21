@@ -25,28 +25,32 @@ export function createDiscoveryRouter(pool: Pool): Router {
   router.use(authenticate(pool));
 
   // Get discovery feed with filters
-  router.get('/feed',
+  router.get(
+    '/feed',
     discoveryFeedLimiter,
     validateRequest(FeedFiltersSchema),
     controller.getDiscoveryFeed
   );
 
   // Update discovery preferences
-  router.put('/preferences',
+  router.put(
+    '/preferences',
     preferenceUpdateLimiter,
     validateRequest(DiscoveryPreferencesSchema),
     controller.updatePreferences
   );
 
   // Track a premiere
-  router.post('/premieres/track',
+  router.post(
+    '/premieres/track',
     premiereTrackingLimiter,
     validateRequest(PremiereTrackingSchema),
     controller.trackPremiere
   );
 
   // Get discovery stats
-  router.get('/stats',
+  router.get(
+    '/stats',
     discoveryFeedLimiter,
     controller.getDiscoveryStats
   );

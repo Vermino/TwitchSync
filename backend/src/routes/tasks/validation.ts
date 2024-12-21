@@ -1,197 +1,187 @@
 // Filepath: backend/src/routes/tasks/validation.ts
 
 import { z } from 'zod';
-import { logger } from '../../utils/logger';
 
-// Task priority and status enums
-export const TaskPriority = z.enum(['low', 'normal', 'high', 'critical']);
-export const TaskStatus = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled']);
-export const TaskType = z.enum(['channel', 'game', 'combined']);
-export const ScheduleType = z.enum(['interval', 'cron', 'manual']);
+// Enums
+export const TaskTypeEnum = z.enum(['channel', 'game', 'combined']);
+export const TaskScheduleTypeEnum = z.enum(['interval', 'cron', 'manual']);
+export const TaskStatusEnum = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'inactive']);
+export const TaskPriorityEnum = z.enum(['low', 'normal', 'high', 'critical']);
 
-// Task base schema
-const taskBaseSchema = {
-  name: z.string().min(1, 'Name is required').max(100, 'Name is too long').optional(),
-  description: z.string().max(1000, 'Description is too long').optional(),
-  task_type: TaskType,
-  channel_ids: z.array(z.number()).default([]),
-  game_ids: z.array(z.number()).default([]),
-  schedule_type: ScheduleType,
-  schedule_value: z.string().min(1, 'Schedule value is required'),
-  storage_limit_gb: z.number().min(0).optional(),
-  retention_days: z.number().min(1).max(365).optional(),
-  auto_delete: z.boolean().default(false),
-  priority: TaskPriority.default('normal'),
-  is_active: z.boolean().default(true)
-};
+// Sub-schemas
+const TaskConditionsSchema = z.object({
+  minFollowers: z.number().min(0).optional(),
+  minViews: z.number().min(0).optional(),
+  minDuration: z.number().min(0).optional(),
+  languages: z.array(z.string()).optional(),
+  requireChat: z.boolean().optional(),
+}).optional();
 
-// Task execution request schema
-export const ExecuteTaskSchema = z.object({
-  params: z.object({
-    id: z.string().regex(/^\\d+$/, 'Invalid task ID')
-  }),
-  body: z.object({
-    force: z.boolean().optional()
-  }).optional()
-});
+const TaskRestrictionsSchema = z.object({
+  maxVodsPerChannel: z.number().min(0).optional(),
+  maxStoragePerChannel: z.number().min(0).optional(),
+  maxTotalVods: z.number().min(0).optional(),
+  maxTotalStorage: z.number().min(0).optional(),
+}).optional();
 
-// Search request schema
-export const SearchTaskSchema = z.object({
-  query: z.object({
-    status: TaskStatus.optional(),
-    type: TaskType.optional(),
-    priority: TaskPriority.optional(),
-    isActive: z.string().regex(/^(true|false)$/).transform(val => val === 'true').optional()
-  }).optional()
-});
-
-// Create task request schema
+// Main schemas
 export const CreateTaskSchema = z.object({
-  body: z.object(taskBaseSchema)
-}).refine(data => {
-  const hasChannels = data.body.channel_ids.length > 0;
-  const hasGames = data.body.game_ids.length > 0;
-
-  if (data.body.task_type === 'channel' && !hasChannels) {
-    return false;
-  }
-  if (data.body.task_type === 'game' && !hasGames) {
-    return false;
-  }
-  if (data.body.task_type === 'combined' && (!hasChannels || !hasGames)) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Channel and game IDs must match the task type",
-  path: ["task_type"]
-});
-
-// Update task request schema
-export const UpdateTaskSchema = z.object({
-  params: z.object({
-    id: z.string().regex(/^\d+$/, 'Invalid task ID')
-  }),
   body: z.object({
-    name: z.string().min(1).max(100).optional(),
+    name: z.string().min(1).max(255).optional(),
     description: z.string().max(1000).optional(),
-    schedule_type: ScheduleType.optional(),
-    schedule_value: z.string().min(1).optional(),
+    task_type: TaskTypeEnum,
+    channel_ids: z.array(z.number()).optional().default([]),
+    game_ids: z.array(z.number()).optional().default([]),
+    schedule_type: TaskScheduleTypeEnum,
+    schedule_value: z.string().refine((val) => {
+      if (val === 'manual') return true;
+      if (val.match(/^\d+$/)) {
+        const num = parseInt(val);
+        return num >= 300; // Minimum 5 minutes
+      }
+      if (val.match(/^[0-9*/ -,]+$/)) { // Basic cron validation
+        return true;
+      }
+      return false;
+    }, {
+      message: "Invalid schedule value format"
+    }),
     storage_limit_gb: z.number().min(0).optional(),
     retention_days: z.number().min(1).max(365).optional(),
     auto_delete: z.boolean().optional(),
     is_active: z.boolean().optional(),
-    priority: TaskPriority.optional()
+    priority: TaskPriorityEnum.optional().default('normal'),
+    conditions: TaskConditionsSchema,
+    restrictions: TaskRestrictionsSchema,
+  }).refine((data) => {
+    // Ensure at least one channel or game is selected based on task type
+    if (data.task_type === 'channel' && (!data.channel_ids || data.channel_ids.length === 0)) {
+      return false;
+    }
+    if (data.task_type === 'game' && (!data.game_ids || data.game_ids.length === 0)) {
+      return false;
+    }
+    if (data.task_type === 'combined' &&
+        (!data.channel_ids || data.channel_ids.length === 0) &&
+        (!data.game_ids || data.game_ids.length === 0)) {
+      return false;
+    }
+    return true;
+  }, {
+    message: "Task must include appropriate channels or games based on task type"
   })
 });
 
-// Delete task request schema
-export const DeleteTaskSchema = z.object({
-  params: z.object({
-    id: z.string().regex(/^\d+$/, 'Invalid task ID')
+export const UpdateTaskSchema = z.object({
+  body: z.object({
+    name: z.string().min(1).max(255).optional(),
+    description: z.string().max(1000).optional(),
+    channel_ids: z.array(z.number()).optional(),
+    game_ids: z.array(z.number()).optional(),
+    schedule_type: TaskScheduleTypeEnum.optional(),
+    schedule_value: z.string().optional().refine((val) => {
+      if (!val) return true; // Allow undefined/null for updates
+      if (val === 'manual') return true;
+      if (val.match(/^\d+$/)) {
+        const num = parseInt(val);
+        return num >= 300;
+      }
+      if (val.match(/^[0-9*/ -,]+$/)) {
+        return true;
+      }
+      return false;
+    }, {
+      message: "Invalid schedule value format"
+    }),
+    storage_limit_gb: z.number().min(0).optional(),
+    retention_days: z.number().min(1).max(365).optional(),
+    auto_delete: z.boolean().optional(),
+    is_active: z.boolean().optional(),
+    priority: TaskPriorityEnum.optional(),
+    conditions: TaskConditionsSchema,
+    restrictions: TaskRestrictionsSchema,
+    status: TaskStatusEnum.optional()
   })
 });
 
-// Task stats schema
-export const TaskStatsSchema = z.object({
-  params: z.object({
-    id: z.string().regex(/^\d+$/, 'Invalid task ID')
-  }),
-  query: z.object({
-    timeframe: z.enum(['day', 'week', 'month', 'year', 'all']).optional(),
-    include_history: z.string().regex(/^(true|false)$/).transform(val => val === 'true').optional()
+export const BatchUpdateTasksSchema = z.object({
+  body: z.object({
+    task_ids: z.array(z.number()).min(1),
+    updates: z.object({
+      is_active: z.boolean().optional(),
+      priority: TaskPriorityEnum.optional(),
+      status: TaskStatusEnum.optional(),
+      storage_limit_gb: z.number().min(0).optional(),
+      retention_days: z.number().min(1).max(365).optional(),
+      auto_delete: z.boolean().optional()
+    })
+  })
+});
+
+export const BatchDeleteTasksSchema = z.object({
+  body: z.object({
+    task_ids: z.array(z.number()).min(1)
+  })
+});
+
+// Task progress and monitoring schemas
+export const TaskProgressSchema = z.object({
+  percentage: z.number().min(0).max(100),
+  completed: z.number().min(0),
+  total: z.number().min(0),
+  current_item: z.object({
+    type: z.enum(['channel', 'game']),
+    name: z.string(),
+    status: z.string()
   }).optional()
 });
 
-// Custom error class
-export class TaskError extends Error {
-  constructor(
-    message: string,
-    public statusCode: number = 400,
-    public details?: any
-  ) {
-    super(message);
-    this.name = 'TaskError';
-  }
+export const TaskStorageSchema = z.object({
+  used: z.number().min(0),
+  limit: z.number().min(0),
+  remaining: z.number().min(0)
+});
+
+export const TaskVODStatsSchema = z.object({
+  total_vods: z.number().min(0),
+  total_size: z.number().min(0),
+  average_duration: z.number().min(0),
+  download_success_rate: z.number().min(0).max(100),
+  vods_by_quality: z.record(z.string(), z.number()),
+  vods_by_language: z.record(z.string(), z.number())
+});
+
+export const TaskDetailsSchema = z.object({
+  id: z.number(),
+  task_id: z.number(),
+  progress: TaskProgressSchema,
+  storage: TaskStorageSchema,
+  vod_stats: TaskVODStatsSchema,
+  created_at: z.date(),
+  updated_at: z.date()
+});
+
+// Export types
+export type Task = z.infer<typeof CreateTaskSchema>['body'];
+export type UpdateTaskRequest = z.infer<typeof UpdateTaskSchema>['body'];
+export type TaskDetails = z.infer<typeof TaskDetailsSchema>;
+export type TaskProgress = z.infer<typeof TaskProgressSchema>;
+export type TaskStorage = z.infer<typeof TaskStorageSchema>;
+export type TaskVODStats = z.infer<typeof TaskVODStatsSchema>;
+
+// Utility functions for validation
+export function validateTaskCreation(data: unknown): Task {
+  return CreateTaskSchema.parse({ body: data }).body;
 }
 
-// Types exported from database
-export interface Task {
-  id: number;
-  user_id: number;
-  name: string;
-  description?: string;
-  task_type: z.infer<typeof TaskType>;
-  channel_ids: number[];
-  game_ids: number[];
-  schedule_type: z.infer<typeof ScheduleType>;
-  schedule_value: string;
-  storage_limit_gb?: number;
-  retention_days?: number;
-  auto_delete: boolean;
-  is_active: boolean;
-  priority: z.infer<typeof TaskPriority>;
-  status: z.infer<typeof TaskStatus>;
-  last_run?: Date;
-  next_run?: Date;
-  error_message?: string;
-  created_at: Date;
-  updated_at: Date;
+export function validateTaskUpdate(data: unknown): UpdateTaskRequest {
+  return UpdateTaskSchema.parse({ body: data }).body;
 }
 
-export interface TaskDetails {
-  id: number;
-  task_id: number;
-  progress: {
-    percentage: number;
-    completed: number;
-    total: number;
-    current_item?: {
-      type: 'channel' | 'game';
-      name: string;
-      status: string;
-    };
-  };
-  storage: {
-    used: number;
-    limit: number;
-    remaining: number;
-  };
-  vod_stats: {
-    total_vods: number;
-    total_size: number;
-    average_duration: number;
-    download_success_rate: number;
-    vods_by_quality: Record<string, number>;
-    vods_by_language: Record<string, number>;
-  };
-  created_at: Date;
-  updated_at: Date;
+export function validateBatchUpdate(data: unknown) {
+  return BatchUpdateTasksSchema.parse({ body: data }).body;
 }
 
-// Type exports
-export type SearchTaskRequest = z.infer<typeof SearchTaskSchema>;
-export type CreateTaskRequest = z.infer<typeof CreateTaskSchema>;
-export type UpdateTaskRequest = z.infer<typeof UpdateTaskSchema>;
-export type DeleteTaskRequest = z.infer<typeof DeleteTaskSchema>;
-export type ExecuteTaskRequest = z.infer<typeof ExecuteTaskSchema>;
-
-// Validation helper functions
-export const validateTaskData = (data: Task): void => {
-  try {
-    const result = CreateTaskSchema.safeParse({ body: data });
-    if (!result.success) {
-      logger.error('Task validation failed:', {
-        errors: result.error.errors,
-        data
-      });
-      throw new TaskError('Invalid task data', 400, result.error.errors);
-    }
-  } catch (error) {
-    if (error instanceof TaskError) {
-      throw error;
-    }
-    logger.error('Unexpected error during task validation:', error);
-    throw new TaskError('Failed to validate task data', 500);
-  }
-};
+export function validateBatchDelete(data: unknown) {
+  return BatchDeleteTasksSchema.parse({ body: data }).body;
+}

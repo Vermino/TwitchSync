@@ -212,14 +212,16 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
-  return (
+   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col pt-6 px-8">
         <DialogHeader>
           <DialogTitle>
             {task ? 'Edit Task' : 'Create New Task'}
           </DialogTitle>
-          <div className="flex items-center gap-4">
+          <div className="text-sm text-muted-foreground">
+            Configure your task settings, including channels, games, and scheduling options.
+          </div>
             <Badge variant="outline" className="flex items-center gap-1">
               <Users className="h-3 w-3"/>
               {taskData.channel_ids?.length || 0} channels

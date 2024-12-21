@@ -196,6 +196,20 @@ export async function up(pool: Pool): Promise<void> {
       CREATE INDEX idx_stats_measured ON system_stats(measured_at);
     `);
 
+    // System events table
+    await client.query(`
+      CREATE TABLE system_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        type VARCHAR(50) NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_events_type ON system_events(type);
+      CREATE INDEX idx_events_created ON system_events(created_at);
+    `);
+
     // Rate limiting table
     await client.query(`
       CREATE TABLE rate_limits (
@@ -286,6 +300,11 @@ export async function up(pool: Pool): Promise<void> {
         BEFORE UPDATE ON background_jobs
         FOR EACH ROW
         EXECUTE FUNCTION update_updated_at_column();
+
+      CREATE TRIGGER update_system_events_updated_at
+        BEFORE UPDATE ON system_events
+        FOR EACH ROW
+        EXECUTE FUNCTION update_updated_at_column();
     `);
 
     // Insert default system settings
@@ -345,6 +364,7 @@ export async function down(pool: Pool): Promise<void> {
       DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
       DROP TRIGGER IF EXISTS update_user_preferences_updated_at ON user_preferences;
       DROP TRIGGER IF EXISTS update_system_settings_updated_at ON system_settings;
+      DROP TRIGGER IF EXISTS update_system_events_updated_at ON system_events;
     `);
 
     // Drop tables in correct order
@@ -352,6 +372,7 @@ export async function down(pool: Pool): Promise<void> {
       DROP TABLE IF EXISTS audit_logs CASCADE;
       DROP TABLE IF EXISTS rate_limits CASCADE;
       DROP TABLE IF EXISTS system_stats CASCADE;
+      DROP TABLE IF EXISTS system_events CASCADE;
       DROP TABLE IF EXISTS user_feature_flags CASCADE;
       DROP TABLE IF EXISTS feature_flags CASCADE;
       DROP TABLE IF EXISTS task_history CASCADE;

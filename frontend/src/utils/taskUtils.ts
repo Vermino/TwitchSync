@@ -1,4 +1,4 @@
-// Filepath: /frontend/src/utils/taskUtils.ts
+// Filepath: frontend/src/utils/taskUtils.ts
 
 import { Channel, Game, CreateTaskRequest } from '@/types/task';
 
@@ -38,16 +38,18 @@ export function generateTaskNameAndDescription(
 
   // Add channels to description
   if (taskChannels.length > 0) {
-    parts.push(`Channels: ${taskChannels.map(c => c.display_name).join(', ')}`);
+    const channelList = taskChannels.map(c => c.display_name).join(', ');
+    parts.push(`Monitoring ${taskChannels.length} channel${taskChannels.length > 1 ? 's' : ''}: ${channelList}`);
   }
 
   // Add games to description
   if (taskGames.length > 0) {
-    parts.push(`Games: ${taskGames.map(g => g.name).join(', ')}`);
+    const gameList = taskGames.map(g => g.name).join(', ');
+    parts.push(`Tracking ${taskGames.length} game${taskGames.length > 1 ? 's' : ''}: ${gameList}`);
   }
 
   // Add schedule details
-  parts.push(`Schedule: ${scheduleInfo}`);
+  parts.push(`Schedule: ${getDetailedScheduleInfo(data)}`);
 
   // Add conditions if present
   if (data.conditions && Object.keys(data.conditions).length > 0) {
@@ -80,6 +82,14 @@ export function generateTaskNameAndDescription(
     }
   }
 
+  // Add storage and retention info if specified
+  if (data.storage_limit_gb) {
+    parts.push(`Storage limit: ${data.storage_limit_gb}GB`);
+  }
+  if (data.retention_days) {
+    parts.push(`Retention: ${data.retention_days} days${data.auto_delete ? ' (auto-delete)' : ''}`);
+  }
+
   description = parts.join('\n');
 
   return { name, description };
@@ -96,33 +106,57 @@ function getScheduleInfo(data: Partial<CreateTaskRequest>): string {
   }
 }
 
-export function validateTaskData(data: Partial<CreateTaskRequest>): boolean {
-  // Task must have at least one channel or game
-  if ((!data.channel_ids || data.channel_ids.length === 0) &&
-      (!data.game_ids || data.game_ids.length === 0)) {
-    return false;
+function getDetailedScheduleInfo(data: Partial<CreateTaskRequest>): string {
+  if (data.schedule_type === 'interval') {
+    const hours = (parseInt(data.schedule_value || '3600') / 3600).toFixed(1);
+    return `Runs every ${hours} hour${hours === '1.0' ? '' : 's'}`;
+  } else if (data.schedule_type === 'cron') {
+    return `Custom schedule (${data.schedule_value})`;
+  } else {
+    return 'Manual execution only';
+  }
+}
+
+export function validateTaskData(data: Partial<CreateTaskRequest>): string[] {
+  const errors: string[] = [];
+
+  // Check for required items based on task type
+  if (data.task_type === 'channel' && (!data.channel_ids?.length)) {
+    errors.push('At least one channel must be selected for channel tasks');
+  } else if (data.task_type === 'game' && (!data.game_ids?.length)) {
+    errors.push('At least one game must be selected for game tasks');
+  } else if (data.task_type === 'combined' &&
+             (!data.channel_ids?.length && !data.game_ids?.length)) {
+    errors.push('At least one channel or game must be selected');
   }
 
-  // Task must have a valid schedule type
-  if (!['interval', 'cron', 'manual'].includes(data.schedule_type || '')) {
-    return false;
+  // Validate schedule settings
+  if (data.schedule_type === 'interval') {
+    const interval = parseInt(data.schedule_value || '0');
+    if (interval < 300) { // 5 minutes minimum
+      errors.push('Schedule interval must be at least 5 minutes');
+    }
+  } else if (data.schedule_type === 'cron') {
+    if (!data.schedule_value?.trim()) {
+      errors.push('Cron expression is required for cron schedule type');
+    }
   }
 
-  // If interval schedule, must have positive value
-  if (data.schedule_type === 'interval' &&
-      (!data.schedule_value || parseInt(data.schedule_value) <= 0)) {
-    return false;
+  // Validate retention and storage settings
+  if (data.retention_days != null) {
+    if (data.retention_days < 1 || data.retention_days > 365) {
+      errors.push('Retention days must be between 1 and 365');
+    }
   }
 
-  // If storage limits set, must be positive
-  if (data.storage_limit_gb && data.storage_limit_gb < 0) {
-    return false;
+  if (data.storage_limit_gb != null && data.storage_limit_gb < 0) {
+    errors.push('Storage limit must be a positive number');
   }
 
-  // If retention days set, must be between 1-365
-  if (data.retention_days && (data.retention_days < 1 || data.retention_days > 365)) {
-    return false;
-  }
+  return errors;
+}
 
-  return true;
+export function getStorageUsagePercentage(used: number, limit: number): number {
+  if (!limit || limit <= 0) return 0;
+  return Math.min(100, (used / limit) * 100);
 }

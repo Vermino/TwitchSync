@@ -1,4 +1,4 @@
-// backend/src/database/migrations/004_vod_tables.ts
+// Filepath: backend/src/database/migrations/004_vod_tables.ts
 
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
@@ -317,21 +317,50 @@ export async function up(pool: Pool): Promise<void> {
     // Create cleanup function for old VODs
     await client.query(`
       CREATE OR REPLACE FUNCTION cleanup_old_vods()
-      RETURNS trigger AS $$
+      RETURNS void AS $$
       BEGIN
-        UPDATE vods
-        SET status = 'archived',
-            deletion_scheduled_at = CURRENT_TIMESTAMP + (retention_days || ' days')::interval
-        WHERE status = 'completed'
-        AND auto_delete = true
-        AND downloaded_at < CURRENT_TIMESTAMP - (retention_days || ' days')::interval;
-        RETURN NULL;
+        -- Update status to archived for VODs that are past retention period
+        UPDATE vods v
+        SET 
+          status = 'archived',
+          deletion_scheduled_at = CURRENT_TIMESTAMP + COALESCE(
+            (SELECT t.retention_days || ' days'
+             FROM tasks t 
+             WHERE t.id = v.task_id)::interval,
+            '7 days'::interval
+          )
+        WHERE 
+          v.status = 'completed'
+          AND v.auto_delete = true
+          AND v.downloaded_at < CURRENT_TIMESTAMP - COALESCE(
+            (SELECT t.retention_days || ' days'
+             FROM tasks t 
+             WHERE t.id = v.task_id)::interval,
+            '7 days'::interval
+          );
+
+        -- Delete VODs that have passed their deletion_scheduled_at date
+        DELETE FROM vods
+        WHERE 
+          status = 'archived'
+          AND deletion_scheduled_at < CURRENT_TIMESTAMP;
       END;
       $$ LANGUAGE plpgsql;
 
-      CREATE TRIGGER trigger_cleanup_old_vods
-        AFTER INSERT OR UPDATE ON vods
-        EXECUTE FUNCTION cleanup_old_vods();
+      -- Create trigger function
+      CREATE OR REPLACE FUNCTION trigger_cleanup_old_vods()
+      RETURNS trigger AS $$
+      BEGIN
+        PERFORM cleanup_old_vods();
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      -- Create trigger
+      CREATE TRIGGER cleanup_old_vods_trigger
+        AFTER UPDATE OF downloaded_at ON vods
+        FOR EACH STATEMENT
+        EXECUTE FUNCTION trigger_cleanup_old_vods();
     `);
 
     await client.query('COMMIT');
@@ -353,8 +382,10 @@ export async function down(pool: Pool): Promise<void> {
 
     // Drop triggers first
     await client.query(`
+      DROP TRIGGER IF EXISTS cleanup_old_vods_trigger ON vods;
       DROP TRIGGER IF EXISTS trigger_cleanup_old_vods ON vods;
-      DROP FUNCTION IF EXISTS cleanup_old_vods();
+      DROP FUNCTION IF EXISTS trigger_cleanup_old_vods() CASCADE;
+      DROP FUNCTION IF EXISTS cleanup_old_vods() CASCADE;
 
       DROP TRIGGER IF EXISTS update_user_vod_preferences_updated_at ON user_vod_preferences;
       DROP TRIGGER IF EXISTS update_vod_segments_updated_at ON vod_segments;
@@ -362,21 +393,24 @@ export async function down(pool: Pool): Promise<void> {
       DROP TRIGGER IF EXISTS update_vods_updated_at ON vods;
     `);
 
-    // Drop tables in correct order
+    // Drop tables in correct order (respecting foreign key dependencies)
     await client.query(`
-      DROP TABLE IF EXISTS user_vod_preferences;
-      DROP TABLE IF EXISTS vod_bandwidth_usage;
-      DROP TABLE IF EXISTS vod_processing_history;
-      DROP TABLE IF EXISTS chat_messages;
-      DROP TABLE IF EXISTS vod_markers;
-      DROP TABLE IF EXISTS vod_segments;
-      DROP TABLE IF EXISTS vod_chapters;
-      DROP TABLE IF EXISTS vods;
+      DROP TABLE IF EXISTS user_vod_preferences CASCADE;
+      DROP TABLE IF EXISTS vod_bandwidth_usage CASCADE;
+      DROP TABLE IF EXISTS vod_processing_history CASCADE;
+      DROP TABLE IF EXISTS chat_messages CASCADE;
+      DROP TABLE IF EXISTS vod_markers CASCADE;
+      DROP TABLE IF EXISTS vod_segments CASCADE;
+      DROP TABLE IF EXISTS vod_chapters CASCADE;
+      DROP TABLE IF EXISTS vods CASCADE;
+    `);
 
-      DROP TYPE IF EXISTS download_priority;
-      DROP TYPE IF EXISTS vod_status;
-      DROP TYPE IF EXISTS video_quality;
-      DROP TYPE IF EXISTS content_type;
+    // Drop enums in correct order
+    await client.query(`
+      DROP TYPE IF EXISTS download_priority CASCADE;
+      DROP TYPE IF EXISTS content_type CASCADE;
+      DROP TYPE IF EXISTS video_quality CASCADE;
+      DROP TYPE IF EXISTS vod_status CASCADE;
     `);
 
     await client.query('COMMIT');

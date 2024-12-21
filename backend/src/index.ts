@@ -1,6 +1,6 @@
 // Filepath: backend/src/index.ts
 
-import express, { Request, Response, NextFunction, RequestHandler, Router } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
@@ -16,24 +16,13 @@ import { logger } from './utils/logger';
 import DownloadManager from './services/downloadManager';
 
 // Import middleware
-import { authenticate } from "./middleware/auth";
 import { loggingMiddleware } from './middleware/logging';
 import { debugMiddleware } from './middleware/debug';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 
-// Import routes
-import { setupAuthRoutes } from './routes/auth';
-import { setupChannelRoutes } from './routes/channels';
-import { setupGameRoutes } from './routes/games';
-import { setupDashboardRoutes } from './routes/dashboard';
-import { setupSystemRoutes } from './routes/system';
-import { createDownloadsRouter } from './routes/downloads';
-import { setupSettingsRoutes } from './routes/settings';
-import { setupTaskRoutes } from './routes/tasks';
-import { setupTwitchSearchRoutes } from './routes/twitch/search';
-import { createDiscoveryRouter } from './routes/discovery';
-import { setupVodRoutes } from './routes/vods';
+// Import routes setup
+import { setupRoutes, setupAuthRoutes } from './routes';
 
 // Load environment variables
 dotenv.config();
@@ -87,33 +76,18 @@ app.use(cors(corsOptions));
 // Basic middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(loggingMiddleware as RequestHandler);
+app.use(loggingMiddleware);
 
 // Debug middleware in development
 if (process.env.NODE_ENV === 'development') {
   app.use(debugMiddleware);
 }
 
-// Mount auth routes directly at /auth without additional prefixing
+// Mount auth routes at root level for frontend compatibility
 app.use('/auth', setupAuthRoutes(pool));
 
-// API Routes with /api prefix
-const apiRouter: Router = express.Router();
-
-// Protected routes
-apiRouter.use('/channels', authenticate(pool), rateLimiter, setupChannelRoutes(pool));
-apiRouter.use('/games', authenticate(pool), rateLimiter, setupGameRoutes(pool));
-apiRouter.use('/dashboard', authenticate(pool), setupDashboardRoutes(pool));
-apiRouter.use('/system', authenticate(pool), setupSystemRoutes(pool));
-apiRouter.use('/downloads', authenticate(pool), createDownloadsRouter(pool, downloadManager));
-apiRouter.use('/settings', authenticate(pool), setupSettingsRoutes(pool));
-apiRouter.use('/tasks', authenticate(pool), setupTaskRoutes(pool));
-apiRouter.use('/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));
-apiRouter.use('/discovery', createDiscoveryRouter(pool));
-apiRouter.use('/api/vods', setupVodRoutes(pool));
-
-// Mount API routes under /api prefix
-app.use('/api', apiRouter);
+// Set up all routes under /api prefix
+app.use('/api', setupRoutes(pool));
 
 // Health check routes
 app.get('/', (req, res) => {
@@ -153,7 +127,6 @@ const startServer = async () => {
     logger.info('Database setup completed');
 
     // Initialize download manager queue processing
-    logger.info('Starting download queue processing with 30 second interval');
     await downloadManager.startProcessing();
     logger.info('Download manager started');
 

@@ -1,15 +1,16 @@
-// Create new migration file: backend/src/database/migrations/017_add_channel_live_status.ts
+// Filepath: backend/src/database/migrations/017_add_channel_live_status.ts
 
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
 
 export async function up(pool: Pool): Promise<void> {
   const client = await pool.connect();
+
   try {
     await client.query('BEGIN');
 
     await client.query(`
-      ALTER TABLE channel_game_history 
+      ALTER TABLE channel_game_history
       ADD COLUMN IF NOT EXISTS is_live BOOLEAN DEFAULT false;
     `);
 
@@ -33,12 +34,17 @@ export async function up(pool: Pool): Promise<void> {
 
 export async function down(pool: Pool): Promise<void> {
   const client = await pool.connect();
+
   try {
     await client.query('BEGIN');
+
     await client.query(`
       DROP INDEX IF EXISTS idx_channel_game_history_is_live;
-      ALTER TABLE channel_game_history DROP COLUMN IF EXISTS is_live;
+      
+      ALTER TABLE channel_game_history
+      DROP COLUMN IF EXISTS is_live;
     `);
+
     await client.query('COMMIT');
     logger.info('Removed is_live column from channel_game_history');
   } catch (error) {

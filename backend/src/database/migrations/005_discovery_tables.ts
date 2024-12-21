@@ -1,4 +1,4 @@
-// backend/src/database/migrations/005_discovery_tables.ts
+// Filepath: backend/src/database/migrations/005_discovery_tables.ts
 
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
@@ -50,7 +50,9 @@ export async function up(pool: Pool): Promise<void> {
         UNIQUE(user_id)
       );
 
-      CREATE INDEX idx_discovery_preferences_user ON discovery_preferences(user_id);
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_discovery_preferences_user ON discovery_preferences(user_id);
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Create premiere events table
@@ -70,10 +72,12 @@ export async function up(pool: Pool): Promise<void> {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     
-      CREATE INDEX idx_premieres_channel ON premiere_events(channel_id);
-      CREATE INDEX idx_premieres_game ON premiere_events(game_id);
-      CREATE INDEX idx_premieres_start ON premiere_events(start_time);
-      CREATE INDEX idx_premieres_detected ON premiere_events(detected_at);
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_premieres_channel ON premiere_events(channel_id);
+        CREATE INDEX IF NOT EXISTS idx_premieres_game ON premiere_events(game_id);
+        CREATE INDEX IF NOT EXISTS idx_premieres_start ON premiere_events(start_time);
+        CREATE INDEX IF NOT EXISTS idx_premieres_detected ON premiere_events(detected_at);
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Channel metrics tracking
@@ -101,9 +105,11 @@ export async function up(pool: Pool): Promise<void> {
         recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE INDEX idx_metrics_channel ON channel_metrics(channel_id);
-      CREATE INDEX idx_metrics_game ON channel_metrics(game_id);
-      CREATE INDEX idx_metrics_recorded ON channel_metrics(recorded_at);
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_metrics_channel ON channel_metrics(channel_id);
+        CREATE INDEX IF NOT EXISTS idx_metrics_game ON channel_metrics(game_id);
+        CREATE INDEX IF NOT EXISTS idx_metrics_recorded ON channel_metrics(recorded_at);
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Channel metrics aggregation
@@ -168,9 +174,11 @@ export async function up(pool: Pool): Promise<void> {
         recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE INDEX idx_game_metrics_game ON game_metrics(game_id);
-      CREATE INDEX idx_game_metrics_recorded ON game_metrics(recorded_at);
-      CREATE INDEX idx_game_metrics_ranking ON game_metrics(ranking_overall);
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_game_metrics_game ON game_metrics(game_id);
+        CREATE INDEX IF NOT EXISTS idx_game_metrics_recorded ON game_metrics(recorded_at);
+        CREATE INDEX IF NOT EXISTS idx_game_metrics_ranking ON game_metrics(ranking_overall);
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Discovery events tracking
@@ -191,11 +199,13 @@ export async function up(pool: Pool): Promise<void> {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE INDEX idx_events_type ON discovery_events(event_type);
-      CREATE INDEX idx_events_channel ON discovery_events(channel_id);
-      CREATE INDEX idx_events_game ON discovery_events(game_id);
-      CREATE INDEX idx_events_expires ON discovery_events(expires_at)
-        WHERE expires_at IS NOT NULL;
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_events_type ON discovery_events(event_type);
+        CREATE INDEX IF NOT EXISTS idx_events_channel ON discovery_events(channel_id);
+        CREATE INDEX IF NOT EXISTS idx_events_game ON discovery_events(game_id);
+        CREATE INDEX IF NOT EXISTS idx_events_expires ON discovery_events(expires_at)
+          WHERE expires_at IS NOT NULL;
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Content recommendations
@@ -216,11 +226,13 @@ export async function up(pool: Pool): Promise<void> {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE INDEX idx_recommendations_user ON recommendations(user_id);
-      CREATE INDEX idx_recommendations_type ON recommendations(recommendation_type);
-      CREATE INDEX idx_recommendations_score ON recommendations(score DESC);
-      CREATE INDEX idx_recommendations_expires ON recommendations(expires_at)
-        WHERE expires_at IS NOT NULL;
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_recommendations_user ON recommendations(user_id);
+        CREATE INDEX IF NOT EXISTS idx_recommendations_type ON recommendations(recommendation_type);
+        CREATE INDEX IF NOT EXISTS idx_recommendations_score ON recommendations(score DESC);
+        CREATE INDEX IF NOT EXISTS idx_recommendations_expires ON recommendations(expires_at)
+          WHERE expires_at IS NOT NULL;
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Viewer engagement tracking
@@ -242,10 +254,12 @@ export async function up(pool: Pool): Promise<void> {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE INDEX idx_engagement_channel ON viewer_engagement(channel_id);
-      CREATE INDEX idx_engagement_user ON viewer_engagement(user_id);
-      CREATE INDEX idx_engagement_session ON viewer_engagement(session_id);
-      CREATE INDEX idx_engagement_time ON viewer_engagement(starts_at, ends_at);
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_engagement_channel ON viewer_engagement(channel_id);
+        CREATE INDEX IF NOT EXISTS idx_engagement_user ON viewer_engagement(user_id);
+        CREATE INDEX IF NOT EXISTS idx_engagement_session ON viewer_engagement(session_id);
+        CREATE INDEX IF NOT EXISTS idx_engagement_time ON viewer_engagement(starts_at, ends_at);
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Content similarity tracking
@@ -264,9 +278,11 @@ export async function up(pool: Pool): Promise<void> {
         UNIQUE(source_id, target_id, similarity_type)
       );
 
-      CREATE INDEX idx_similarity_source ON content_similarity(source_id);
-      CREATE INDEX idx_similarity_target ON content_similarity(target_id);
-      CREATE INDEX idx_similarity_score ON content_similarity(score DESC);
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_similarity_source ON content_similarity(source_id);
+        CREATE INDEX IF NOT EXISTS idx_similarity_target ON content_similarity(target_id);
+        CREATE INDEX IF NOT EXISTS idx_similarity_score ON content_similarity(score DESC);
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // User interests tracking
@@ -287,9 +303,11 @@ export async function up(pool: Pool): Promise<void> {
         UNIQUE(user_id, interest_type, interest_id)
       );
 
-      CREATE INDEX idx_interests_user ON user_interests(user_id);
-      CREATE INDEX idx_interests_type ON user_interests(interest_type);
-      CREATE INDEX idx_interests_score ON user_interests(score DESC);
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_interests_user ON user_interests(user_id);
+        CREATE INDEX IF NOT EXISTS idx_interests_type ON user_interests(interest_type);
+        CREATE INDEX IF NOT EXISTS idx_interests_score ON user_interests(score DESC);
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
     // Create update_updated_at_column function if it doesn't exist

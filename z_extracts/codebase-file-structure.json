@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-21T00:24:19.491999",
+  "updated_at": "2024-12-21T08:22:45.211680",
   "tree": {
     "backend": {
       "_files": [
@@ -17,8 +17,11 @@
       "src": {
         "config": {
           "_files": [
+            "app.ts",
             "database.ts",
             "index.ts",
+            "middleware.ts",
+            "routes.ts",
             "twitch.ts"
           ]
         },
@@ -41,6 +44,7 @@
             "015_task_monitoring_tables.ts",
             "016_channel_game_tracking.ts",
             "017_add_channel_live_status.ts",
+            "018_fix_cleanup_vods.ts",
             "runner.ts"
           ]
         },
@@ -67,6 +71,7 @@
         "routes": {
           "auth": {
             "_files": [
+              "controller.ts",
               "index.ts",
               "validation.ts"
             ]
@@ -294,6 +299,7 @@
           "_files": [
             "api.ts",
             "constants.ts",
+            "task-operations.ts",
             "utils.ts"
           ],
           "api": {

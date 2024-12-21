@@ -5,10 +5,9 @@ import { Pool } from 'pg';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
 import { logger } from '../../utils/logger';
-import { validateRequest } from '../../middleware/validation';
 import { callbackRateLimiter } from '../../middleware/authRateLimiter';
 import { authenticate } from '../../middleware/auth';
-import { AuthCallbackSchema, AuthError } from './validation';
+import { AuthError } from './validation';
 
 export function setupAuthRoutes(pool: Pool): Router {
   const router = Router();
