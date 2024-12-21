@@ -11,7 +11,7 @@ export const ScheduleType = z.enum(['interval', 'cron', 'manual']);
 
 // Task base schema
 const taskBaseSchema = {
-  name: z.string().min(1, 'Name is required').max(100, 'Name is too long'),
+  name: z.string().min(1, 'Name is required').max(100, 'Name is too long').optional(),
   description: z.string().max(1000, 'Description is too long').optional(),
   task_type: TaskType,
   channel_ids: z.array(z.number()).default([]),
@@ -28,7 +28,7 @@ const taskBaseSchema = {
 // Task execution request schema
 export const ExecuteTaskSchema = z.object({
   params: z.object({
-    id: z.string().regex(/^\d+$/, 'Invalid task ID')
+    id: z.string().regex(/^\\d+$/, 'Invalid task ID')
   }),
   body: z.object({
     force: z.boolean().optional()

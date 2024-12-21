@@ -52,54 +52,122 @@ export default function TaskManager() {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [selectedTask, setSelectedTask] = React.useState<Task | null>(null);
   const [expandedTasks, setExpandedTasks] = React.useState<number[]>([]);
-  const [hoveredItem, setHoveredItem] = React.useState<{ type: 'channel' | 'game', id: number } | null>(null);
   const { toast } = useToast();
 
-  const { data: tasks = [], isLoading, refetch } = useQuery({
+  // Data fetching
+  const { data: tasks = [], isLoading: tasksLoading, refetch: refetchTasks } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => api.getTasks()
   });
 
-  const { data: channelsData } = useQuery<Channel[]>({
-    queryKey: ['channelsData'],
-    queryFn: async () => {
-      const response = await api.getChannels();
-      return Array.isArray(response) ? response : [];
-    }
+  const { data: channels = [] } = useQuery<Channel[]>({
+    queryKey: ['channels'],
+    queryFn: () => api.getChannels()
   });
 
-  const { data: gamesData } = useQuery<Game[]>({
+  const { data: games = [] } = useQuery<Game[]>({
     queryKey: ['games'],
-    queryFn: async () => {
-      const response = await api.getGames();
-      return Array.isArray(response) ? response : [];
-    }
+    queryFn: () => api.getGames()
   });
 
-  const { data: vods = [] } = useQuery({
+  const { data: vods = [], isLoading: vodsLoading } = useQuery({
     queryKey: ['vods'],
-    queryFn: () => api.getVods()
+    queryFn: () => api.getVods(),
+    refetchInterval: 30000 // Refresh VODs every 30 seconds
   });
 
-  const channels = channelsData || [];
-  const games = gamesData || [];
+  // Task operations
+  const handleRunTask = async (taskId: number) => {
+    try {
+      await api.runTask(taskId);
+      toast({
+        title: "Success",
+        description: "Task started successfully",
+      });
+      refetchTasks();
+    } catch (error) {
+      console.error('Error running task:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to run task",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    if (!window.confirm('Are you sure you want to delete this task?')) {
+      return;
+    }
+
+    try {
+      await api.deleteTask(taskId);
+      toast({
+        title: "Success",
+        description: "Task deleted successfully",
+      });
+      refetchTasks();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete task",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleStatusToggle = async (taskId: number, currentStatus: keyof typeof STATUS_CYCLE) => {
     try {
-      await api.updateTask(taskId, { status: STATUS_CYCLE[currentStatus] });
+      const newStatus = STATUS_CYCLE[currentStatus];
+      await api.updateTask(taskId, { status: newStatus });
       toast({
         title: "Success",
-        description: `Task status updated to ${STATUS_CYCLE[currentStatus]}`,
+        description: `Task status updated to ${newStatus}`,
       });
-      await refetch();
+      refetchTasks();
     } catch (error) {
       console.error('Error updating task status:', error);
       toast({
         title: "Error",
-        description: "Failed to update task status",
+        description: error instanceof Error ? error.message : "Failed to update task status",
         variant: "destructive",
       });
     }
+  };
+
+  const handleTaskSubmit = async (data: any) => {
+    try {
+      if (selectedTask) {
+        await api.updateTask(selectedTask.id, data);
+        toast({
+          title: "Success",
+          description: "Task updated successfully",
+        });
+      } else {
+        await api.createTask(data);
+        toast({
+          title: "Success",
+          description: "Task created successfully",
+        });
+      }
+      setIsModalOpen(false);
+      setSelectedTask(null);
+      refetchTasks();
+    } catch (error) {
+      console.error('Error saving task:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save task",
+        variant: "destructive",
+      });
+      throw error; // Propagate error to modal for handling
+    }
+  };
+
+  // Utility functions
+  const getTaskVods = (taskId: number) => {
+    return vods.filter(vod => vod.task_id === taskId);
   };
 
   const getTaskChannels = (channelIds: number[] = []) => {
@@ -110,69 +178,16 @@ export default function TaskManager() {
     return games.filter(game => gameIds.includes(game.id));
   };
 
-  const getTaskVods = (taskId: number) => {
-    return vods.filter(vod => vod.task_id === taskId);
+  const getCompletedVods = (taskId: number) => {
+    return getTaskVods(taskId).filter(vod => vod.status === 'completed').length;
   };
 
-  const handleDeleteTask = async (taskId: number) => {
-    try {
-      await api.deleteTask(taskId);
-      toast({
-        title: "Success",
-        description: "Task deleted successfully",
-      });
-      await refetch();
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete task",
-        variant: "destructive",
-      });
-    }
+  const getTotalVods = (taskId: number) => {
+    return getTaskVods(taskId).length;
   };
 
-  const renderHoverCard = (item: Channel | Game, type: 'channel' | 'game') => {
-    if (type === 'channel') {
-      const channel = item as Channel;
-      return (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg w-64">
-          <div className="flex items-center gap-3">
-            <img
-              src={channel.profile_image_url}
-              alt={channel.display_name}
-              className="w-16 h-16 rounded-full"
-            />
-            <div>
-              <h3 className="font-medium">{channel.display_name}</h3>
-              <p className="text-sm text-muted-foreground">{channel.description}</p>
-            </div>
-          </div>
-        </div>
-      );
-    } else {
-      const game = item as Game;
-      return (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg w-64">
-          <div className="flex gap-3">
-            <img
-              src={game.box_art_url}
-              alt={game.name}
-              className="w-20 h-24 rounded-lg object-cover"
-            />
-            <div>
-              <h3 className="font-medium">{game.name}</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {game.category || 'No category'}
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  if (isLoading) {
+  // Loading state
+  if (tasksLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
@@ -199,269 +214,262 @@ export default function TaskManager() {
           <CardDescription>Monitor and manage your running tasks</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {tasks.map((task) => (
-            <Accordion
-              key={task.id}
-              type="single"
-              collapsible
-              className="border rounded-lg"
-            >
-              <AccordionItem value="task-content" className="border-none">
-                <div className="p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{task.name}</span>
-                          <Badge
-                            variant={task.status === 'failed' ? 'destructive' : 'default'}
-                            className="cursor-pointer hover:opacity-80"
-                            onClick={() => handleStatusToggle(task.id, task.status)}
-                          >
-                            {task.status}
-                          </Badge>
+          {tasks.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No tasks found. Create a task to get started.
+            </div>
+          ) : (
+            tasks.map((task) => (
+              <Accordion
+                key={task.id}
+                type="single"
+                collapsible
+                className="border rounded-lg"
+              >
+                <AccordionItem value="task-content" className="border-none">
+                  <div className="p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{task.name}</span>
+                            <Badge
+                              variant={task.status === 'failed' ? 'destructive' : 'default'}
+                              className="cursor-pointer hover:opacity-80"
+                              onClick={() => handleStatusToggle(task.id, task.status)}
+                            >
+                              {task.status}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            {task.description || 'No description'}
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {task.description || 'No description'}
-                        </div>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        {task.status === 'running' ? (
+                        <div className="flex items-center gap-2">
+                          {task.status === 'running' ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleStatusToggle(task.id, 'running')}
+                            >
+                              <Pause className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRunTask(task.id)}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleStatusToggle(task.id, 'running')}
+                            onClick={() => {
+                              setSelectedTask(task);
+                              setIsModalOpen(true);
+                            }}
                           >
-                            <Pause className="h-4 w-4" />
+                            <Settings className="h-4 w-4" />
                           </Button>
-                        ) : (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleStatusToggle(task.id, 'inactive')}
+                            onClick={() => handleDeleteTask(task.id)}
                           >
-                            <Play className="h-4 w-4" />
+                            <Trash className="h-4 w-4" />
                           </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedTask(task);
-                            setIsModalOpen(true);
-                          }}
-                        >
-                          <Settings className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteTask(task.id)}
-                        >
-                          <Trash className="h-4 w-4" />
-                        </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium flex items-center gap-2">
-                        <Users className="h-4 w-4" />
-                        Channels ({task.channel_ids?.length || 0})
-                      </div>
-                      <TooltipProvider>
-                        <div className="flex relative">
-                          {getTaskChannels(task.channel_ids || []).slice(0, 4).map((channel, index) => (
-                            <Tooltip key={channel.id}>
-                              <TooltipTrigger asChild>
-                                <div
-                                  className={`h-12 w-12 rounded-full border border-gray-300 overflow-hidden shadow-md transition-transform hover:scale-105 cursor-pointer absolute`}
-                                  style={{ left: `${index * 20}px`, zIndex: index }}
-                                  onMouseEnter={() => setHoveredItem({ type: 'channel', id: channel.id })}
-                                  onMouseLeave={() => setHoveredItem(null)}
-                                >
+                    <div className="grid grid-cols-4 gap-4">
+                      {/* Channels section */}
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          Channels ({task.channel_ids?.length || 0})
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {getTaskChannels(task.channel_ids).map(channel => (
+                            <TooltipProvider key={channel.id}>
+                              <Tooltip>
+                                <TooltipTrigger>
                                   <img
                                     src={channel.profile_image_url}
-                                    alt={`${channel.display_name}'s profile`}
-                                    className="w-full h-full object-cover"
+                                    alt={channel.display_name}
+                                    className="w-8 h-8 rounded-full"
                                   />
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {renderHoverCard(channel, 'channel')}
-                              </TooltipContent>
-                            </Tooltip>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {channel.display_name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           ))}
                         </div>
-                      </TooltipProvider>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium flex items-center gap-2">
-                        <Gamepad2 className="h-4 w-4" />
-                        Games ({task.game_ids?.length || 0})
                       </div>
-                      <TooltipProvider>
-                        <div className="flex relative h-16">
-                          {getTaskGames(task.game_ids || []).slice(0, 4).map((game, index) => (
-                            <Tooltip key={game.id}>
-                              <TooltipTrigger asChild>
-                                <div
-                                  className="absolute h-16 w-12 rounded-lg border border-gray-300 overflow-hidden shadow-md transition-transform hover:scale-105 cursor-pointer"
-                                  style={{
-                                    left: `${index * 20}px`,
-                                    zIndex: index,
-                                    transform: `rotate(${index * 2}deg)`
-                                  }}
-                                  onMouseEnter={() => setHoveredItem({ type: 'game', id: game.id })}
-                                  onMouseLeave={() => setHoveredItem(null)}
-                                >
+
+                      {/* Games section */}
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium flex items-center gap-2">
+                          <Gamepad2 className="h-4 w-4" />
+                          Games ({task.game_ids?.length || 0})
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {getTaskGames(task.game_ids).map(game => (
+                            <TooltipProvider key={game.id}>
+                              <Tooltip>
+                                <TooltipTrigger>
                                   <img
                                     src={game.box_art_url}
                                     alt={game.name}
-                                    className="w-full h-full object-cover"
+                                    className="w-8 h-12 rounded"
                                   />
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent side="right" sideOffset={5}>
-                                <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-                                  <div className="grid grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                                    {getTaskGames(task.game_ids || []).map((tooltipGame) => (
-                                      <div
-                                        key={tooltipGame.id}
-                                        className="flex flex-col gap-2 items-center"
-                                      >
-                                        <img
-                                          src={tooltipGame.box_art_url}
-                                          alt={tooltipGame.name}
-                                          className="w-32 h-44 rounded-lg object-cover"
-                                        />
-                                        <span className="text-sm font-medium text-center">
-                                          {tooltipGame.name}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {game.name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           ))}
-                          {task.game_ids && task.game_ids.length > 4 && (
+                        </div>
+                      </div>
+
+                      {/* Stats section */}
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium flex items-center gap-2">
+                          <Download className="h-4 w-4" />
+                          Downloads
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {getCompletedVods(task.id)} / {getTotalVods(task.id)} VODs completed
+                        </div>
+                      </div>
+
+                      {/* Progress section */}
+                      <div className="space-y-2">
+                        <div className="text-sm text-muted-foreground flex justify-between">
+                          <span>Progress</span>
+                          <span>{task.progress?.percentage?.toFixed(1) || 0}%</span>
+                        </div>
+                        <Progress value={task.progress?.percentage || 0} className="h-2" />
+                        <div className="text-xs text-muted-foreground">
+                          Last run: {task.last_run ? new Date(task.last_run).toLocaleString() : 'Never'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Task conditions and restrictions */}
+                    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                      {task.conditions && Object.keys(task.conditions).length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <Filter className="h-4 w-4" />
+                          <span>{Object.keys(task.conditions).length} conditions applied</span>
+                        </div>
+                      )}
+                      {task.restrictions && Object.keys(task.restrictions).length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <Shield className="h-4 w-4" />
+                          <span>{Object.keys(task.restrictions).length} restrictions applied</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* VODs section */}
+                  <AccordionTrigger className="px-4 py-2 hover:no-underline">
+                    <span className="text-sm font-medium">View VODs</span>
+                  </AccordionTrigger>
+
+                  <AccordionContent className="px-4 pb-4">
+                    {vodsLoading ? (
+                      <div className="p-4 text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600 mx-auto"></div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {getTaskVods(task.id).length === 0 ? (
+                          <div className="text-center py-4 text-muted-foreground">
+                            No VODs found for this task
+                          </div>
+                        ) : (
+                          getTaskVods(task.id).map((vod) => (
                             <div
-                              className="absolute h-16 w-12 rounded-lg shadow-md overflow-hidden"
-                              style={{
-                                left: `${4 * 20}px`,
-                                zIndex: 4,
-                                transform: 'rotate(8deg)',
-                                position: 'relative'
-                              }}
+                              key={vod.id}
+                              className="flex items-center justify-between p-2 rounded-lg bg-muted"
                             >
-                              <img
-                                src="https://static-cdn.jtvnw.net/ttv-boxart/492741.jpg"
-                                alt="More games"
-                                className="w-full h-full object-cover"
-                              />
-                              <div
-                                className="absolute inset-0 bg-black/30 flex items-center justify-center text-sm font-medium text-white"
-                              >
-                                +{task.game_ids.length - 4}
+                              <div className="flex items-center gap-3">
+                                <div className="w-24 h-16 rounded overflow-hidden bg-muted-foreground/10">
+                                  {vod.thumbnail_url ? (
+                                    <img
+                                      src={vod.thumbnail_url}
+                                      alt={vod.title}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <Download className="h-6 w-6 text-muted-foreground/50" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="font-medium">{vod.title}</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    Duration: {vod.duration} • Created: {new Date(vod.created_at).toLocaleString()}
+                                  </div>
+                                  {vod.channel_name && (
+                                    <div className="text-sm text-muted-foreground">
+                                      Channel: {vod.channel_name}
+                                      {vod.game_name && ` • Game: ${vod.game_name}`}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                  {vod.download_progress < 100 && vod.status !== 'failed' && (
+                                    <div className="mb-1">
+                                      <Progress value={vod.download_progress} className="h-1 w-24" />
+                                    </div>
+                                  )}
+                                  <Badge variant={
+                                    vod.status === 'completed' ? 'default' :
+                                    vod.status === 'failed' ? 'destructive' :
+                                    'secondary'
+                                  }>
+                                    {vod.status}
+                                  </Badge>
+                                </div>
+                                {vod.error_message && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger>
+                                        <AlertCircle className="h-4 w-4 text-destructive" />
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{vod.error_message}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
                               </div>
                             </div>
-                          )}
-                        </div>
-                      </TooltipProvider>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium flex items-center gap-2">
-                        <Download className="h-4 w-4" />
-                        Downloads
+                          ))
+                        )}
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {task.total_vods || 0} VODs ({task.completed_vods || 0} completed)
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-sm text-muted-foreground flex justify-between">
-                        <span>Progress</span>
-                        <span>{task.progress?.percentage?.toFixed(1) || 0}%</span>
-                      </div>
-                      <Progress value={task.progress?.percentage || 0} className="h-2" />
-                      <div className="text-xs text-muted-foreground">
-                        Last run: {task.last_run ? new Date(task.last_run).toLocaleString() : 'Never'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {task.conditions && Object.keys(task.conditions).length > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Filter className="h-4 w-4" />
-                      <span>{Object.keys(task.conditions).length} conditions applied</span>
-                    </div>
-                  )}
-
-                  {task.restrictions && Object.keys(task.restrictions).length > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Shield className="h-4 w-4" />
-                      <span>{Object.keys(task.restrictions).length} restrictions applied</span>
-                    </div>
-                  )}
-                </div>
-
-                <AccordionTrigger className="px-4 py-2 hover:no-underline">
-                  <span className="text-sm font-medium">View VODs</span>
-                </AccordionTrigger>
-
-                <AccordionContent className="px-4 pb-4">
-                  <div className="space-y-2">
-                    {getTaskVods(task.id).map((vod) => (
-                      <div
-                        key={vod.id}
-                        className="flex items-center justify-between p-2 rounded-lg bg-muted"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-24 h-16 rounded overflow-hidden">
-                            <img
-                              src={vod.thumbnail_url}
-                              alt={vod.title}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div>
-                            <div className="font-medium">{vod.title}</div>
-                            <div className="text-sm text-muted-foreground">
-                              Duration: {vod.duration} • Created: {new Date(vod.created_at).toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <Badge variant={vod.status === 'completed' ? 'default' : 'destructive'}>
-                            {vod.status}
-                          </Badge>
-                          {vod.error_message && (
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <AlertCircle className="h-4 w-4 text-destructive" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>{vod.error_message}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          ))}
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            ))
+          )}
         </CardContent>
       </Card>
 
+      {/* Task Modal */}
       {isModalOpen && (
         <TaskModal
           isOpen={isModalOpen}
@@ -469,33 +477,7 @@ export default function TaskManager() {
             setIsModalOpen(false);
             setSelectedTask(null);
           }}
-          onSubmit={async (data) => {
-            try {
-              if (selectedTask) {
-                await api.updateTask(selectedTask.id, data);
-                toast({
-                  title: "Success",
-                  description: "Task updated successfully",
-                });
-              } else {
-                await api.createTask(data);
-                toast({
-                  title: "Success",
-                  description: "Task created successfully",
-                });
-              }
-              setIsModalOpen(false);
-              setSelectedTask(null);
-              refetch();
-            } catch (error) {
-              console.error('Error saving task:', error);
-              toast({
-                title: "Error",
-                description: error.message || "Failed to save task",
-                variant: "destructive",
-              });
-            }
-          }}
+          onSubmit={handleTaskSubmit}
           task={selectedTask}
           availableChannels={channels}
           availableGames={games}

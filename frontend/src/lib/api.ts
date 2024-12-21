@@ -1,8 +1,6 @@
-// Filepath: /frontend/src/lib/api.ts
-
 import axios from 'axios';
-import type { Channel, Game, Task, CreateTaskRequest, UpdateTaskRequest } from '../types';
-import type { SystemSettings, StorageStats } from '../types/settings';
+import type { Channel, Game, Task } from '@/types';
+import type { SystemSettings, StorageStats } from '@/types/settings';
 import type {
   ChannelRecommendation,
   DiscoveryFeedResponse,
@@ -14,31 +12,14 @@ import type {
   TrackPremiereResponse,
   TrendingCategory,
   UpdatePreferencesResponse
-} from '../types/discovery';
+} from '@/types/discovery';
 import {
   CreateTaskRequest,
   TaskDetails,
   TaskProgress,
   TaskStorage,
   UpdateTaskRequest
-} from "../types/task";
-
-interface DashboardStats {
-  channels: {
-    total: number;
-    active: number;
-  };
-  games: {
-    total: number;
-    active: number;
-  };
-  tasks: {
-    active: number;
-    pending: number;
-    completed: number;
-    failed: number;
-  };
-}
+} from "@/types/task";
 
 class ApiClient {
   private static instance: ApiClient;
@@ -46,6 +27,7 @@ class ApiClient {
   private authURL = 'http://localhost:3001/auth';
 
   private constructor() {
+    // Add request interceptor for auth token
     axios.interceptors.request.use(
       (config) => {
         const token = localStorage.getItem('auth_token');
@@ -59,6 +41,7 @@ class ApiClient {
       }
     );
 
+    // Add response interceptor for error handling
     axios.interceptors.response.use(
       (response) => response,
       (error) => {
@@ -66,10 +49,20 @@ class ApiClient {
           localStorage.removeItem('auth_token');
           window.location.href = '/login';
         }
-        return Promise.reject(error);
+        // Extract and throw the error message
+        if (error.response?.data?.error) {
+          throw new Error(error.response.data.error);
+        }
+        if (error.response?.data?.details) {
+          const details = error.response.data.details;
+          const messages = details.map((detail: any) => detail.message);
+          throw new Error(messages.join(', '));
+        }
+        throw error;
       }
     );
   }
+
 
   public static getInstance(): ApiClient {
     if (!ApiClient.instance) {
@@ -223,13 +216,12 @@ class ApiClient {
     }
   }
 
-  // Channel Methods
+ // Channel Methods
   async getChannels(): Promise<Channel[]> {
     try {
       const response = await axios.get(`${this.baseURL}/channels`, {
         headers: this.getHeaders()
       });
-      console.log('Raw API response:', response.data);
 
       const channelsData = response.data.channels || response.data;
       if (Array.isArray(channelsData)) {
@@ -254,7 +246,7 @@ class ApiClient {
       return [];
     } catch (error) {
       console.error('Error fetching channels:', error);
-      return [];
+      throw error;
     }
   }
 
@@ -316,16 +308,16 @@ class ApiClient {
     }
   }
 
+  // Game Methods
   async getGames(): Promise<Game[]> {
     try {
       const response = await axios.get(`${this.baseURL}/games`, {
         headers: this.getHeaders()
       });
-      console.log('API getGames raw response:', response.data);
       return Array.isArray(response.data) ? response.data : [];
     } catch (error) {
       console.error('Error fetching games:', error);
-      return [];
+      throw error;
     }
   }
 
@@ -348,15 +340,14 @@ class ApiClient {
           category: data.category || data.name.split(' ')[0].toLowerCase(),
           tags: data.tags || [],
           status: data.status || 'active',
-          is_active: data.is_active !== undefined ? data.is_active : true,
-          last_checked: new Date().toISOString()
+          is_active: data.is_active !== undefined ? data.is_active : true
         },
         { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
       console.error('Error creating game:', error);
-      throw this.handleError(error);
+      throw error;
     }
   }
 
@@ -385,42 +376,13 @@ class ApiClient {
     }
   }
 
-  // Task Methods
-  async getTasks(): Promise<Task[]> {
-    try {
-      const response = await axios.get(`${this.baseURL}/tasks`, {
-        headers: this.getHeaders()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching tasks:', error);
-      throw this.handleError(error);
-    }
-  }
-
-  async getTaskDetails(id: number): Promise<TaskDetails> {
-    try {
-      const response = await axios.get(
-        `${this.baseURL}/tasks/${id}/details`,
-        { headers: this.getHeaders() }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching task details:', error);
-      throw this.handleError(error);
-    }
-  }
-
+    // Task Methods
   async createTask(data: CreateTaskRequest): Promise<Task> {
     try {
-      // Validate and format required fields
-      if (!data.name?.trim()) {
-        throw new Error('Task name is required');
-      }
-
+      // Create task data with defaults
       const taskData = {
-        name: data.name.trim(),
-        description: data.description?.trim() || '',
+        name: data.name || '',
+        description: data.description || '',
         task_type: data.task_type || 'combined',
         channel_ids: data.channel_ids || [],
         game_ids: data.game_ids || [],
@@ -435,7 +397,7 @@ class ApiClient {
         restrictions: data.restrictions || {}
       };
 
-      // Additional validations
+      // Basic validation for retention days
       if (taskData.retention_days < 1 || taskData.retention_days > 365) {
         throw new Error('Retention days must be between 1 and 365');
       }
@@ -445,32 +407,74 @@ class ApiClient {
         taskData,
         { headers: this.getHeaders() }
       );
+
       return response.data;
     } catch (error) {
       console.error('Error creating task:', error);
-      throw this.handleError(error);
+      throw error;
     }
   }
 
   async updateTask(id: number, data: UpdateTaskRequest): Promise<Task> {
     try {
       // Format numerical fields
-      const requestData = {
+      const updateData = {
         ...data,
         storage_limit_gb: data.storage_limit_gb !== undefined ? Number(data.storage_limit_gb) : undefined,
-        retention_days: data.retention_days !== undefined ? Number(data.retention_days) : undefined,
-        priority: data.priority || undefined  // Only include if specified
+        retention_days: data.retention_days !== undefined ? Number(data.retention_days) : undefined
       };
+
+      if (updateData.retention_days && (updateData.retention_days < 1 || updateData.retention_days > 365)) {
+        throw new Error('Retention days must be between 1 and 365');
+      }
 
       const response = await axios.put(
         `${this.baseURL}/tasks/${id}`,
-        requestData,
+        updateData,
         { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
       console.error('Error updating task:', error);
-      throw this.handleError(error);
+      throw error;
+    }
+  }
+
+  async getTasks(): Promise<Task[]> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      throw error;
+    }
+  }
+
+  async getTaskDetails(id: number): Promise<TaskDetails> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/details`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching task details:', error);
+      throw error;
+    }
+  }
+
+  async deleteTask(id: number): Promise<void> {
+    try {
+      await axios.delete(
+        `${this.baseURL}/tasks/${id}`,
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      throw error;
     }
   }
 
@@ -483,21 +487,11 @@ class ApiClient {
       );
     } catch (error) {
       console.error('Error updating task path:', error);
-      throw this.handleError(error);
+      throw error;
     }
   }
 
-  async deleteTask(id: number): Promise<void> {
-    try {
-      await axios.delete(`${this.baseURL}/tasks/${id}`, {
-        headers: this.getHeaders()
-      });
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      throw this.handleError(error);
-    }
-  }
-
+  // Task Progress Methods
   async getTaskProgress(id: number): Promise<TaskProgress> {
     try {
       const response = await axios.get(
@@ -507,7 +501,7 @@ class ApiClient {
       return response.data;
     } catch (error) {
       console.error('Error fetching task progress:', error);
-      throw this.handleError(error);
+      throw error;
     }
   }
 
@@ -520,7 +514,7 @@ class ApiClient {
       return response.data;
     } catch (error) {
       console.error('Error fetching task storage:', error);
-      throw this.handleError(error);
+      throw error;
     }
   }
 
@@ -533,7 +527,7 @@ class ApiClient {
       );
     } catch (error) {
       console.error('Error running task:', error);
-      throw this.handleError(error);
+      throw error;
     }
   }
 
@@ -731,7 +725,7 @@ class ApiClient {
     }
   }
 
-  // Utility Methods
+   // Utility Methods
   private getHeaders() {
     const token = localStorage.getItem('auth_token');
     return {
@@ -740,11 +734,19 @@ class ApiClient {
     };
   }
 
-  private handleError(error: any): string {
+  private handleError(error: any): never {
+    console.error('API Error:', error);
+
     if (axios.isAxiosError(error)) {
-      return error.response?.data?.message || error.message;
+      if (error.response?.data?.details) {
+        const details = error.response.data.details;
+        const messages = details.map((detail: any) => detail.message);
+        throw new Error(messages.join(', '));
+      }
+      throw new Error(error.response?.data?.message || error.message);
     }
-    return error instanceof Error ? error.message : 'An unknown error occurred';
+
+    throw error instanceof Error ? error : new Error('An unknown error occurred');
   }
 }
 

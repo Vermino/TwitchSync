@@ -1,5 +1,3 @@
-// backend/src/routes/index.ts
-
 import { Router } from 'express';
 import { Pool } from 'pg';
 import { setupChannelRoutes } from './channels';
@@ -10,6 +8,7 @@ import { setupSystemRoutes } from './system';
 import { setupSettingsRoutes } from './settings';
 import { setupTaskRoutes } from './tasks';
 import { setupTwitchSearchRoutes } from './twitch/search';
+import { setupVodRoutes } from './vods';
 import { authenticate } from '../middleware/auth';
 
 export function setupRoutes(pool: Pool): Router {
@@ -26,6 +25,7 @@ export function setupRoutes(pool: Pool): Router {
   router.use('/settings', authenticate(pool), setupSettingsRoutes(pool));
   router.use('/tasks', authenticate(pool), setupTaskRoutes(pool));
   router.use('/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));
+  router.use('/vods', authenticate(pool), setupVodRoutes(pool));
 
   return router;
 }
@@ -38,5 +38,6 @@ export {
   setupSystemRoutes,
   setupSettingsRoutes,
   setupTaskRoutes,
-  setupTwitchSearchRoutes
+  setupTwitchSearchRoutes,
+  setupVodRoutes
 };

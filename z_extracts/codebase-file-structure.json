@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-20T18:04:16.650219",
+  "updated_at": "2024-12-21T00:24:19.491999",
   "tree": {
     "backend": {
       "_files": [
@@ -93,11 +93,6 @@
               "validation.ts"
             ]
           },
-          "downloads": {
-            "_files": [
-              "index.ts"
-            ]
-          },
           "games": {
             "_files": [
               "controller.ts",
@@ -129,7 +124,7 @@
               "search.ts"
             ]
           },
-          "watch": {
+          "vods": {
             "_files": [
               "index.ts"
             ]
@@ -179,11 +174,6 @@
               "client.ts",
               "index.ts"
             ]
-          },
-          "watch": {
-            "_files": [
-              "index.ts"
-            ]
           }
         },
         "types": {
@@ -193,7 +183,8 @@
             "discovery.ts",
             "downloadManager.ts",
             "settings.ts",
-            "twitch.ts"
+            "twitch.ts",
+            "vod.ts"
           ]
         },
         "utils": {
@@ -233,18 +224,14 @@
           "_files": [
             "CallbackHandler.tsx",
             "ChannelSearchModal.tsx",
-            "DownloadManager.tsx",
             "GameSearchModal.tsx",
             "Layout.tsx",
             "ProtectedRoute.tsx",
-            "QueueDisplay.tsx",
             "SettingsManager.tsx",
             "StatusBar.tsx",
-            "TaskAccordion.tsx",
             "TaskModal.tsx",
             "TwitchConnect.tsx",
-            "UserMenu.tsx",
-            "WatchConfig.tsx"
+            "UserMenu.tsx"
           ],
           "TaskModal": {
             "_files": [
@@ -357,7 +344,9 @@
         },
         "utils": {
           "_files": [
-            "logger.ts"
+            "logger.ts",
+            "taskUtils.ts",
+            "taskValidation.ts"
           ]
         }
       }

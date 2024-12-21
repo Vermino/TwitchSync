@@ -27,13 +27,13 @@ import { setupAuthRoutes } from './routes/auth';
 import { setupChannelRoutes } from './routes/channels';
 import { setupGameRoutes } from './routes/games';
 import { setupDashboardRoutes } from './routes/dashboard';
-import { setupWatchRoutes } from './routes/watch';
 import { setupSystemRoutes } from './routes/system';
 import { createDownloadsRouter } from './routes/downloads';
 import { setupSettingsRoutes } from './routes/settings';
 import { setupTaskRoutes } from './routes/tasks';
 import { setupTwitchSearchRoutes } from './routes/twitch/search';
 import { createDiscoveryRouter } from './routes/discovery';
+import { setupVodRoutes } from './routes/vods';
 
 // Load environment variables
 dotenv.config();
@@ -104,13 +104,13 @@ const apiRouter: Router = express.Router();
 apiRouter.use('/channels', authenticate(pool), rateLimiter, setupChannelRoutes(pool));
 apiRouter.use('/games', authenticate(pool), rateLimiter, setupGameRoutes(pool));
 apiRouter.use('/dashboard', authenticate(pool), setupDashboardRoutes(pool));
-apiRouter.use('/watch', authenticate(pool), setupWatchRoutes(pool));
 apiRouter.use('/system', authenticate(pool), setupSystemRoutes(pool));
 apiRouter.use('/downloads', authenticate(pool), createDownloadsRouter(pool, downloadManager));
 apiRouter.use('/settings', authenticate(pool), setupSettingsRoutes(pool));
 apiRouter.use('/tasks', authenticate(pool), setupTaskRoutes(pool));
 apiRouter.use('/twitch', authenticate(pool), setupTwitchSearchRoutes(pool));
 apiRouter.use('/discovery', createDiscoveryRouter(pool));
+apiRouter.use('/api/vods', setupVodRoutes(pool));
 
 // Mount API routes under /api prefix
 app.use('/api', apiRouter);

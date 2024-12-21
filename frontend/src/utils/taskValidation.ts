@@ -1,113 +1,84 @@
-// Filepath: /frontend/src/utils/taskValidation.ts
+// Filepath: /backend/src/routes/tasks/validation.ts
 
-import type { CreateTaskRequest, TaskType, TaskPriority } from '../types/task';
+import { z } from 'zod';
 
-export interface ValidationResult {
-  isValid: boolean;
-  errors: string[];
-}
-
-export const validateTaskData = (data: Partial<CreateTaskRequest>): ValidationResult => {
-  const errors: string[] = [];
-
-  // Validate required fields
-  if (!data.name?.trim()) {
-    errors.push('Task name is required');
-  }
-
-  if (!data.task_type) {
-    errors.push('Task type is required');
-  } else {
-    // Validate channel and game IDs based on task type
-    const hasChannels = data.channel_ids && data.channel_ids.length > 0;
-    const hasGames = data.game_ids && data.game_ids.length > 0;
-
+export const CreateTaskSchema = z.object({
+  body: z.object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    task_type: z.enum(['channel', 'game', 'combined']),
+    channel_ids: z.array(z.number()),
+    game_ids: z.array(z.number()),
+    schedule_type: z.enum(['interval', 'cron', 'manual']),
+    schedule_value: z.string(),
+    storage_limit_gb: z.number().min(0).optional(),
+    retention_days: z.number().min(1).max(365).optional(),
+    auto_delete: z.boolean().optional(),
+    priority: z.enum(['low', 'normal', 'high', 'critical']).default('normal'),
+    conditions: z.record(z.any()).optional(),
+    restrictions: z.record(z.any()).optional()
+  }).refine(data => {
+    // Validate task type matches IDs
     switch (data.task_type) {
       case 'channel':
-        if (!hasChannels) {
-          errors.push('At least one channel must be selected for channel tasks');
+        if (data.channel_ids.length === 0) {
+          return false;
+        }
+        if (data.game_ids.length > 0) {
+          return false;
         }
         break;
       case 'game':
-        if (!hasGames) {
-          errors.push('At least one game must be selected for game tasks');
+        if (data.game_ids.length === 0) {
+          return false;
+        }
+        if (data.channel_ids.length > 0) {
+          return false;
         }
         break;
       case 'combined':
-        if (!hasChannels || !hasGames) {
-          errors.push('Both channels and games must be selected for combined tasks');
+        if (data.channel_ids.length === 0 && data.game_ids.length === 0) {
+          return false;
         }
         break;
     }
-  }
-
-  // Validate numeric fields
-  if (data.storage_limit_gb !== undefined && data.storage_limit_gb < 0) {
-    errors.push('Storage limit must be a positive number');
-  }
-
-  if (data.retention_days !== undefined && (data.retention_days < 1 || data.retention_days > 365)) {
-    errors.push('Retention days must be between 1 and 365');
-  }
-
-  // Validate schedule
-  if (!data.schedule_type) {
-    errors.push('Schedule type is required');
-  } else {
-    switch (data.schedule_type) {
-      case 'interval':
-        const intervalValue = parseInt(data.schedule_value || '0');
-        if (isNaN(intervalValue) || intervalValue < 300) { // 5 minutes minimum
-          errors.push('Interval must be at least 300 seconds (5 minutes)');
-        }
-        break;
-      case 'cron':
-        if (!data.schedule_value?.trim()) {
-          errors.push('Cron expression is required for cron schedule type');
-        }
-        // TODO: Add cron expression validation
-        break;
+    return true;
+  }, {
+    message: "Channel and game IDs must match the task type"
+  }).refine(data => {
+    // Validate schedule value
+    if (data.schedule_type === 'interval') {
+      const interval = parseInt(data.schedule_value);
+      return interval >= 300; // Minimum 5 minutes
     }
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
-};
-
-export const createTaskRequest = (data: Partial<CreateTaskRequest>): CreateTaskRequest => {
-  return {
-    name: data.name || '',
-    description: data.description || '',
-    task_type: data.task_type || 'combined',
-    channel_ids: data.channel_ids || [],
-    game_ids: data.game_ids || [],
-    schedule_type: data.schedule_type || 'interval',
-    schedule_value: data.schedule_value || '3600',
-    storage_limit_gb: data.storage_limit_gb || 0,
-    retention_days: data.retention_days || 0,
-    auto_delete: data.auto_delete || false,
-    priority: data.priority || 'normal',
-    conditions: data.conditions || {},
-    restrictions: data.restrictions || {},
-    is_active: true
-  };
-};
-
-export const getDefaultTaskData = (): Partial<CreateTaskRequest> => ({
-  name: '',
-  description: '',
-  task_type: 'combined',
-  channel_ids: [],
-  game_ids: [],
-  schedule_type: 'interval',
-  schedule_value: '3600',
-  storage_limit_gb: 0,
-  retention_days: 0,
-  auto_delete: false,
-  priority: 'normal',
-  conditions: {},
-  restrictions: {},
-  is_active: true
+    return true;
+  }, {
+    message: "Interval must be at least 5 minutes"
+  })
 });
+
+export type Task = {
+  id: number;
+  name: string;
+  description?: string;
+  task_type: 'channel' | 'game' | 'combined';
+  channel_ids: number[];
+  game_ids: number[];
+  schedule_type: 'interval' | 'cron' | 'manual';
+  schedule_value: string;
+  storage_limit_gb?: number;
+  retention_days?: number;
+  auto_delete: boolean;
+  priority: 'low' | 'normal' | 'high' | 'critical';
+  status: 'pending' | 'running' | 'failed' | 'inactive';
+  conditions?: Record<string, any>;
+  restrictions?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  last_run?: string;
+  user_id: number;
+};
+
+export type CreateTaskRequest = z.infer<typeof CreateTaskSchema>['body'];
+
+export type UpdateTaskRequest = Partial<CreateTaskRequest>;
