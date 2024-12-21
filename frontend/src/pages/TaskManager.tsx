@@ -1,4 +1,4 @@
-// Filepath: frontend/src/pages/TaskManager.tsx
+// Filepath: /frontend/src/pages/TaskManager.tsx
 
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -40,6 +40,7 @@ import {
 import { api } from '@/lib/api';
 import TaskModal from '@/components/TaskModal';
 import { Task, Channel, Game } from '@/types/task';
+import { useToast } from '@/components/ui/use-toast';
 
 const STATUS_CYCLE = {
   'running': 'pending',
@@ -52,6 +53,7 @@ export default function TaskManager() {
   const [selectedTask, setSelectedTask] = React.useState<Task | null>(null);
   const [expandedTasks, setExpandedTasks] = React.useState<number[]>([]);
   const [hoveredItem, setHoveredItem] = React.useState<{ type: 'channel' | 'game', id: number } | null>(null);
+  const { toast } = useToast();
 
   const { data: tasks = [], isLoading, refetch } = useQuery({
     queryKey: ['tasks'],
@@ -59,10 +61,9 @@ export default function TaskManager() {
   });
 
   const { data: channelsData } = useQuery<Channel[]>({
-    queryKey: ['channels'],
+    queryKey: ['channelsData'],
     queryFn: async () => {
       const response = await api.getChannels();
-      console.log('Raw channels response:', response);
       return Array.isArray(response) ? response : [];
     }
   });
@@ -71,7 +72,6 @@ export default function TaskManager() {
     queryKey: ['games'],
     queryFn: async () => {
       const response = await api.getGames();
-      console.log('Raw games response:', response);
       return Array.isArray(response) ? response : [];
     }
   });
@@ -87,9 +87,18 @@ export default function TaskManager() {
   const handleStatusToggle = async (taskId: number, currentStatus: keyof typeof STATUS_CYCLE) => {
     try {
       await api.updateTask(taskId, { status: STATUS_CYCLE[currentStatus] });
-      refetch();
+      toast({
+        title: "Success",
+        description: `Task status updated to ${STATUS_CYCLE[currentStatus]}`,
+      });
+      await refetch();
     } catch (error) {
       console.error('Error updating task status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update task status",
+        variant: "destructive",
+      });
     }
   };
 
@@ -103,6 +112,24 @@ export default function TaskManager() {
 
   const getTaskVods = (taskId: number) => {
     return vods.filter(vod => vod.task_id === taskId);
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    try {
+      await api.deleteTask(taskId);
+      toast({
+        title: "Success",
+        description: "Task deleted successfully",
+      });
+      await refetch();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete task",
+        variant: "destructive",
+      });
+    }
   };
 
   const renderHoverCard = (item: Channel | Game, type: 'channel' | 'game') => {
@@ -230,7 +257,7 @@ export default function TaskManager() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => api.deleteTask(task.id).then(() => refetch())}
+                          onClick={() => handleDeleteTask(task.id)}
                         >
                           <Trash className="h-4 w-4" />
                         </Button>
@@ -446,14 +473,27 @@ export default function TaskManager() {
             try {
               if (selectedTask) {
                 await api.updateTask(selectedTask.id, data);
+                toast({
+                  title: "Success",
+                  description: "Task updated successfully",
+                });
               } else {
                 await api.createTask(data);
+                toast({
+                  title: "Success",
+                  description: "Task created successfully",
+                });
               }
               setIsModalOpen(false);
               setSelectedTask(null);
               refetch();
             } catch (error) {
               console.error('Error saving task:', error);
+              toast({
+                title: "Error",
+                description: error.message || "Failed to save task",
+                variant: "destructive",
+              });
             }
           }}
           task={selectedTask}

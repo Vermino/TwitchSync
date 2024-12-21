@@ -1,4 +1,4 @@
-// frontend/src/lib/api.ts
+// Filepath: /frontend/src/lib/api.ts
 
 import axios from 'axios';
 import type { Channel, Game, Task, CreateTaskRequest, UpdateTaskRequest } from '../types';
@@ -15,8 +15,13 @@ import type {
   TrendingCategory,
   UpdatePreferencesResponse
 } from '../types/discovery';
-import {CreateTaskRequest, TaskDetails, TaskProgress, TaskStorage, UpdateTaskRequest} from "../types/task.ts";
-
+import {
+  CreateTaskRequest,
+  TaskDetails,
+  TaskProgress,
+  TaskStorage,
+  UpdateTaskRequest
+} from "../types/task";
 
 interface DashboardStats {
   channels: {
@@ -41,7 +46,6 @@ class ApiClient {
   private authURL = 'http://localhost:3001/auth';
 
   private constructor() {
-    // Add request interceptor for auth token
     axios.interceptors.request.use(
       (config) => {
         const token = localStorage.getItem('auth_token');
@@ -55,12 +59,10 @@ class ApiClient {
       }
     );
 
-    // Add response interceptor for error handling
     axios.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
-          // Handle unauthorized access
           localStorage.removeItem('auth_token');
           window.location.href = '/login';
         }
@@ -76,7 +78,7 @@ class ApiClient {
     return ApiClient.instance;
   }
 
-    // Add Authentication Methods
+  // Add Authentication Methods
   async twitchCallback(code: string) {
     try {
       const response = await axios.post(
@@ -187,7 +189,6 @@ class ApiClient {
     }
   }
 
-
   // Twitch Search Methods
   async searchTwitchChannels(query: string) {
     try {
@@ -228,8 +229,29 @@ class ApiClient {
       const response = await axios.get(`${this.baseURL}/channels`, {
         headers: this.getHeaders()
       });
-      console.log('API getChannels raw response:', response.data);
-      return Array.isArray(response.data) ? response.data : [];
+      console.log('Raw API response:', response.data);
+
+      const channelsData = response.data.channels || response.data;
+      if (Array.isArray(channelsData)) {
+        return channelsData.map(channel => ({
+          id: channel.id,
+          twitch_id: channel.twitch_id,
+          username: channel.username,
+          display_name: channel.display_name || channel.username,
+          profile_image_url: channel.profile_image_url,
+          description: channel.description || '',
+          follower_count: channel.follower_count || 0,
+          is_active: channel.is_active || true,
+          is_live: channel.is_live || false,
+          last_stream_date: channel.last_stream_date,
+          last_game_id: channel.last_game_id,
+          last_game_name: channel.last_game_name,
+          last_game_box_art: channel.last_game_box_art,
+          most_played_game: channel.most_played_game,
+          premieres: channel.premieres || []
+        }));
+      }
+      return [];
     } catch (error) {
       console.error('Error fetching channels:', error);
       return [];
@@ -389,17 +411,38 @@ class ApiClient {
     }
   }
 
-   async createTask(data: CreateTaskRequest): Promise<Task> {
+  async createTask(data: CreateTaskRequest): Promise<Task> {
     try {
-      // Ensure priority is a valid string value
-      const requestData = {
-        ...data,
-        priority: data.priority || 'low'  // Default to 'low' if not specified
+      // Validate and format required fields
+      if (!data.name?.trim()) {
+        throw new Error('Task name is required');
+      }
+
+      const taskData = {
+        name: data.name.trim(),
+        description: data.description?.trim() || '',
+        task_type: data.task_type || 'combined',
+        channel_ids: data.channel_ids || [],
+        game_ids: data.game_ids || [],
+        schedule_type: data.schedule_type || 'interval',
+        schedule_value: data.schedule_value || '3600',
+        storage_limit_gb: Number(data.storage_limit_gb) || 0,
+        retention_days: Number(data.retention_days) || 7,
+        auto_delete: Boolean(data.auto_delete),
+        priority: data.priority || 'normal',
+        is_active: true,
+        conditions: data.conditions || {},
+        restrictions: data.restrictions || {}
       };
+
+      // Additional validations
+      if (taskData.retention_days < 1 || taskData.retention_days > 365) {
+        throw new Error('Retention days must be between 1 and 365');
+      }
 
       const response = await axios.post(
         `${this.baseURL}/tasks`,
-        requestData,
+        taskData,
         { headers: this.getHeaders() }
       );
       return response.data;
@@ -411,9 +454,11 @@ class ApiClient {
 
   async updateTask(id: number, data: UpdateTaskRequest): Promise<Task> {
     try {
-      // Ensure priority is a valid string value if provided
+      // Format numerical fields
       const requestData = {
         ...data,
+        storage_limit_gb: data.storage_limit_gb !== undefined ? Number(data.storage_limit_gb) : undefined,
+        retention_days: data.retention_days !== undefined ? Number(data.retention_days) : undefined,
         priority: data.priority || undefined  // Only include if specified
       };
 
@@ -631,16 +676,29 @@ class ApiClient {
   }
 
   async getDiscoveryStats(): Promise<DiscoveryStats> {
-  try {
-    const response = await axios.get(`${this.baseURL}/discovery/stats`, {
-      headers: this.getHeaders()
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching discovery stats:', error);
-    throw this.handleError(error);
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/stats`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching discovery stats:', error);
+      throw this.handleError(error);
+    }
   }
-}
+
+  // VOD Methods
+  async getVods() {
+    try {
+      const response = await axios.get(`${this.baseURL}/vods`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching VODs:', error);
+      throw this.handleError(error);
+    }
+  }
 
   // Settings Methods
   async getUserSettings() {

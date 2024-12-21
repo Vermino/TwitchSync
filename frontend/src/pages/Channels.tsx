@@ -74,11 +74,37 @@ const Channels = () => {
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const { data: channels, isLoading } = useQuery<Channel[]>({
+  const { data: channelsData, isLoading } = useQuery<Channel[]>({
     queryKey: ['channels'],
-    queryFn: () => api.getChannels(),
+    queryFn: async () => {
+      const response = await api.getChannels();
+      console.log('Raw channels response:', response);
+      // Transform the data to match our interface
+      if (Array.isArray(response)) {
+        return response.map(channel => ({
+          id: channel.id,
+          twitch_id: channel.twitch_id,
+          username: channel.username,
+          display_name: channel.display_name || channel.username,
+          profile_image_url: channel.profile_image_url,
+          description: channel.description || '',
+          follower_count: channel.follower_count || 0,
+          is_active: channel.is_active || true,
+          is_live: channel.is_live || false,
+          last_stream_date: channel.last_stream_date,
+          last_game_id: channel.last_game_id,
+          last_game_name: channel.last_game_name,
+          last_game_box_art: channel.last_game_box_art,
+          most_played_game: channel.most_played_game,
+          premieres: channel.premieres || []
+        }));
+      }
+      return [];
+    },
     refetchInterval: 60000, // Refetch every minute to update live status
   });
+
+  const channels = channelsData || [];
 
   const deleteChannelMutation = useMutation({
     mutationFn: (id: number) => api.deleteChannel(id),
@@ -88,20 +114,39 @@ const Channels = () => {
   });
 
   const addChannelMutation = useMutation({
-    mutationFn: (selectedChannels: any[]) => Promise.all(
-      selectedChannels.map(channel => api.createChannel({
-        twitch_id: channel.id,
-        username: channel.username || channel.display_name.toLowerCase(),
-        display_name: channel.display_name,
-        profile_image_url: channel.thumbnail_url,
-        follower_count: channel.follower_count || 0,
-        description: '',
-        is_active: true
-      }))
-    ),
+    mutationFn: async (selectedChannels: any[]) => {
+      const results = [];
+      for (const channel of selectedChannels) {
+        try {
+          const result = await api.createChannel({
+            twitch_id: channel.id,
+            username: channel.username || channel.display_name.toLowerCase(),
+            display_name: channel.display_name,
+            profile_image_url: channel.thumbnail_url || channel.profile_image_url,
+            follower_count: channel.follower_count || 0,
+            description: channel.description || '',
+            is_active: true
+          });
+          results.push(result);
+        } catch (error: any) {
+          // If it's just a duplicate channel error, continue with the next one
+          if (error.message?.includes('already exists')) {
+            console.warn(`Channel ${channel.display_name} already exists, skipping...`);
+            continue;
+          }
+          // For other errors, throw them
+          throw error;
+        }
+      }
+      return results;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
       setIsSearchModalOpen(false);
+    },
+    onError: (error: any) => {
+      console.error('Failed to add channels:', error);
+      // You might want to show an error toast or message here
     }
   });
 

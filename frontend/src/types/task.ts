@@ -2,8 +2,8 @@
 
 export type TaskType = 'channel' | 'game' | 'combined';
 export type TaskScheduleType = 'interval' | 'cron' | 'manual';
-export type TaskStatus = 'pending' | 'active' | 'completed' | 'failed';
-export type TaskPriority = 'low' | 'medium' | 'high';
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
 
 export interface TaskConditions {
   minFollowers?: number;
@@ -71,27 +71,50 @@ export interface Task {
 export interface TaskDetails {
   id: number;
   task_id: number;
-  progress: TaskProgress;
-  storage: TaskStorage;
-  vod_stats: TaskVODStats;
+  progress: {
+    percentage: number;
+    completed: number;
+    total: number;
+    current_item?: {
+      type: 'channel' | 'game';
+      name: string;
+      status: string;
+    };
+  };
+  storage: {
+    used: number;
+    limit: number;
+    remaining: number;
+  };
+  vod_stats: {
+    total_vods: number;
+    total_size: number;
+    average_duration: number;
+    download_success_rate: number;
+    vods_by_quality: Record<string, number>;
+    vods_by_language: Record<string, number>;
+  };
   created_at: Date;
   updated_at: Date;
 }
 
 export interface CreateTaskRequest {
-  name?: string;
+  name: string;
   description?: string;
+  task_type: TaskType;
   channel_ids: number[];
   game_ids: number[];
   schedule_type: TaskScheduleType;
   schedule_value: string;
-  storage_limit_gb?: number;
-  retention_days?: number;
-  auto_delete?: boolean;
-  priority?: TaskPriority;
+  storage_limit_gb: number;
+  retention_days: number;
+  auto_delete: boolean;
+  is_active: boolean;
+  priority: TaskPriority;
   conditions?: TaskConditions;
   restrictions?: TaskRestrictions;
 }
+
 
 export interface UpdateTaskRequest {
   name?: string;

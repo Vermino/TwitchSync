@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-20T13:48:03.536085",
+  "updated_at": "2024-12-20T18:04:16.650219",
   "tree": {
     "backend": {
       "_files": [
@@ -248,6 +248,7 @@
           ],
           "TaskModal": {
             "_files": [
+              "ChannelList.tsx",
               "ConditionsTab.tsx",
               "Filters.tsx",
               "RestrictionsTab.tsx",

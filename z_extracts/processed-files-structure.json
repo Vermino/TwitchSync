@@ -1,13 +1,23 @@
 {
-  "updated_at": "2024-12-20T13:48:03.537086",
+  "updated_at": "2024-12-20T18:04:16.651220",
   "tree": {
-    "frontend/src/components/TaskModal/_files": [
-      "ConditionsTab.tsx",
-      "index.tsx",
-      "ConditionsTab.tsx",
-      "Filters.tsx",
-      "index.tsx",
-      "RestrictionsTab.tsx"
-    ]
+    "frontend": {
+      "src/components/TaskModal/_files": [
+        "ConditionsTab.tsx",
+        "index.tsx",
+        "ChannelList.tsx",
+        "ConditionsTab.tsx",
+        "Filters.tsx",
+        "index.tsx",
+        "RestrictionsTab.tsx"
+      ]
+    },
+    "backend": {
+      "src/routes/tasks/_files": [
+        "controller.ts",
+        "index.ts",
+        "validation.ts"
+      ]
+    }
   }
 }

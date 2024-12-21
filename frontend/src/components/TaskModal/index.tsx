@@ -1,140 +1,106 @@
-// Filepath: frontend/src/components/TaskModal/index.tsx
+// Filepath: /frontend/src/components/TaskModal/index.tsx
 
-import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { api } from '@/lib/api';
+import { Search } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertCircle, Users, Gamepad2, Filter, Shield, Settings } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import ConditionsTab from './ConditionsTab';
-import type { Task, CreateTaskRequest, Channel, Game } from '@/types/task';
+import ChannelList from './ChannelList';
+import RestrictionsTab from './RestrictionsTab';
+import type { Task, CreateTaskRequest } from '@/types/task';
+import { validateTaskData, createTaskRequest, getDefaultTaskData } from '@/utils/taskValidation';
 import { logger } from '@/utils/logger';
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: CreateTaskRequest) => Promise<void>;
-  task?: Task;
+  task?: Task | null;
 }
 
-const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }) => {
-  const [activeTab, setActiveTab] = useState('general');
+const TaskModal: React.FC<TaskModalProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  task
+}) => {
+  const [activeTab, setActiveTab] = useState('channels');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [taskData, setTaskData] = useState<Partial<CreateTaskRequest>>({
-    name: task?.name || '',
-    description: task?.description || '',
-    channel_ids: task?.channel_ids || [],
-    game_ids: task?.game_ids || [],
-    schedule_type: task?.schedule_type || 'interval',
-    schedule_value: task?.schedule_value || '1h',
-    storage_limit_gb: task?.storage_limit_gb || undefined,
-    retention_days: task?.retention_days || undefined,
-    auto_delete: task?.auto_delete || false,
-    priority: task?.priority || 'low',
-    conditions: task?.conditions || {},
-    restrictions: task?.restrictions || {}
-  });
+  const [channelSearch, setChannelSearch] = useState('');
+  const [gameSearch, setGameSearch] = useState('');
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [taskData, setTaskData] = useState(getDefaultTaskData());
 
-  // Fetch and validate channels
-  const { data: channelsResponse } = useQuery({
-    queryKey: ['channels'],
-    queryFn: async () => {
-      try {
-        const response = await api.getChannels();
-        logger.debug('Channels response:', response);
-        // Ensure we have an array
-        return Array.isArray(response) ? response : [];
-      } catch (error) {
-        logger.error('Error fetching channels:', error);
-        return [];
-      }
-    },
-    initialData: []
-  });
-
-  // Fetch and validate games
-  const { data: gamesResponse } = useQuery({
-    queryKey: ['games'],
-    queryFn: async () => {
-      try {
-        const response = await api.getGames();
-        logger.debug('Games response:', response);
-        // Ensure we have an array
-        return Array.isArray(response) ? response : [];
-      } catch (error) {
-        logger.error('Error fetching games:', error);
-        return [];
-      }
-    },
-    initialData: []
-  });
-
-  // Ensure we always have arrays
-  const channels = useMemo(() => {
-    if (!Array.isArray(channelsResponse)) {
-      logger.warn('Channels response is not an array:', channelsResponse);
-      return [];
+  useEffect(() => {
+    if (isOpen && task) {
+      setTaskData({
+        name: task.name,
+        description: task.description || '',
+        task_type: task.task_type,
+        channel_ids: task.channel_ids,
+        game_ids: task.game_ids,
+        schedule_type: task.schedule_type,
+        schedule_value: task.schedule_value,
+        storage_limit_gb: task.storage_limit_gb || 0,
+        retention_days: task.retention_days || 0,
+        auto_delete: task.auto_delete,
+        priority: task.priority,
+        conditions: task.conditions || {},
+        restrictions: task.restrictions || {}
+      });
+    } else if (!task) {
+      setTaskData(getDefaultTaskData());
     }
-    return channelsResponse;
-  }, [channelsResponse]);
-
-  const games = useMemo(() => {
-    if (!Array.isArray(gamesResponse)) {
-      logger.warn('Games response is not an array:', gamesResponse);
-      return [];
-    }
-    return gamesResponse;
-  }, [gamesResponse]);
-
-  const selectedChannelDetails = useMemo(() => {
-    return taskData.channel_ids?.reduce<Channel[]>((acc, id) => {
-      const channel = channels.find(c => c.id === id);
-      if (channel) acc.push(channel);
-      return acc;
-    }, []) || [];
-  }, [channels, taskData.channel_ids]);
-
-  const selectedGameDetails = useMemo(() => {
-    return taskData.game_ids?.reduce<Game[]>((acc, id) => {
-      const game = games.find(g => g.id === id);
-      if (game) acc.push(game);
-      return acc;
-    }, []) || [];
-  }, [games, taskData.game_ids]);
+    setActiveTab('channels');
+    setChannelSearch('');
+    setGameSearch('');
+    setValidationErrors([]);
+  }, [isOpen, task]);
 
   const handleInputChange = (field: keyof CreateTaskRequest, value: any) => {
     setTaskData(prev => ({
       ...prev,
       [field]: value
     }));
+    // Clear validation errors when user makes changes
+    setValidationErrors([]);
   };
 
   const handleSubmit = async () => {
-    if (!taskData.name?.trim()) {
+    const validation = validateTaskData(taskData);
+
+    if (!validation.isValid) {
+      setValidationErrors(validation.errors);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onSubmit({
-        ...taskData,
-        channel_ids: taskData.channel_ids || [],
-        game_ids: taskData.game_ids || [],
-        schedule_type: taskData.schedule_type || 'interval',
-        schedule_value: taskData.schedule_value || '1h'
-      } as CreateTaskRequest);
+      const finalData = createTaskRequest(taskData);
+      logger.debug('Submitting task data:', finalData);
+      await onSubmit(finalData);
       onClose();
     } catch (error) {
       logger.error('Error saving task:', error);
+      setValidationErrors(['Failed to save task. Please try again.']);
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  if (!isOpen) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -143,67 +109,240 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
           <DialogTitle>
             {task ? 'Edit Task' : 'Create New Task'}
           </DialogTitle>
+          <div className="flex items-center gap-4">
+            <Badge variant="outline" className="flex items-center gap-1">
+              <Users className="h-3 w-3"/>
+              {taskData.channel_ids?.length || 0} channels
+            </Badge>
+            <Badge variant="outline" className="flex items-center gap-1">
+              <Gamepad2 className="h-3 w-3"/>
+              {taskData.game_ids?.length || 0} games
+            </Badge>
+          </div>
         </DialogHeader>
+
+        {validationErrors.length > 0 && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <ul className="list-disc pl-4">
+                {validationErrors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="space-y-4 mb-4">
+          <div>
+            <Label>Task Name</Label>
+            <Input
+              value={taskData.name || ''}
+              onChange={e => handleInputChange('name', e.target.value)}
+              placeholder="Enter task name"
+            />
+          </div>
+
+          <div>
+            <Label>Task Type</Label>
+            <Select
+              value={taskData.task_type}
+              onValueChange={value => handleInputChange('task_type', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select task type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="channel">Channel</SelectItem>
+                <SelectItem value="game">Game</SelectItem>
+                <SelectItem value="combined">Combined</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Description</Label>
+            <Input
+              value={taskData.description || ''}
+              onChange={e => handleInputChange('description', e.target.value)}
+              placeholder="Enter task description (optional)"
+            />
+          </div>
+        </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
           <TabsList className="w-full justify-start">
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="conditions">Conditions</TabsTrigger>
-            <TabsTrigger value="restrictions">Restrictions</TabsTrigger>
+            <TabsTrigger value="channels" className="flex items-center gap-2">
+              <Users className="h-4 w-4"/>
+              Channels
+            </TabsTrigger>
+            <TabsTrigger value="games" className="flex items-center gap-2">
+              <Gamepad2 className="h-4 w-4"/>
+              Games
+            </TabsTrigger>
+            <TabsTrigger value="conditions" className="flex items-center gap-2">
+              <Filter className="h-4 w-4"/>
+              Conditions
+            </TabsTrigger>
+            <TabsTrigger value="restrictions" className="flex items-center gap-2">
+              <Shield className="h-4 w-4"/>
+              Restrictions
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex items-center gap-2">
+              <Settings className="h-4 w-4"/>
+              Settings
+            </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 p-4">
-            <TabsContent value="general" className="space-y-6">
-              <div className="space-y-4">
-                <div>
-                  <Label>Task Name</Label>
-                  <Input
-                    value={taskData.name || ''}
-                    onChange={e => handleInputChange('name', e.target.value)}
-                    placeholder="Enter task name"
-                  />
-                </div>
+          <ScrollArea className="flex-1 overflow-hidden">
+            <TabsContent value="channels" className="h-[460px] p-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search channels..."
+                  value={channelSearch}
+                  onChange={e => setChannelSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
 
-                <div>
-                  <Label>Description</Label>
-                  <Input
-                    value={taskData.description || ''}
-                    onChange={e => handleInputChange('description', e.target.value)}
-                    placeholder="Enter task description (optional)"
-                  />
-                </div>
-
-                {/* Channel Selection will go here */}
-                <div className="space-y-2">
-                  <Label>Selected Channels ({selectedChannelDetails.length})</Label>
-                  {selectedChannelDetails.map((channel) => (
-                    <div key={channel.id} className="flex items-center space-x-2">
-                      <span>{channel.display_name || channel.username}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Game Selection will go here */}
-                <div className="space-y-2">
-                  <Label>Selected Games ({selectedGameDetails.length})</Label>
-                  {selectedGameDetails.map((game) => (
-                    <div key={game.id} className="flex items-center space-x-2">
-                      <span>{game.name}</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="mt-4">
+                <ChannelList
+                  selected={taskData.channel_ids || []}
+                  onSelect={(channelId) => {
+                    setTaskData(prev => {
+                      const currentIds = prev.channel_ids || [];
+                      const newIds = currentIds.includes(channelId)
+                        ? currentIds.filter(id => id !== channelId)
+                        : [...currentIds, channelId];
+                      return {
+                        ...prev,
+                        channel_ids: newIds
+                      };
+                    });
+                  }}
+                  searchQuery={channelSearch}
+                />
               </div>
             </TabsContent>
 
-            <TabsContent value="conditions">
+            {/* Games tab content here */}
+
+            <TabsContent value="conditions" className="p-4">
               <ConditionsTab
                 conditions={taskData.conditions || {}}
                 onChange={conditions => handleInputChange('conditions', conditions)}
               />
             </TabsContent>
 
-            <TabsContent value="restrictions">
-              {/* Restrictions content */}
+            <TabsContent value="restrictions" className="p-4">
+              <RestrictionsTab
+                restrictions={taskData.restrictions || {}}
+                onChange={restrictions => handleInputChange('restrictions', restrictions)}
+              />
+            </TabsContent>
+
+            <TabsContent value="settings" className="p-4">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Schedule Type</Label>
+                    <Select
+                      value={taskData.schedule_type}
+                      onValueChange={value => handleInputChange('schedule_type', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select schedule type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="interval">Interval</SelectItem>
+                        <SelectItem value="cron">Cron</SelectItem>
+                        <SelectItem value="manual">Manual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>
+                      {taskData.schedule_type === 'interval' ? 'Interval (seconds)' :
+                       taskData.schedule_type === 'cron' ? 'Cron Expression' :
+                       'Schedule Value'}
+                    </Label>
+                    <Input
+                      type={taskData.schedule_type === 'interval' ? 'number' : 'text'}
+                      value={taskData.schedule_value}
+                      onChange={e => handleInputChange('schedule_value', e.target.value)}
+                      placeholder={
+                        taskData.schedule_type === 'interval' ? '3600' :
+                        taskData.schedule_type === 'cron' ? '0 */6 * * *' :
+                        ''
+                      }
+                      disabled={taskData.schedule_type === 'manual'}
+                    />
+                    {taskData.schedule_type === 'interval' && (
+                      <p className="text-sm text-muted-foreground">
+                        {(parseInt(taskData.schedule_value) / 3600).toFixed(1)} hours
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Priority Level</Label>
+                    <Select
+                      value={taskData.priority}
+                      onValueChange={value => handleInputChange('priority', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="normal">Normal</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="critical">Critical</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Storage Limit (GB)</Label>
+                    <Input
+                      type="number"
+                      value={taskData.storage_limit_gb || ''}
+                      onChange={e => handleInputChange('storage_limit_gb', e.target.value ? parseInt(e.target.value) : 0)}
+                      placeholder="Optional"
+                      min="0"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Retention Days</Label>
+                    <Input
+                      type="number"
+                      value={taskData.retention_days || ''}
+                      onChange={e => handleInputChange('retention_days', e.target.value ? parseInt(e.target.value) : 0)}
+                      placeholder="Optional"
+                      min="1"
+                      max="365"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={taskData.auto_delete}
+                        onChange={e => handleInputChange('auto_delete', e.target.checked)}
+                        className="rounded border-input h-4 w-4 text-purple-600 focus:ring-purple-500"
+                      />
+                      Auto-delete files after retention period
+                    </Label>
+                  </div>
+                </div>
+              </div>
             </TabsContent>
           </ScrollArea>
         </Tabs>
@@ -214,10 +353,10 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || !taskData.name?.trim()}
+            disabled={isSubmitting || validationErrors.length > 0}
             type="submit"
           >
-            {isSubmitting ? 'Saving...' : 'Save Task'}
+            {isSubmitting ? 'Saving...' : (task ? 'Update Task' : 'Create Task')}
           </Button>
         </div>
       </DialogContent>
