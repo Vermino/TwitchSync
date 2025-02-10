@@ -8,12 +8,14 @@ import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import CallbackHandler from './components/CallbackHandler';
+
+// Page imports
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Channels from './pages/Channels';
 import Games from './pages/Games';
 import ContentDiscovery from './pages/ContentDiscovery';
-import Settings from './pages/Settings';
+import Settings from './pages/settings';
 import TaskManager from './pages/TaskManager';
 import TaskMonitoring from './pages/TaskMonitoring';
 

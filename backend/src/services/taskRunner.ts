@@ -2,7 +2,7 @@
 
 import { Pool, PoolClient } from 'pg';
 import { logger } from '../utils/logger';
-import { DownloadManager } from './downloadManager';
+import { DownloadManager } from './downloadManager/index';
 import {
   Task,
   TaskStatus,

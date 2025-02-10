@@ -13,7 +13,7 @@ import pool from './config/database';
 
 // Import utilities and services
 import { logger } from './utils/logger';
-import DownloadManager from './services/downloadManager';
+import DownloadManager from './services/downloadManager/index';
 
 // Import middleware
 import { loggingMiddleware } from './middleware/logging';

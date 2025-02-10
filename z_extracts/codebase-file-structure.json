@@ -1,5 +1,5 @@
 {
-  "updated_at": "2024-12-21T12:12:33.860622",
+  "updated_at": "2025-02-10T03:28:33.167134",
   "tree": {
     "backend": {
       "_files": [
@@ -45,6 +45,8 @@
             "016_channel_game_tracking.ts",
             "017_add_channel_live_status.ts",
             "018_fix_cleanup_vods.ts",
+            "019_user_settings.ts",
+            "020_fix_vod_id_type.ts",
             "runner.ts"
           ]
         },
@@ -146,8 +148,32 @@
               "index.ts"
             ]
           },
+          "downloadManager": {
+            "handlers": {
+              "_files": [
+                "downloadHandler.ts",
+                "taskHandler.ts"
+              ]
+            },
+            "_files": [
+              "index.ts",
+              "types.ts"
+            ],
+            "queue": {
+              "_files": [
+                "queueProcessor.ts"
+              ]
+            },
+            "utils": {
+              "_files": [
+                "checksums.ts",
+                "fileSystem.ts",
+                "resourceMonitor.ts",
+                "throttle.ts"
+              ]
+            }
+          },
           "_files": [
-            "downloadManager.ts",
             "gameMonitor.ts",
             "mediaServer.ts",
             "taskMonitor.ts",
@@ -315,10 +341,34 @@
             "Dashboard.tsx",
             "Games.tsx",
             "Login.tsx",
-            "Settings.tsx",
             "TaskManager.tsx",
             "TaskMonitoring.tsx"
-          ]
+          ],
+          "settings": {
+            "components": {
+              "_files": [
+                "DownloadSettings.tsx",
+                "FileOrganizationSettings.tsx",
+                "NotificationSettings.tsx",
+                "StorageSettings.tsx",
+                "index.ts"
+              ]
+            },
+            "hooks": {
+              "_files": [
+                "useSettings.ts"
+              ]
+            },
+            "_files": [
+              "index.tsx",
+              "types.ts"
+            ],
+            "utils": {
+              "_files": [
+                "format.ts"
+              ]
+            }
+          }
         },
         "services": {
           "auth": {
@@ -351,8 +401,7 @@
         "utils": {
           "_files": [
             "logger.ts",
-            "taskUtils.ts",
-            "taskValidation.ts"
+            "taskUtils.ts"
           ]
         }
       }

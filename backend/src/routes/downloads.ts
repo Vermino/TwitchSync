@@ -3,7 +3,7 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { authenticate } from '../middleware/auth';
-import DownloadManager from '../services/downloadManager';
+import DownloadManager from '../services/downloadManager/index';
 import { VOD, UserVODPreferences, DownloadPriority } from '../types/database';
 import { logger } from '../utils/logger';
 import { QueueStatus, IDownloadManager } from '../types/downloadManager';

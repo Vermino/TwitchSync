@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { Channel, Game, Task } from '@/types';
-import type { SystemSettings, StorageStats } from '@/types/settings';
+import { SettingsState } from '../pages/settings/types';
 import type {
   ChannelRecommendation,
   DiscoveryFeedResponse,
@@ -22,6 +22,7 @@ import {
   TaskStorage,
   UpdateTaskRequest
 } from "@/types";
+import {DashboardStats} from "../types";
 
 class ApiClient {
   private static instance: ApiClient;
@@ -160,11 +161,12 @@ class ApiClient {
   }
 
   // Settings Methods
-  async getSystemSettings(): Promise<SystemSettings> {
+  async getSystemSettings(): Promise<SettingsState> {
     try {
-      const response = await axios.get(`${this.baseURL}/settings/system`, {
-        headers: this.getHeaders()
-      });
+      const response = await axios.get(
+        `${this.baseURL}/settings/system`,
+        { headers: this.getHeaders() }
+      );
       return response.data;
     } catch (error) {
       console.error('Error fetching system settings:', error);
@@ -172,28 +174,55 @@ class ApiClient {
     }
   }
 
-  async updateSystemSettings(settings: Partial<SystemSettings>): Promise<SystemSettings> {
+  async updateSystemSettings(settings: SettingsState): Promise<void> {
     try {
-      const response = await axios.put(
-          `${this.baseURL}/settings/system`,
-          settings,
-          { headers: this.getHeaders() }
+      await axios.post(
+        `${this.baseURL}/settings/system`,
+        settings,
+        { headers: this.getHeaders() }
       );
-      return response.data;
     } catch (error) {
       console.error('Error updating system settings:', error);
       throw this.handleError(error);
     }
   }
 
-  async getStorageStats(): Promise<StorageStats> {
+  async getStorageStats(): Promise<{ totalSpace: number; usedSpace: number; freeSpace: number }> {
     try {
-      const response = await axios.get(`${this.baseURL}/system/storage`, {
-        headers: this.getHeaders()
-      });
+      const response = await axios.get(
+        `${this.baseURL}/settings/storage`,
+        { headers: this.getHeaders() }
+      );
       return response.data;
     } catch (error) {
       console.error('Error fetching storage stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async selectFolder(): Promise<{ path: string }> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/settings/select-folder`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error selecting folder:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async runStorageCleanup(): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/settings/storage/cleanup`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error running storage cleanup:', error);
       throw this.handleError(error);
     }
   }

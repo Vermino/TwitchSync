@@ -2,7 +2,7 @@
 
 import { Router } from 'express';
 import { Pool } from 'pg';
-import DownloadManager from '../../services/downloadManager';
+import DownloadManager from '../../services/downloadManager/index';
 import { authenticate } from '../../middleware/auth';
 import { validateRequest } from '../../middleware/validation';
 import {
