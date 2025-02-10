@@ -1,101 +1,89 @@
 // Filepath: frontend/src/types/task.ts
 
+export type TaskStatus = 'pending' | 'active' | 'completed' | 'failed' | 'running' | 'inactive' | 'cancelled';
 export type TaskType = 'channel' | 'game' | 'combined';
-export type TaskScheduleType = 'interval' | 'cron' | 'manual';
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
-
-export interface TaskConditions {
-  minFollowers?: number;
-  minViews?: number;
-  minDuration?: number;
-  languages?: string[];
-}
-
-export interface TaskRestrictions {
-  maxVodsPerChannel?: number;
-  maxStoragePerChannel?: number;
-  maxTotalVods?: number;
-  maxTotalStorage?: number;
-}
+export type ScheduleType = 'interval' | 'cron' | 'manual';
 
 export interface TaskProgress {
   percentage: number;
-  completed: number;
-  total: number;
-  current_item?: {
-    type: 'channel' | 'game';
-    name: string;
-    status: string;
+  status_message?: string;
+  current_progress?: {
+    completed: number;
+    total: number;
+    current_item?: {
+      name: string;
+      progress?: number;
+    };
   };
 }
 
-export interface TaskStorage {
-  used: number;
-  limit: number;
-  remaining: number;
-}
-
-export interface TaskVODStats {
-  total_vods: number;
-  total_size: number;
-  average_duration: number;
-  download_success_rate: number;
-  vods_by_quality: Record<string, number>;
-  vods_by_language: Record<string, number>;
+export interface TaskConfig {
+  channelId?: string;
+  gameId?: string;
+  quality: string;
+  retention: number;
+  filters?: {
+    minViewers?: number;
+    minDuration?: number;
+    requireChat?: boolean;
+  };
 }
 
 export interface Task {
   id: number;
   name: string;
-  description: string | null;
+  description?: string;
   task_type: TaskType;
+  status: TaskStatus;
   channel_ids: number[];
   game_ids: number[];
-  schedule_type: TaskScheduleType;
+  schedule_type: ScheduleType;
   schedule_value: string;
-  storage_limit_gb: number | null;
-  retention_days: number | null;
+  storage_limit_gb?: number;
+  retention_days?: number;
   auto_delete: boolean;
-  is_active: boolean;
-  status: TaskStatus;
   priority: TaskPriority;
-  conditions?: TaskConditions;
-  restrictions?: TaskRestrictions;
-  last_run: Date | null;
-  next_run: Date | null;
-  created_at: Date;
-  updated_at: Date;
+  conditions: Record<string, any>;
+  restrictions: Record<string, any>;
+  progress?: TaskProgress;
+  last_run?: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface TaskDetails {
+export interface Channel {
   id: number;
-  task_id: number;
-  progress: {
-    percentage: number;
-    completed: number;
-    total: number;
-    current_item?: {
-      type: 'channel' | 'game';
-      name: string;
-      status: string;
-    };
-  };
-  storage: {
-    used: number;
-    limit: number;
-    remaining: number;
-  };
-  vod_stats: {
-    total_vods: number;
-    total_size: number;
-    average_duration: number;
-    download_success_rate: number;
-    vods_by_quality: Record<string, number>;
-    vods_by_language: Record<string, number>;
-  };
-  created_at: Date;
-  updated_at: Date;
+  twitch_id: string;
+  username: string;
+  display_name: string;
+  profile_image_url: string | null;
+  description: string | null;
+  follower_count: number;
+  is_active: boolean;
+  is_live?: boolean;
+  last_stream_date?: string;
+  last_game_id?: string;
+  last_game_name?: string;
+  last_game_box_art?: string;
+  most_played_game?: string;
+  premieres?: any[];
+  last_game_check?: string | null;
+  current_game_id?: string | null;
+  created_at: string;
+}
+
+export interface Game {
+  id: number;
+  twitch_game_id: string;
+  name: string;
+  box_art_url?: string | null;
+  category?: string;
+  tags?: string[];
+  status?: string;
+  is_active: boolean;
+  last_check?: string | null;
+  created_at: string;
 }
 
 export interface CreateTaskRequest {
@@ -104,30 +92,16 @@ export interface CreateTaskRequest {
   task_type: TaskType;
   channel_ids: number[];
   game_ids: number[];
-  schedule_type: TaskScheduleType;
+  schedule_type: ScheduleType;
   schedule_value: string;
-  storage_limit_gb: number;
-  retention_days: number;
-  auto_delete: boolean;
-  is_active: boolean;
-  priority: TaskPriority;
-  conditions?: TaskConditions;
-  restrictions?: TaskRestrictions;
-}
-
-
-export interface UpdateTaskRequest {
-  name?: string;
-  description?: string;
-  channel_ids?: number[];
-  game_ids?: number[];
-  schedule_type?: TaskScheduleType;
-  schedule_value?: string;
   storage_limit_gb?: number;
   retention_days?: number;
   auto_delete?: boolean;
   priority?: TaskPriority;
-  conditions?: TaskConditions;
-  restrictions?: TaskRestrictions;
-  is_active?: boolean;
+  conditions?: Record<string, any>;
+  restrictions?: Record<string, any>;
+}
+
+export interface UpdateTaskRequest extends Partial<CreateTaskRequest> {
+  status?: TaskStatus;
 }

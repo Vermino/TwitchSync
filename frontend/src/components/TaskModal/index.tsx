@@ -1,16 +1,15 @@
-// Filepath: /frontend/src/components/TaskModal/index.tsx
+// Filepath: frontend/src/components/TaskModal/index.tsx
 
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Search } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Users, Gamepad2, Filter, Shield, Settings } from 'lucide-react';
+import { Search, Users, Gamepad2, Filter, Shield, Settings } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertCircle, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -21,7 +20,7 @@ import {
 import ConditionsTab from './ConditionsTab';
 import ChannelList from './ChannelList';
 import RestrictionsTab from './RestrictionsTab';
-import type { Task, CreateTaskRequest, Channel, Game } from '@/types/task';
+import type { Task, CreateTaskRequest, Channel, Game } from '@/types';
 import { validateTaskData } from '@/utils/taskValidation';
 import { generateTaskNameAndDescription } from '@/utils/taskUtils';
 import { logger } from '@/utils/logger';
@@ -84,7 +83,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
         restrictions: task.restrictions || {}
       });
     } else {
-      // Reset form for new task
       setTaskData({
         name: '',
         description: '',
@@ -108,7 +106,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
   }, [isOpen, task]);
 
   useEffect(() => {
-    // Auto-generate name and description when relevant fields change
     if (!taskData.name || !taskData.description) {
       const generated = generateTaskNameAndDescription(taskData, availableChannels, availableGames);
       setTaskData(prev => ({
@@ -131,7 +128,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
     setTaskData(prev => {
       const newData = { ...prev, [field]: value };
 
-      // Clear inappropriate IDs when task type changes
       if (field === 'task_type') {
         switch (value) {
           case 'channel':
@@ -157,7 +153,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
     if (taskData.schedule_type === 'interval') {
       const interval = parseInt(taskData.schedule_value || '0');
-      if (interval < 300) { // 5 minutes minimum
+      if (interval < 300) {
         errors.push('Interval must be at least 5 minutes');
       }
     }
@@ -182,7 +178,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      // Ensure name and description are set
       const finalData = {
         ...taskData,
         ...(!taskData.name && {
@@ -212,16 +207,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
-   return (
+  return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col pt-6 px-8">
         <DialogHeader>
-          <DialogTitle>
-            {task ? 'Edit Task' : 'Create New Task'}
-          </DialogTitle>
-          <div className="text-sm text-muted-foreground">
+          <DialogTitle>{task ? 'Edit Task' : 'Create New Task'}</DialogTitle>
+          <DialogDescription>
             Configure your task settings, including channels, games, and scheduling options.
-          </div>
+          </DialogDescription>
+          <div className="flex gap-2 mt-2">
             <Badge variant="outline" className="flex items-center gap-1">
               <Users className="h-3 w-3"/>
               {taskData.channel_ids?.length || 0} channels
@@ -234,7 +228,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
         </DialogHeader>
 
         {validationErrors.length > 0 && (
-          <Alert variant="destructive" className="mb-4">
+          <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
               <ul className="list-disc pl-4">
@@ -335,9 +329,58 @@ const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             </TabsContent>
 
-            {/* Games tab content */}
             <TabsContent value="games" className="h-[460px] p-4">
-              {/* Similar structure to channels tab */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search games..."
+                  value={gameSearch}
+                  onChange={e => setGameSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                {availableGames
+                  .filter(game =>
+                    !gameSearch ||
+                    game.name.toLowerCase().includes(gameSearch.toLowerCase())
+                  )
+                  .map(game => (
+                    <div
+                      key={game.id}
+                      className={`
+                        p-4 rounded-lg border cursor-pointer
+                        ${taskData.game_ids?.includes(game.id) 
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:border-purple-200'}
+                      `}
+                      onClick={() => {
+                        const currentIds = taskData.game_ids || [];
+                        const newIds = currentIds.includes(game.id)
+                          ? currentIds.filter(id => id !== game.id)
+                          : [...currentIds, game.id];
+                        handleInputChange('game_ids', newIds);
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={game.box_art_url}
+                          alt={game.name}
+                          className="w-12 h-16 rounded object-cover"
+                        />
+                        <div>
+                          <div className="font-medium">{game.name}</div>
+                          {game.category && (
+                            <div className="text-sm text-muted-foreground">
+                              {game.category}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </TabsContent>
 
             <TabsContent value="conditions" className="p-4">
@@ -356,7 +399,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
             <TabsContent value="settings" className="p-4">
               <div className="grid grid-cols-2 gap-6">
-                {/* Schedule settings */}
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Schedule Type</Label>
@@ -378,8 +420,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   <div className="space-y-2">
                     <Label>
                       {taskData.schedule_type === 'interval' ? 'Interval (seconds)' :
-                        taskData.schedule_type === 'cron' ? 'Cron Expression' :
-                          'Schedule Value'}
+                       taskData.schedule_type === 'cron' ? 'Cron Expression' :
+                       'Schedule Value'}
                     </Label>
                     <Input
                       type={taskData.schedule_type === 'interval' ? 'number' : 'text'}
@@ -387,8 +429,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={e => handleInputChange('schedule_value', e.target.value)}
                       placeholder={
                         taskData.schedule_type === 'interval' ? '3600' :
-                          taskData.schedule_type === 'cron' ? '0 */6 * * *' :
-                            ''
+                        taskData.schedule_type === 'cron' ? '0 */6 * * *' :
+                        ''
                       }
                       disabled={taskData.schedule_type === 'manual'}
                     />
@@ -400,7 +442,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   </div>
                 </div>
 
-                {/* Other settings */}
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Priority Level</Label>

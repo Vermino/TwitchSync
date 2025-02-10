@@ -31,12 +31,44 @@ export class TasksController {
         return;
       }
 
-      const result = await client.query<Task>(`
+      // Updated query to properly join with task_monitoring
+      const result = await client.query(`
+        WITH latest_monitoring AS (
+          SELECT DISTINCT ON (task_id)
+            task_id,
+            status as monitoring_status,
+            status_message,
+            progress_percentage,
+            items_total,
+            items_completed,
+            items_failed,
+            created_at,
+            updated_at
+          FROM task_monitoring
+          ORDER BY task_id, created_at DESC
+        )
         SELECT 
           t.*,
-          COUNT(th.id) as total_runs,
-          COUNT(CASE WHEN th.status = 'success' THEN 1 END) as successful_runs,
-          MAX(th.end_time) as last_completed,
+          tm.monitoring_status,
+          tm.status_message,
+          tm.progress_percentage,
+          tm.items_total,
+          tm.items_completed,
+          COALESCE(
+            jsonb_build_object(
+              'percentage', COALESCE(tm.progress_percentage, 0),
+              'status_message', tm.status_message,
+              'current_progress', jsonb_build_object(
+                'completed', COALESCE(tm.items_completed, 0),
+                'total', COALESCE(tm.items_total, 0)
+              )
+            ),
+            jsonb_build_object(
+              'percentage', 0,
+              'status_message', null,
+              'current_progress', null
+            )
+          ) as progress,
           (
             SELECT COUNT(*)
             FROM vods v
@@ -46,29 +78,23 @@ export class TasksController {
             SELECT COUNT(*)
             FROM vods v
             WHERE v.task_id = t.id AND v.status = 'completed'
-          ) as completed_vods,
-          COALESCE(
-            (
-              SELECT jsonb_build_object(
-                'percentage', COALESCE(tm.progress_percentage, 0),
-                'message', tm.status_message
-              )
-              FROM task_monitoring tm
-              WHERE tm.task_id = t.id
-              ORDER BY tm.created_at DESC
-              LIMIT 1
-            ),
-            jsonb_build_object(
-              'percentage', 0,
-              'message', null
-            )
-          ) as progress
+          ) as completed_vods
         FROM tasks t
-        LEFT JOIN task_history th ON t.id = th.task_id
+        LEFT JOIN latest_monitoring tm ON t.id = tm.task_id
         WHERE t.user_id = $1
-        GROUP BY t.id
         ORDER BY t.created_at DESC
       `, [userId]);
+
+      // Log the results for debugging
+      logger.debug('Tasks fetched:', {
+        count: result.rows.length,
+        tasks: result.rows.map(t => ({
+          id: t.id,
+          name: t.name,
+          status: t.status,
+          progress: t.progress
+        }))
+      });
 
       res.json(result.rows);
     } catch (error) {
@@ -90,7 +116,7 @@ export class TasksController {
         return;
       }
 
-      const result = await client.query(`
+      const result = await client.query<Task>(`
         SELECT 
           t.*,
           COUNT(th.id) as total_runs,
@@ -106,27 +132,28 @@ export class TasksController {
             FROM vods v
             WHERE v.task_id = t.id AND v.status = 'completed'
           ) as completed_vods,
+          tm.status as monitoring_status,
+          tm.status_message,
+          tm.progress_percentage,
           COALESCE(
-            (
-              SELECT jsonb_build_object(
-                'percentage', COALESCE(tm.progress_percentage, 0),
-                'message', tm.status_message
-              )
-              FROM task_monitoring tm
-              WHERE tm.task_id = t.id
-              ORDER BY tm.created_at DESC
-              LIMIT 1
+            jsonb_build_object(
+              'percentage', COALESCE(tm.progress_percentage, 0),
+              'message', tm.status_message,
+              'status', tm.status
             ),
             jsonb_build_object(
               'percentage', 0,
-              'message', null
+              'message', null,
+              'status', 'created'
             )
           ) as progress
         FROM tasks t
         LEFT JOIN task_history th ON t.id = th.task_id
-        WHERE t.id = $1 AND t.user_id = $2
-        GROUP BY t.id
-      `, [taskId, userId]);
+        LEFT JOIN task_monitoring tm ON t.id = tm.task_id
+        WHERE t.user_id = $1
+        GROUP BY t.id, tm.id
+        ORDER BY t.created_at DESC
+      `, [userId]);
 
       if (result.rows.length === 0) {
         res.status(404).json({ error: 'Task not found' });
@@ -152,27 +179,7 @@ export class TasksController {
         return;
       }
 
-      const result = await CreateTaskSchema.safeParseAsync(req);
-      if (!result.success) {
-        res.status(400).json({ error: 'Invalid task data', details: result.error });
-        return;
-      }
-
-      const taskData = {
-        ...result.data.body,
-        user_id: userId
-      };
-
-      // Generate default name if not provided
-      if (!taskData.name) {
-        const typeLabel = taskData.task_type === 'combined' ? 'Combined' :
-          taskData.task_type === 'channel' ? 'Channel' : 'Game';
-        const itemCount = (taskData.channel_ids?.length || 0) + (taskData.game_ids?.length || 0);
-        const scheduleLabel = taskData.schedule_type === 'interval' ?
-          `Every ${parseInt(taskData.schedule_value) / 3600} hours` :
-          'Custom schedule';
-        taskData.name = `${typeLabel} Task: ${itemCount} items - ${scheduleLabel}`;
-      }
+      const taskData = req.body;
 
       await client.query('BEGIN');
 
@@ -199,12 +206,8 @@ export class TasksController {
             created_at,
             updated_at
           )
-          VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 
-            $12::task_priority_level, $13, 'pending', $14, $15,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-          )
-          RETURNING *
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::task_priority_level, $13, 'pending', $14, $15, NOW(), NOW())
+          RETURNING id
         `, [
           taskData.name,
           taskData.description,
@@ -217,31 +220,69 @@ export class TasksController {
           taskData.retention_days,
           taskData.auto_delete || false,
           taskData.is_active,
-          taskData.priority,
-          taskData.user_id,
+          taskData.priority || 'normal',
+          userId,
           taskData.conditions || {},
           taskData.restrictions || {}
         ]);
 
-        // Initialize task monitoring
-        await client.query(`
+        const taskId = dbResult.rows[0].id;
+
+        // Initialize task monitoring record
+        const monitoringResult = await client.query(`
           INSERT INTO task_monitoring (
             task_id,
+            status,
             status_message,
             progress_percentage,
-            created_at
+            items_total,
+            items_completed,
+            items_failed,
+            created_at,
+            updated_at,
+            metadata
           )
-          VALUES ($1, 'Task created', 0, CURRENT_TIMESTAMP)
-        `, [dbResult.rows[0].id]);
+          VALUES ($1, 'pending', 'Task created and pending execution', 0, 0, 0, 0, NOW(), NOW(), '{}')
+          ON CONFLICT (task_id) 
+          DO UPDATE SET
+            status = EXCLUDED.status,
+            status_message = EXCLUDED.status_message,
+            updated_at = NOW()
+          RETURNING *
+        `, [taskId]);
 
         await client.query('COMMIT');
 
+        // Fetch complete task data
+        const taskResult = await client.query(`
+          SELECT 
+            t.*,
+            tm.status as monitoring_status,
+            tm.status_message,
+            tm.progress_percentage,
+            tm.items_total,
+            tm.items_completed,
+            jsonb_build_object(
+              'percentage', COALESCE(tm.progress_percentage, 0),
+              'status_message', tm.status_message,
+              'current_progress', jsonb_build_object(
+                'completed', COALESCE(tm.items_completed, 0),
+                'total', COALESCE(tm.items_total, 0)
+              )
+            ) as progress
+          FROM tasks t
+          LEFT JOIN task_monitoring tm ON t.id = tm.task_id
+          WHERE t.id = $1
+        `, [taskId]);
+
         logger.info('Task created successfully', {
-          taskId: dbResult.rows[0].id,
-          taskType: taskData.task_type
+          taskId,
+          taskType: taskData.task_type,
+          monitoringId: monitoringResult.rows[0].id,
+          taskData: taskResult.rows[0]
         });
 
-        res.status(201).json(dbResult.rows[0]);
+        res.status(201).json(taskResult.rows[0]);
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;

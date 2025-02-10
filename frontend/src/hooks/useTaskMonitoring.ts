@@ -1,6 +1,6 @@
 // Filepath: frontend/src/hooks/useTaskMonitoring.ts
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export interface TaskMonitoringData {
@@ -32,38 +32,66 @@ export interface TaskMonitoringData {
   }>;
 }
 
-export function useTaskMonitoring(taskId: string | undefined) {
+interface UseTaskMonitoringOptions {
+  enabled?: boolean;
+  refetchInterval?: number;
+}
+
+export function useTaskMonitoring(taskId: string | undefined, options: UseTaskMonitoringOptions = {}) {
+  const queryClient = useQueryClient();
+  const { enabled = true, refetchInterval = 30000 } = options;
+
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['taskStats', taskId],
-    queryFn: () => api.get(`/tasks/${taskId}/stats`).then(res => res.data),
-    enabled: !!taskId,
-    refetchInterval: 30000 // Refetch every 30 seconds
+    queryFn: () => api.getTaskProgress(taskId!),
+    enabled: !!taskId && enabled,
+    refetchInterval,
+    retry: 3
   });
 
   const { data: performance, isLoading: performanceLoading } = useQuery({
     queryKey: ['taskPerformance', taskId],
-    queryFn: () => api.get(`/tasks/${taskId}/performance`).then(res => res.data),
-    enabled: !!taskId,
-    refetchInterval: 30000
+    queryFn: () => api.getTaskStorage(taskId!),
+    enabled: !!taskId && enabled,
+    refetchInterval,
+    retry: 3
   });
 
   const { data: alerts, isLoading: alertsLoading } = useQuery({
     queryKey: ['taskAlerts', taskId],
-    queryFn: () => api.get(`/tasks/${taskId}/alerts`).then(res => res.data),
-    enabled: !!taskId,
-    refetchInterval: 30000
+    queryFn: async () => {
+      const details = await api.getTaskDetails(taskId!);
+      return details.alerts || [];
+    },
+    enabled: !!taskId && enabled,
+    refetchInterval,
+    retry: 3
   });
+
+  const acknowledgeAlert = async (alertId: number) => {
+    try {
+      await api.updateTaskDetails(taskId!, {
+        acknowledgedAlerts: [alertId]
+      });
+      queryClient.invalidateQueries(['taskAlerts', taskId]);
+    } catch (error) {
+      console.error('Error acknowledging alert:', error);
+      throw error;
+    }
+  };
+
+  const refetchAll = () => {
+    queryClient.invalidateQueries(['taskStats', taskId]);
+    queryClient.invalidateQueries(['taskPerformance', taskId]);
+    queryClient.invalidateQueries(['taskAlerts', taskId]);
+  };
 
   return {
     stats,
     performance,
     alerts,
     isLoading: statsLoading || performanceLoading || alertsLoading,
-    refetch: () => {
-      // Manually refetch all queries
-      queryClient.invalidateQueries(['taskStats', taskId]);
-      queryClient.invalidateQueries(['taskPerformance', taskId]);
-      queryClient.invalidateQueries(['taskAlerts', taskId]);
-    }
+    acknowledgeAlert,
+    refetch: refetchAll
   };
 }

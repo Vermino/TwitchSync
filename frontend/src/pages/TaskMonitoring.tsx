@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Card,
@@ -11,15 +10,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Bell, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {useEffect, useState} from "react";
 
 const TaskMonitoring = () => {
   const { taskId } = useParams();
   const [taskStats, setTaskStats] = useState(null);
   const [performanceData, setPerformanceData] = useState([]);
   const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Fetch initial data
@@ -29,26 +28,30 @@ const TaskMonitoring = () => {
     return () => clearInterval(interval);
   }, [taskId]);
 
-  const fetchTaskData = async () => {
+const fetchTaskData = async () => {
     try {
-      // These would be your actual API endpoints
-      const statsResponse = await fetch(`/api/tasks/${taskId}/stats`);
-      const performanceResponse = await fetch(`/api/tasks/${taskId}/performance`);
-      const alertsResponse = await fetch(`/api/tasks/${taskId}/alerts`);
+        const statsResponse = await fetch(`/api/tasks/${taskId}/stats`);
+        if (!statsResponse.ok) throw new Error('Failed to fetch stats');
+        const performanceResponse = await fetch(`/api/tasks/${taskId}/performance`);
+        if (!performanceResponse.ok) throw new Error('Failed to fetch performance data');
+        const alertsResponse = await fetch(`/api/tasks/${taskId}/alerts`);
+        if (!alertsResponse.ok) throw new Error('Failed to fetch alerts');
 
-      const stats = await statsResponse.json();
-      const performance = await performanceResponse.json();
-      const alerts = await alertsResponse.json();
+        const stats = await statsResponse.json();
+        const performance = await performanceResponse.json();
+        const alerts = await alertsResponse.json();
 
-      setTaskStats(stats);
-      setPerformanceData(performance);
-      setAlerts(alerts);
+        setTaskStats(stats);
+        setPerformanceData(performance);
+        setAlerts(alerts);
     } catch (error) {
-      console.error('Error fetching task data:', error);
+        console.error('Error fetching task data:', error);
+        // Add a state for showing errors to the user
+        setAlerts([{ id: 'fetch-error', type: 'error', message: error.message }]);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
   const getHealthStatus = () => {
     if (!taskStats) return 'unknown';
