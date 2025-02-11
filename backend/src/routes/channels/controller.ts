@@ -3,7 +3,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
-import { twitchAPI } from '../../services/twitch/api';
+import { TwitchService } from '../../services/twitch/service';
 import { withTransaction } from '../../middleware/withTransaction';
 import {
   ChannelError,
@@ -14,13 +14,17 @@ import {
 } from './validation';
 
 export class ChannelsController {
-  constructor(private pool: Pool) {}
+  private twitchService: TwitchService;
+
+  constructor(private pool: Pool) {
+    this.twitchService = TwitchService.getInstance();
+  }
 
   searchChannels = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { query } = req.query;
 
-      const channels = await twitchAPI.searchChannels(query as string);
+      const channels = await this.twitchService.searchChannels(query as string);
 
       // Cache results for 5 minutes
       res.set('Cache-Control', 'public, max-age=300');
@@ -134,7 +138,7 @@ export class ChannelsController {
       const updatedChannels = await Promise.all(
         result.channels.map(async (channel) => {
           try {
-            const currentGame = await twitchAPI.getCurrentGame(channel.twitch_id);
+            const currentGame = await this.twitchService.getCurrentGame(channel.twitch_id);
             if (currentGame) {
               return {
                 ...channel,
@@ -182,7 +186,7 @@ export class ChannelsController {
 
         // Get fresh follower count from Twitch
         try {
-          const followerCount = await twitchAPI.getChannelFollowers(channelData.twitch_id);
+          const followerCount = await this.twitchService.getChannelFollowers(channelData.twitch_id);
           channelData.follower_count = followerCount;
         } catch (error) {
           logger.warn(`Could not fetch follower count for channel ${channelData.username}:`, error);

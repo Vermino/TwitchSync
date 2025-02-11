@@ -1,5 +1,6 @@
-// backend/src/types/discovery.ts
+// Filepath: backend/src/types/discovery.ts
 
+// Base Types
 export interface TwitchStream {
   id: string;
   user_id: string;
@@ -16,20 +17,68 @@ export interface TwitchStream {
   tags: string[];
 }
 
+// Recommendation Types
+export interface RecommendationBase {
+  id: string;
+  type: 'channel' | 'game';
+  compatibility_score: number;
+}
+
+export interface RecommendationReason {
+  type: 'GAME_OVERLAP' | 'VIEWER_OVERLAP' | 'SCHEDULE_MATCH';
+  strength: number;
+}
+
+export interface ChannelRecommendation extends RecommendationBase {
+  type: 'channel';
+  display_name: string;
+  login: string;
+  profile_image_url: string;
+  description: string;
+  viewer_count: number;
+  recommendation_reasons: RecommendationReason[];
+  current_game?: {
+    id: string;
+    name: string;
+    box_art_url: string;
+  };
+  tags?: string[];
+}
+
+export interface GameRecommendation extends RecommendationBase {
+  type: 'game';
+  game_id: string;
+  name: string;
+  box_art_url: string;
+  category?: string;
+  tags?: string[];
+}
+
+export type Recommendation = ChannelRecommendation | GameRecommendation;
+
+// Premiere Types
 export interface PremiereEvent {
   id: string;
   type: 'CHANNEL_PREMIERE' | 'GAME_PREMIERE' | 'RISING_STAR';
-  channel_id: number;
-  game_id: number;
-  start_time: Date;
+  channel_id: string;
+  game_id: string;
+  start_time: string;
   predicted_viewers: number;
   confidence_score: number;
-  similar_channels: number;
+  similar_channels: string[];
   viewer_trend: 'rising' | 'stable' | 'falling';
-  metadata: Record<string, any>;
-  created_at: Date;
+  metadata: {
+    gameGenres?: string[];
+    channelTags?: string[];
+    isFirstPlay?: boolean;
+    growthRate?: number;
+    peakViewers?: number;
+    detectionDate?: string;
+  };
+  created_at: string;
 }
 
+// Preferences & Settings Types
 export interface DiscoveryPreferences {
   id: number;
   user_id: number;
@@ -44,6 +93,25 @@ export interface DiscoveryPreferences {
   updated_at: Date;
 }
 
+export type UserPreferences = DiscoveryPreferences;
+
+export interface FilterSettings {
+  minViewers: number;
+  maxViewers: number;
+  preferredLanguages: string[];
+  contentRating: 'all' | 'mature' | 'family';
+  notifyOnly: boolean;
+  scheduleMatch: boolean;
+  confidenceThreshold: number;
+}
+
+export interface StreamFilters {
+  languages?: string[];
+  limit?: number;
+  gameId?: string;
+}
+
+// Metrics & Stats Types
 export interface ChannelMetrics {
   id: number;
   channel_id: number;
@@ -54,29 +122,12 @@ export interface ChannelMetrics {
   recorded_at: Date;
 }
 
-export interface PremiereTracking {
-  id: number;
-  user_id: number;
-  premiere_id: number;
-  task_id?: number;
-  ignored: boolean;
-  created_at: Date;
-}
-
-export interface DiscoveryRecommendation {
-  id: string;
-  type: 'CHANNEL' | 'GAME';
-  score: number;
-  reasons: Array<{
-    type: 'GAME_OVERLAP' | 'VIEWER_OVERLAP' | 'SCHEDULE_MATCH';
-    strength: number;
-  }>;
-  entity: {
-    id: string;
-    name: string;
-    thumbnail: string;
-    metrics: Record<string, number>;
-  };
+export interface DiscoveryStats {
+  upcomingPremieres: number;
+  trackedPremieres: number;
+  risingChannels: number;
+  pendingArchives: number;
+  todayDiscovered: number;
 }
 
 export interface ChannelCompatibility {
@@ -89,7 +140,7 @@ export interface ChannelCompatibility {
   };
 }
 
-// Request/Response types
+// Request Types
 export interface UpdatePreferencesRequest {
   min_viewers?: number;
   max_viewers?: number;
@@ -106,6 +157,7 @@ export interface TrackPremiereRequest {
   notify: boolean;
 }
 
+// Response Types
 export interface DiscoveryFeedResponse {
   preferences: DiscoveryPreferences;
   premieres: Array<PremiereEvent & {
@@ -131,6 +183,22 @@ export interface DiscoveryFeedResponse {
   }>;
 }
 
+export interface DiscoveryRecommendation {
+  id: string;
+  type: 'CHANNEL' | 'GAME';
+  score: number;
+  reasons: Array<{
+    type: 'GAME_OVERLAP' | 'VIEWER_OVERLAP' | 'SCHEDULE_MATCH';
+    strength: number;
+  }>;
+  entity: {
+    id: string;
+    name: string;
+    thumbnail: string;
+    metrics: Record<string, number>;
+  };
+}
+
 export interface RecommendationsResponse {
   channels: Array<DiscoveryRecommendation & {
     channel: {
@@ -151,71 +219,21 @@ export interface RecommendationsResponse {
   }>;
 }
 
-// Filepath: backend/src/types/discovery.ts
-
-export interface StreamFilters {
-  limit?: number;
-  languages?: string[];
-  gameId?: string;
+// Tracking Types
+export interface PremiereTracking {
+  id: number;
+  user_id: number;
+  premiere_id: number;
+  task_id?: number;
+  ignored: boolean;
+  created_at: Date;
 }
 
-export interface BaseRecommendation {
-  id: string;
-  type: 'channel' | 'game';
-  compatibility_score: number;
-}
-
-export interface ChannelRecommendation extends BaseRecommendation {
-  type: 'channel';
-  display_name: string;
-  login: string;
-  profile_image_url: string | null;
-  description: string | null;
-  viewer_count: number;
-}
-
-export interface GameRecommendation extends BaseRecommendation {
-  type: 'game';
-  game_id: string;  // Required field for game recommendations
-  name: string;
-  box_art_url: string;
-}
-
-export interface StreamFilters {
-  languages?: string[];
-  limit?: number;
-  gameId?: string;
-}
-
-export interface UserPreferences {
-  preferred_languages: string[];
-  min_viewers: number;
-  max_viewers: number;
-  preferred_categories: string[];
-  schedule_preference: string;
-}
-
-export interface FilterSettings {
-  minViewers: number;
-  maxViewers: number;
-  preferredLanguages: string[];
-  contentRating: 'all' | 'mature' | 'family';
-  notifyOnly: boolean;
-  scheduleMatch: boolean;
-  confidenceThreshold: number;
-}
-
-export interface DiscoveryStats {
-  upcomingPremieres: number;
-  trackedPremieres: number;
-  risingChannels: number;
-  pendingArchives: number;
-  todayDiscovered: number;
-}
-
-export interface Recommendation {
-  id: string;
-  type: 'channel' | 'game';
-  compatibility_score: number;
-  [key: string]: any;  // Allow additional properties based on type
+// Database Schema Types
+export interface DatabaseSchema {
+  discovery_preferences: DiscoveryPreferences;
+  premiere_events: PremiereEvent;
+  channel_metrics: ChannelMetrics;
+  user_premiere_tracking: PremiereTracking;
+  channel_metrics_archive: ChannelMetrics;
 }

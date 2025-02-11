@@ -1,5 +1,5 @@
 {
-  "updated_at": "2025-02-10T03:28:33.167134",
+  "updated_at": "2025-02-10T16:42:36.833803",
   "tree": {
     "backend": {
       "_files": [
@@ -47,6 +47,7 @@
             "018_fix_cleanup_vods.ts",
             "019_user_settings.ts",
             "020_fix_vod_id_type.ts",
+            "021_add_task_skipped_vods.ts",
             "runner.ts"
           ]
         },
@@ -145,7 +146,10 @@
           },
           "discovery": {
             "_files": [
-              "index.ts"
+              "index.ts",
+              "preferences-manager.ts",
+              "premiere-detector.ts",
+              "recommendations-manager.ts"
             ]
           },
           "downloadManager": {
@@ -201,9 +205,13 @@
           },
           "twitch": {
             "_files": [
+              "api-client.ts",
               "api.ts",
+              "base-client.ts",
               "client.ts",
-              "index.ts"
+              "index.ts",
+              "service.ts",
+              "types.ts"
             ]
           }
         },

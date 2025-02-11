@@ -3,7 +3,8 @@
 import { Pool, PoolClient } from 'pg';
 import { EventEmitter } from 'events';
 import { logger } from '../../../utils/logger';
-import { TwitchAPIService } from '../../twitch/api';
+import { TwitchService } from '../../twitch/service';
+import { TwitchVOD } from '../../twitch/types';
 import { DownloadHandler } from './downloadHandler';
 import axios from 'axios';
 
@@ -14,26 +15,15 @@ interface TaskProgress {
   percentage: number;
 }
 
-interface VodMetadata {
-  id: string;
-  title: string;
-  description: string;
-  created_at: string;
-  duration: string;
-  language: string;
-  view_count: number;
-  content_type: string;
-}
-
 export class TaskHandler extends EventEmitter {
-  private twitchAPI: TwitchAPIService;
+  private twitchService: TwitchService;
 
   constructor(
     private pool: Pool,
     private downloadHandler: DownloadHandler
   ) {
     super();
-    this.twitchAPI = TwitchAPIService.getInstance();
+    this.twitchService = TwitchService.getInstance();
   }
 
   async executeTask(taskId: number): Promise<void> {
@@ -75,55 +65,51 @@ export class TaskHandler extends EventEmitter {
               percentage: (processedChannels / totalChannels) * 100
             }, client);
 
-            const vods = await this.twitchAPI.getChannelVODs(channelId.toString());
+            const vods = await this.twitchService.getChannelVODs(channelId.toString());
             logger.info(`Found ${vods.length} downloadable VODs for channel ${channelId}`);
             totalVods += vods.length;
 
             for (const vod of vods) {
               try {
-                // Fetch VOD metadata before queueing
-                try {
-                  const vodMetadata = await this.twitchAPI.getVODInfo(vod.id);
-                  await this.queueVODDownload(vodMetadata, task.priority, taskId, client);
-                  processedVods++;
+                const vodInfo = await this.twitchService.getVODInfo(vod.id);
+                if (!vodInfo) {
+                  throw new Error(`Failed to get metadata for VOD ${vod.id}`);
+                }
 
-                  await this.updateTaskProgress(taskId, {
-                    message: `Added VOD ${vod.id} to queue`,
-                    total: totalVods,
-                    completed: processedVods,
-                    percentage: (processedVods / totalVods) * 100
-                  }, client);
-                } catch (err) {
-                  const error = err instanceof Error ? err : new Error(String(err));
+                await this.queueVODDownload(vodInfo, task.priority, taskId, client);
+                processedVods++;
 
-                  if (axios.isAxiosError(error) && error.response?.status === 404) {
-                    // VOD is no longer available, skip it
-                    skippedVods++;
-                    logger.warn(`Skipping unavailable VOD ${vod.id}`);
+                await this.updateTaskProgress(taskId, {
+                  message: `Added VOD ${vod.id} to queue`,
+                  total: totalVods,
+                  completed: processedVods,
+                  percentage: (processedVods / totalVods) * 100
+                }, client);
+              } catch (err) {
+                const error = err instanceof Error ? err : new Error(String(err));
 
-                    await client.query(`
-                      INSERT INTO task_skipped_vods 
-                        (task_id, vod_id, reason, error_message, created_at)
-                      VALUES 
-                        ($1, $2, 'VOD_NOT_FOUND', NULL, NOW())
-                    `, [taskId, vod.id]);
+                if (axios.isAxiosError(error) && error.response?.status === 404) {
+                  skippedVods++;
+                  logger.warn(`Skipping unavailable VOD ${vod.id}`);
 
-                    continue;
-                  }
-
-                  // Log other errors
                   await client.query(`
                     INSERT INTO task_skipped_vods 
                       (task_id, vod_id, reason, error_message, created_at)
                     VALUES 
-                      ($1, $2, 'ERROR', $3, NOW())
-                  `, [taskId, vod.id, error.message]);
-
-                  skippedVods++;
-                  logger.error(`Error processing VOD ${vod.id}:`, error);
+                      ($1, $2, 'VOD_NOT_FOUND', NULL, NOW())
+                  `, [taskId, vod.id]);
+                  continue;
                 }
-              } catch (error) {
-                logger.error(`Error queuing VOD ${vod.id}:`, error);
+
+                await client.query(`
+                  INSERT INTO task_skipped_vods 
+                    (task_id, vod_id, reason, error_message, created_at)
+                  VALUES 
+                    ($1, $2, 'ERROR', $3, NOW())
+                `, [taskId, vod.id, error.message]);
+
+                skippedVods++;
+                logger.error(`Error processing VOD ${vod.id}:`, error);
               }
             }
 
@@ -132,12 +118,6 @@ export class TaskHandler extends EventEmitter {
             logger.error(`Error processing channel ${channelId}:`, error);
           }
         }
-      }
-
-      // Process games
-      if (task.game_ids?.length > 0) {
-        // Similar process for games...
-        // Implement game VOD discovery logic here
       }
 
       // Update task completion
@@ -166,7 +146,106 @@ export class TaskHandler extends EventEmitter {
     }
   }
 
-  // Rest of the class implementation...
+  private async queueVODDownload(
+    vod: TwitchVOD,
+    priority: string,
+    taskId: number,
+    client: PoolClient
+  ): Promise<void> {
+    try {
+      await client.query('BEGIN');
+
+      // Check if VOD exists
+      const vodExists = await client.query(`
+        SELECT id 
+        FROM vods 
+        WHERE twitch_id = $1::bigint
+      `, [vod.id]);
+
+      if (vodExists.rows.length === 0) {
+        // Create new VOD entry
+        await client.query(`
+          INSERT INTO vods (
+            twitch_id,
+            task_id,
+            title,
+            description,
+            duration,
+            type,
+            language,
+            view_count,
+            download_status,
+            download_priority,
+            retry_count,
+            max_retries,
+            preferred_quality,
+            download_chat,
+            download_markers,
+            thumbnail_url,
+            published_at,
+            processing_options,
+            created_at,
+            updated_at
+          ) VALUES (
+            $1::bigint, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, 0, 3, 'source',
+            true, true, $10, $11, $12, NOW(), NOW()
+          )
+        `, [
+          vod.id,
+          taskId,
+          vod.title,
+          vod.description,
+          vod.duration,
+          vod.type,
+          vod.language,
+          vod.view_count,
+          priority,
+          vod.thumbnail_url,
+          vod.published_at,
+          { transcode: false, extract_chat: true }
+        ]);
+      } else {
+        // Update existing VOD
+        await client.query(`
+          UPDATE vods 
+          SET download_status = 'queued',
+              task_id = $2,
+              title = $3,
+              description = $4,
+              duration = $5,
+              type = $6,
+              language = $7,
+              view_count = $8,
+              download_priority = $9,
+              thumbnail_url = $10,
+              published_at = $11,
+              processing_options = $12,
+              retry_count = 0,
+              updated_at = NOW()
+          WHERE twitch_id = $1::bigint
+        `, [
+          vod.id,
+          taskId,
+          vod.title,
+          vod.description,
+          vod.duration,
+          vod.type,
+          vod.language,
+          vod.view_count,
+          priority,
+          vod.thumbnail_url,
+          vod.published_at,
+          { transcode: false, extract_chat: true }
+        ]);
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  }
+
   private async updateTaskProgress(
     taskId: number,
     progress: TaskProgress,
@@ -191,8 +270,7 @@ export class TaskHandler extends EventEmitter {
       ]);
 
       this.emit('task:progress', { taskId, ...progress });
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+    } catch (error) {
       logger.error(`Error updating task progress for task ${taskId}:`, error);
     }
   }
@@ -238,110 +316,6 @@ export class TaskHandler extends EventEmitter {
       logger.error(`Error updating task completion for task ${taskId}:`, error);
     }
   }
-
-  private async queueVODDownload(
-    vodMetadata: VodMetadata,
-    priority: string,
-    taskId: number,
-    client: PoolClient
-  ): Promise<void> {
-    try {
-      await client.query('BEGIN');
-
-      // Check if VOD exists
-      const vodExists = await client.query(`
-        SELECT id 
-        FROM vods 
-        WHERE twitch_id = $1::bigint
-      `, [vodMetadata.id]);
-
-      if (vodExists.rows.length === 0) {
-        // Create new VOD entry
-        await client.query(`
-          INSERT INTO vods (
-            twitch_id,
-            task_id,
-            title,
-            description,
-            duration,
-            content_type,
-            language,
-            view_count,
-            download_status,
-            download_priority,
-            retry_count,
-            max_retries,
-            preferred_quality,
-            download_chat,
-            download_markers,
-            processing_options,
-            created_at,
-            updated_at
-          ) VALUES (
-            $1::bigint,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8,
-            'queued',
-            $9,
-            0,
-            3,
-            'source',
-            true,
-            true,
-            $10,
-            NOW(),
-            NOW()
-          )
-        `, [
-          vodMetadata.id,
-          taskId,
-          vodMetadata.title,
-          vodMetadata.description,
-          vodMetadata.duration,
-          vodMetadata.content_type,
-          vodMetadata.language,
-          vodMetadata.view_count,
-          priority,
-          { transcode: false, extract_chat: true }
-        ]);
-      } else {
-        // Update existing VOD
-        await client.query(`
-          UPDATE vods 
-          SET download_status = 'queued',
-              task_id = $2,
-              title = $3,
-              description = $4,
-              duration = $5,
-              content_type = $6,
-              language = $7,
-              view_count = $8,
-              download_priority = $9,
-              retry_count = 0,
-              updated_at = NOW()
-          WHERE twitch_id = $1::bigint
-        `, [
-          vodMetadata.id,
-          taskId,
-          vodMetadata.title,
-          vodMetadata.description,
-          vodMetadata.duration,
-          vodMetadata.content_type,
-          vodMetadata.language,
-          vodMetadata.view_count,
-          priority
-        ]);
-      }
-
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    }
-  }
 }
+
+export default TaskHandler;

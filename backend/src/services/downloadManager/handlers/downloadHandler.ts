@@ -12,7 +12,7 @@ import { logger } from '../../../utils/logger';
 import { FileSystemManager } from '../utils/fileSystem';
 import { BandwidthThrottler } from '../utils/throttle';
 import { Checksums } from '../utils/checksums';
-import { TwitchAPIService } from '../../twitch/api';
+import { TwitchService } from '../../twitch/service';
 import {
   DownloadState,
   SegmentInfo,
@@ -31,7 +31,6 @@ interface VodInfo {
   view_count: number;
 }
 
-// Update TwitchAPI response type
 interface TwitchPlaylistResponse {
   qualities: Record<string, {
     segments: Array<{
@@ -46,7 +45,7 @@ interface TwitchPlaylistResponse {
 export class DownloadHandler extends EventEmitter {
   private activeDownloads: Map<number, DownloadState>;
   private fileSystem: FileSystemManager;
-  private twitchAPI: TwitchAPIService;
+  private twitchService: TwitchService;
 
   constructor(
     private pool: Pool,
@@ -56,10 +55,9 @@ export class DownloadHandler extends EventEmitter {
     super();
     this.activeDownloads = new Map();
     this.fileSystem = new FileSystemManager(tempDir);
-    this.twitchAPI = TwitchAPIService.getInstance();
+    this.twitchService = TwitchService.getInstance();
   }
 
-  // Add method to get active downloads
   public getActiveDownloads(): Map<number, DownloadState> {
     return this.activeDownloads;
   }
@@ -201,88 +199,9 @@ export class DownloadHandler extends EventEmitter {
     }
   }
 
-  private async handleDownloadError(vodId: number, error: Error): Promise<void> {
+ async processVOD(vod: any): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await client.query('BEGIN');
-
-      const vodResult = await client.query(`
-        SELECT retry_count, max_retries
-        FROM vods 
-        WHERE id = $1
-      `, [vodId]);
-
-      if (vodResult.rows.length === 0) {
-        throw new Error(`VOD ${vodId} not found`);
-      }
-
-      const vod = vodResult.rows[0];
-      const retryCount = (vod.retry_count || 0) + 1;
-      const maxRetries = vod.max_retries || 3;
-
-      // Update the VOD status based on retry count
-      await client.query(`
-        UPDATE vods
-        SET download_status = CASE 
-          WHEN $2 < $3 THEN 'pending'
-          ELSE 'failed'
-        END,
-        retry_count = $2,
-        error_message = $4,
-        updated_at = NOW()
-        WHERE id = $1
-      `, [vodId, retryCount, maxRetries, error.message]);
-
-      // Log error event
-      await client.query(`
-        INSERT INTO vod_events (
-          vod_id,
-          event_type,
-          details,
-          created_at
-        ) VALUES ($1, 'error', $2, NOW())
-      `, [vodId, JSON.stringify({
-        error: error.message,
-        retry_count: retryCount,
-        max_retries: maxRetries,
-        will_retry: retryCount < maxRetries,
-        stack: error.stack
-      })]);
-
-      await client.query('COMMIT');
-
-      // Emit error event
-      this.emit('download:error', {
-        vodId,
-        error,
-        retryCount,
-        maxRetries,
-        willRetry: retryCount < maxRetries
-      });
-
-      // If we still have retries left, schedule the retry
-      if (retryCount < maxRetries) {
-        const retryDelay = Math.pow(2, retryCount) * 1000; // Exponential backoff
-        setTimeout(() => {
-          this.processVOD({ id: vodId }).catch(err => {
-            logger.error(`Retry failed for VOD ${vodId}:`, err);
-          });
-        }, retryDelay);
-      }
-
-    } catch (err) {
-      await client.query('ROLLBACK');
-      logger.error(`Error handling download failure for VOD ${vodId}:`, err);
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  async processVOD(vod: any): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      // Update VOD status to downloading
       await client.query(`
         UPDATE vods
         SET download_status = 'downloading',
@@ -291,30 +210,32 @@ export class DownloadHandler extends EventEmitter {
         WHERE id = $1
       `, [vod.id]);
 
-      // Create temp directory
       const tempDir = await this.fileSystem.createTempDirectory(vod.twitch_id);
-
-      // Create download state
       const state = this.createDownloadState(vod.id, 0);
       this.activeDownloads.set(vod.id, state);
 
       try {
-        // Fetch VOD information and playlist
-        const vodInfo = await this.twitchAPI.getVODInfo(vod.twitch_id);
-        const playlist = await this.getVODPlaylist(vod.twitch_id, vod.preferred_quality || 'source');
+        // Get VOD info and handle possible null
+        const vodInfo = await this.twitchService.getVODInfo(vod.twitch_id);
+        if (!vodInfo) {
+          throw new Error(`Failed to get VOD info for ${vod.twitch_id}`);
+        }
 
-        // Update state with total segments
+        const playlist = await this.getVODPlaylist(vod.twitch_id, vod.preferred_quality || 'source');
+        if (!playlist) {
+          throw new Error(`Failed to get playlist for VOD ${vod.twitch_id}`);
+        }
+
         state.progress.totalSegments = playlist.segments.length;
 
-        // Create final download directory
+        // Create download directory with guaranteed non-null vodInfo
         const downloadPath = await this.fileSystem.createDownloadDirectory(
           this.tempDir,
-          vodInfo.user_name,
-          vodInfo.created_at.split('T')[0],
+          vodInfo.user_name || 'unknown_user',
+          vodInfo.created_at ? vodInfo.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
           vod.twitch_id
         );
 
-        // Download segments
         await this.downloadSegmentsInParallel(
           vod.id,
           playlist.segments,
@@ -323,7 +244,7 @@ export class DownloadHandler extends EventEmitter {
           vod.bandwidth_throttle
         );
 
-        // Save metadata
+        // Save metadata with null checks
         await this.fileSystem.writeMetadata(downloadPath, {
           ...vodInfo,
           download_completed: new Date().toISOString(),
@@ -331,7 +252,6 @@ export class DownloadHandler extends EventEmitter {
           quality: playlist.quality
         });
 
-        // Update VOD status to completed
         await client.query(`
           UPDATE vods
           SET download_status = 'completed',
@@ -356,7 +276,6 @@ export class DownloadHandler extends EventEmitter {
         }
         throw error;
       } finally {
-        // Cleanup temp directory
         await this.fileSystem.cleanupDirectory(tempDir);
         this.activeDownloads.delete(vod.id);
       }
@@ -366,24 +285,97 @@ export class DownloadHandler extends EventEmitter {
     }
   }
 
+  private async handleDownloadError(vodId: number, error: Error): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const vodResult = await client.query(`
+        SELECT retry_count, max_retries
+        FROM vods 
+        WHERE id = $1
+      `, [vodId]);
+
+      if (vodResult.rows.length === 0) {
+        throw new Error(`VOD ${vodId} not found`);
+      }
+
+      const vod = vodResult.rows[0];
+      const retryCount = (vod.retry_count || 0) + 1;
+      const maxRetries = vod.max_retries || 3;
+
+      await client.query(`
+        UPDATE vods
+        SET download_status = CASE 
+          WHEN $2 < $3 THEN 'pending'
+          ELSE 'failed'
+        END,
+        retry_count = $2,
+        error_message = $4,
+        updated_at = NOW()
+        WHERE id = $1
+      `, [vodId, retryCount, maxRetries, error.message]);
+
+      await client.query(`
+        INSERT INTO vod_events (
+          vod_id,
+          event_type,
+          details,
+          created_at
+        ) VALUES ($1, 'error', $2, NOW())
+      `, [vodId, JSON.stringify({
+        error: error.message,
+        retry_count: retryCount,
+        max_retries: maxRetries,
+        will_retry: retryCount < maxRetries,
+        stack: error.stack
+      })]);
+
+      await client.query('COMMIT');
+
+      this.emit('download:error', {
+        vodId,
+        error,
+        retryCount,
+        maxRetries,
+        willRetry: retryCount < maxRetries
+      });
+
+      if (retryCount < maxRetries) {
+        const retryDelay = Math.pow(2, retryCount) * 1000;
+        setTimeout(() => {
+          this.processVOD({ id: vodId }).catch(err => {
+            logger.error(`Retry failed for VOD ${vodId}:`, err);
+          });
+        }, retryDelay);
+      }
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      logger.error(`Error handling download failure for VOD ${vodId}:`, err);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   private async getVODPlaylist(vodId: string, preferredQuality: string): Promise<SegmentedPlaylist> {
-    const rawPlaylist = await this.twitchAPI.getVODPlaylist(vodId) as TwitchPlaylistResponse;
+    const rawPlaylist = await this.twitchService.getVODPlaylist(vodId);
     if (!rawPlaylist) {
       throw new Error(`Failed to get playlist for VOD ${vodId}`);
     }
 
-    // Convert the Record<string, Quality> to PlaylistQuality[]
-    const qualities: PlaylistQuality[] = Object.entries(rawPlaylist.qualities).map(([quality, data]) => ({
+    const qualities: PlaylistQuality[] = Object.entries(rawPlaylist.qualities || {}).map(([quality, data]) => ({
       quality: quality as VideoQuality,
       segments: data.segments
     }));
 
+    if (qualities.length === 0) {
+      throw new Error(`No qualities available for VOD ${vodId}`);
+    }
+
     const selectedQuality = qualities.find(q => q.quality === preferredQuality as VideoQuality)
       || qualities[0];
-
-    if (!selectedQuality) {
-      throw new Error('No suitable quality found for VOD');
-    }
 
     return {
       segments: selectedQuality.segments.map((s, index) => ({
@@ -392,7 +384,7 @@ export class DownloadHandler extends EventEmitter {
         duration: s.duration,
         checksum: s.checksum
       })),
-      duration: rawPlaylist.duration,
+      duration: rawPlaylist.duration || 0,
       quality: selectedQuality.quality
     };
   }

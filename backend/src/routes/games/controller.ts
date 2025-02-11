@@ -3,7 +3,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
-import { twitchAPI } from '../../services/twitch/api';
+import { twitchService } from '@/services/twitch';
 import { withTransaction } from '../../middleware/withTransaction';
 import {
   GameError,
@@ -21,7 +21,7 @@ export class GamesController {
     try {
       const { query } = req.query;
 
-      const games = await twitchAPI.searchGames(query as string);
+      const games = await twitchService.searchGames(query as string);
 
       // Cache results for 5 minutes
       res.set('Cache-Control', 'public, max-age=300');
