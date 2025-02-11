@@ -48,9 +48,9 @@ export class DownloadHandler extends EventEmitter {
   private twitchService: TwitchService;
 
   constructor(
-    private pool: Pool,
-    private tempDir: string,
-    private maxConcurrent: number = 3
+      private pool: Pool,
+      private tempDir: string,
+      private maxConcurrent: number = 3
   ) {
     super();
     this.activeDownloads = new Map();
@@ -96,11 +96,11 @@ export class DownloadHandler extends EventEmitter {
   }
 
   async downloadSegmentsInParallel(
-    vodId: number,
-    segments: SegmentInfo[],
-    tempDir: string,
-    maxConcurrent: number = this.maxConcurrent,
-    throttleSpeed?: number
+      vodId: number,
+      segments: SegmentInfo[],
+      tempDir: string,
+      maxConcurrent: number = this.maxConcurrent,
+      throttleSpeed?: number
   ): Promise<void> {
     const state = this.activeDownloads.get(vodId);
     if (!state) throw new Error(`No download state found for VOD ${vodId}`);
@@ -115,16 +115,16 @@ export class DownloadHandler extends EventEmitter {
 
         const outputPath = path.join(tempDir, `segment-${segment.index}.ts`);
         const downloadPromise = this.downloadSegment(vodId, segment, outputPath, throttleSpeed)
-          .then(() => {
-            inProgress.delete(downloadPromise);
-          })
-          .catch((error) => {
-            logger.error(`Error downloading segment ${segment.index}:`, error);
-            inProgress.delete(downloadPromise);
-            if (state.failedSegments.size < 3) { // Allow 3 retries
-              queue.push(segment);
-            }
-          });
+            .then(() => {
+              inProgress.delete(downloadPromise);
+            })
+            .catch((error) => {
+              logger.error(`Error downloading segment ${segment.index}:`, error);
+              inProgress.delete(downloadPromise);
+              if (state.failedSegments.size < 3) { // Allow 3 retries
+                queue.push(segment);
+              }
+            });
 
         inProgress.add(downloadPromise);
       }
@@ -136,10 +136,10 @@ export class DownloadHandler extends EventEmitter {
   }
 
   async downloadSegment(
-    vodId: number,
-    segment: SegmentInfo,
-    outputPath: string,
-    throttleSpeed?: number
+      vodId: number,
+      segment: SegmentInfo,
+      outputPath: string,
+      throttleSpeed?: number
   ): Promise<void> {
     const state = this.activeDownloads.get(vodId);
     if (!state) throw new Error(`No download state found for VOD ${vodId}`);
@@ -151,10 +151,10 @@ export class DownloadHandler extends EventEmitter {
         method: 'GET',
         url: segment.url,
         responseType: 'stream',
-        headers: { 'Range': `bytes=${state.resumePosition}-` }
+        headers: {'Range': `bytes=${state.resumePosition}-`}
       });
 
-      const writer = fsSync.createWriteStream(outputPath, { flags: 'a' });
+      const writer = fsSync.createWriteStream(outputPath, {flags: 'a'});
       let downloadedBytes = 0;
       const startTime = Date.now();
 
@@ -199,91 +199,125 @@ export class DownloadHandler extends EventEmitter {
     }
   }
 
- async processVOD(vod: any): Promise<void> {
-    const client = await this.pool.connect();
+  async processVOD(vod: any): Promise<void> {
+  const client = await this.pool.connect();
+  try {
+    await client.query(`
+      UPDATE vods
+      SET download_status = 'downloading'::vod_status,
+          started_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1
+    `, [vod.id]);
+
+    const tempDir = await this.fileSystem.createTempDirectory(vod.twitch_id);
+    const state = this.createDownloadState(vod.id, 0);
+    this.activeDownloads.set(vod.id, state);
+
     try {
-      await client.query(`
-        UPDATE vods
-        SET download_status = 'downloading',
-            started_at = NOW(),
-            updated_at = NOW()
-        WHERE id = $1
-      `, [vod.id]);
+      // Add retries for VOD info fetch
+      let vodInfo = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      let lastError: Error | null = null;
 
-      const tempDir = await this.fileSystem.createTempDirectory(vod.twitch_id);
-      const state = this.createDownloadState(vod.id, 0);
-      this.activeDownloads.set(vod.id, state);
-
-      try {
-        // Get VOD info and handle possible null
-        const vodInfo = await this.twitchService.getVODInfo(vod.twitch_id);
-        if (!vodInfo) {
-          throw new Error(`Failed to get VOD info for ${vod.twitch_id}`);
+      while (attempts < maxAttempts) {
+        try {
+          vodInfo = await this.twitchService.getVODInfo(vod.twitch_id);
+          if (vodInfo) break;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          logger.warn(`Attempt ${attempts + 1} to fetch VOD info failed:`, error);
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
         }
-
-        const playlist = await this.getVODPlaylist(vod.twitch_id, vod.preferred_quality || 'source');
-        if (!playlist) {
-          throw new Error(`Failed to get playlist for VOD ${vod.twitch_id}`);
-        }
-
-        state.progress.totalSegments = playlist.segments.length;
-
-        // Create download directory with guaranteed non-null vodInfo
-        const downloadPath = await this.fileSystem.createDownloadDirectory(
-          this.tempDir,
-          vodInfo.user_name || 'unknown_user',
-          vodInfo.created_at ? vodInfo.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-          vod.twitch_id
-        );
-
-        await this.downloadSegmentsInParallel(
-          vod.id,
-          playlist.segments,
-          tempDir,
-          3,
-          vod.bandwidth_throttle
-        );
-
-        // Save metadata with null checks
-        await this.fileSystem.writeMetadata(downloadPath, {
-          ...vodInfo,
-          download_completed: new Date().toISOString(),
-          segments_downloaded: state.completedSegments.size,
-          quality: playlist.quality
-        });
-
-        await client.query(`
-          UPDATE vods
-          SET download_status = 'completed',
-              download_path = $2,
-              completed_at = NOW(),
-              updated_at = NOW()
-          WHERE id = $1
-        `, [vod.id, downloadPath]);
-
-        this.emit('download:complete', {
-          vodId: vod.id,
-          downloadPath,
-          quality: playlist.quality,
-          duration: playlist.duration
-        });
-
-      } catch (error) {
-        if (error instanceof Error) {
-          await this.handleDownloadError(vod.id, error);
-        } else {
-          await this.handleDownloadError(vod.id, new Error(String(error)));
-        }
-        throw error;
-      } finally {
-        await this.fileSystem.cleanupDirectory(tempDir);
-        this.activeDownloads.delete(vod.id);
+        attempts++;
       }
 
+      if (!vodInfo) {
+        throw new Error(lastError?.message || `Failed to get VOD info after ${maxAttempts} attempts`);
+      }
+
+      // Add retries for playlist fetch
+      attempts = 0;
+      lastError = null;
+      let playlist = null;
+
+      while (attempts < maxAttempts) {
+        try {
+          playlist = await this.getVODPlaylist(vod.twitch_id, vod.preferred_quality || 'source');
+          if (playlist) break;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          logger.warn(`Attempt ${attempts + 1} to fetch playlist failed:`, error);
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+        }
+        attempts++;
+      }
+
+      if (!playlist) {
+        throw new Error(lastError?.message || `Failed to get playlist after ${maxAttempts} attempts`);
+      }
+
+      state.progress.totalSegments = playlist.segments.length;
+
+      // Create download directory with guaranteed non-null vodInfo
+      const downloadPath = await this.fileSystem.createDownloadDirectory(
+        this.tempDir,
+        vodInfo.user_name || 'unknown_user',
+        vodInfo.created_at ? vodInfo.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        vod.twitch_id
+      );
+
+      // Download segments with retries
+      await this.downloadSegmentsInParallel(
+        vod.id,
+        playlist.segments,
+        tempDir,
+        3,
+        vod.bandwidth_throttle
+      );
+
+      // Save metadata with null checks
+      await this.fileSystem.writeMetadata(downloadPath, {
+        ...vodInfo,
+        download_completed: new Date().toISOString(),
+        segments_downloaded: state.completedSegments.size,
+        quality: playlist.quality
+      });
+
+      await client.query(`
+        UPDATE vods
+        SET download_status = 'completed'::vod_status,
+            download_path = $2,
+            completed_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vod.id, downloadPath]);
+
+      this.emit('download:complete', {
+        vodId: vod.id,
+        downloadPath,
+        quality: playlist.quality,
+        duration: playlist.duration
+      });
+
+    } catch (error) {
+      if (error instanceof Error) {
+        await this.handleDownloadError(vod.id, error);
+      } else {
+        await this.handleDownloadError(vod.id, new Error(String(error)));
+      }
+      throw error;
     } finally {
-      client.release();
+      await this.fileSystem.cleanupDirectory(tempDir);
+      this.activeDownloads.delete(vod.id);
     }
+
+  } finally {
+    client.release();
   }
+}
+
 
   private async handleDownloadError(vodId: number, error: Error): Promise<void> {
     const client = await this.pool.connect();
@@ -292,7 +326,7 @@ export class DownloadHandler extends EventEmitter {
 
       const vodResult = await client.query(`
         SELECT retry_count, max_retries
-        FROM vods 
+        FROM vods
         WHERE id = $1
       `, [vodId]);
 
@@ -301,28 +335,26 @@ export class DownloadHandler extends EventEmitter {
       }
 
       const vod = vodResult.rows[0];
-      const retryCount = (vod.retry_count || 0) + 1;
-      const maxRetries = vod.max_retries || 3;
+      const retryCount = parseInt(String(vod.retry_count || '0')) + 1;
+      const maxRetries = parseInt(String(vod.max_retries || '3'));
 
       await client.query(`
         UPDATE vods
-        SET download_status = CASE 
-          WHEN $2 < $3 THEN 'pending'
-          ELSE 'failed'
-        END,
-        retry_count = $2,
-        error_message = $4,
-        updated_at = NOW()
+        SET download_status = CASE
+                                WHEN $2::integer < $3:: integer THEN 'pending'::vod_status
+                                ELSE 'failed'::vod_status
+          END,
+            retry_count     = $2::integer,
+      error_message = $4, updated_at = NOW()
         WHERE id = $1
       `, [vodId, retryCount, maxRetries, error.message]);
 
       await client.query(`
-        INSERT INTO vod_events (
-          vod_id,
-          event_type,
-          details,
-          created_at
-        ) VALUES ($1, 'error', $2, NOW())
+        INSERT INTO vod_events (vod_id,
+                                event_type,
+                                details,
+                                created_at)
+        VALUES ($1, 'error', $2, NOW())
       `, [vodId, JSON.stringify({
         error: error.message,
         retry_count: retryCount,
@@ -344,7 +376,7 @@ export class DownloadHandler extends EventEmitter {
       if (retryCount < maxRetries) {
         const retryDelay = Math.pow(2, retryCount) * 1000;
         setTimeout(() => {
-          this.processVOD({ id: vodId }).catch(err => {
+          this.processVOD({id: vodId}).catch(err => {
             logger.error(`Retry failed for VOD ${vodId}:`, err);
           });
         }, retryDelay);
@@ -375,7 +407,7 @@ export class DownloadHandler extends EventEmitter {
     }
 
     const selectedQuality = qualities.find(q => q.quality === preferredQuality as VideoQuality)
-      || qualities[0];
+        || qualities[0];
 
     return {
       segments: selectedQuality.segments.map((s, index) => ({

@@ -1,14 +1,9 @@
 {
-  "updated_at": "2025-02-10T16:42:36.835802",
+  "updated_at": "2025-02-10T23:49:08.276064",
   "tree": {
-    "backend/src/services/twitch/_files": [
-      "api-client.ts",
-      "api.ts",
-      "base-client.ts",
-      "client.ts",
-      "index.ts",
-      "service.ts",
-      "types.ts"
+    "backend/src/routes/tasks/_files": [
+      "controller.ts",
+      "validation.ts"
     ]
   }
 }

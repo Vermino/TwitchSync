@@ -131,7 +131,7 @@ export class TaskHandler extends EventEmitter {
         taskId,
         totalVods,
         processedVods,
-        skippedVods
+        skipped_vods: skippedVods
       });
 
     } catch (error) {
@@ -171,7 +171,7 @@ export class TaskHandler extends EventEmitter {
             title,
             description,
             duration,
-            type,
+            content_type,
             language,
             view_count,
             download_status,
@@ -196,7 +196,7 @@ export class TaskHandler extends EventEmitter {
           vod.title,
           vod.description,
           vod.duration,
-          vod.type,
+          vod.type === 'highlight' ? 'highlight' : 'stream', // Map Twitch type to our content_type
           vod.language,
           vod.view_count,
           priority,
@@ -213,7 +213,7 @@ export class TaskHandler extends EventEmitter {
               title = $3,
               description = $4,
               duration = $5,
-              type = $6,
+              content_type = $6,
               language = $7,
               view_count = $8,
               download_priority = $9,
@@ -229,7 +229,7 @@ export class TaskHandler extends EventEmitter {
           vod.title,
           vod.description,
           vod.duration,
-          vod.type,
+          vod.type === 'highlight' ? 'highlight' : 'stream',
           vod.language,
           vod.view_count,
           priority,

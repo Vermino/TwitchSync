@@ -1,5 +1,5 @@
 {
-  "updated_at": "2025-02-10T16:42:36.833803",
+  "updated_at": "2025-02-10T23:49:08.275066",
   "tree": {
     "backend": {
       "_files": [
@@ -48,6 +48,8 @@
             "019_user_settings.ts",
             "020_fix_vod_id_type.ts",
             "021_add_task_skipped_vods.ts",
+            "022_add_vod_content_type.ts",
+            "023_add_vod_events.ts",
             "runner.ts"
           ]
         },
@@ -272,12 +274,22 @@
             "TwitchConnect.tsx",
             "UserMenu.tsx"
           ],
+          "TaskManager": {
+            "_files": [
+              "TaskCard.tsx",
+              "TaskList.tsx",
+              "TaskProgress.tsx",
+              "TaskStats.tsx",
+              "VodList.tsx"
+            ]
+          },
           "TaskModal": {
             "_files": [
               "ChannelList.tsx",
               "ConditionsTab.tsx",
               "Filters.tsx",
               "RestrictionsTab.tsx",
+              "TaskOperationControls.tsx",
               "index.tsx"
             ]
           },
@@ -408,6 +420,7 @@
         },
         "utils": {
           "_files": [
+            "duration.ts",
             "logger.ts",
             "taskUtils.ts"
           ]
