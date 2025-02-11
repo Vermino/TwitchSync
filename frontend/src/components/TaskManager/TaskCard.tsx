@@ -1,10 +1,7 @@
-// Filepath: frontend/src/components/TaskManager/TaskCard.tsx
-
 import { Task, Channel, Game } from '@/types/task';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Settings, Trash } from 'lucide-react';
-import TaskOperationControls from '@/components/TaskModal/TaskOperationControls';
+import { Settings, Trash, Power } from 'lucide-react';
 import TaskStats from './TaskStats';
 import TaskProgress from './TaskProgress';
 import VodList from './VodList';
@@ -33,9 +30,16 @@ export default function TaskCard({
   vodsLoading,
   onStatusChange,
   onDelete,
-  onEdit,
-  onRefresh
+  onEdit
 }: TaskCardProps) {
+  // Calculate actual progress based on downloaded VODs
+  const completedVods = task.progress?.current_progress?.completed || 0;
+  const totalVods = task.progress?.current_progress?.total || 0;
+  const actualProgress = totalVods > 0 ? (completedVods / totalVods) * 100 : 0;
+
+  // Determine if task is active
+  const isActive = task.status === 'running';
+
   return (
     <Accordion type="single" collapsible className="border rounded-lg">
       <AccordionItem value="task-content" className="border-none">
@@ -46,9 +50,11 @@ export default function TaskCard({
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{task.name}</span>
                   <Badge
-                    variant={task.status === 'failed' ? 'destructive' : 'default'}
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => onStatusChange(task.status)}
+                    variant={
+                      task.status === 'failed' ? 'destructive' :
+                      task.status === 'running' ? 'default' :
+                      'secondary'
+                    }
                   >
                     {task.status}
                   </Badge>
@@ -59,7 +65,14 @@ export default function TaskCard({
               </div>
 
               <div className="flex items-center gap-2">
-                <TaskOperationControls task={task} onRefresh={onRefresh} />
+                <Button
+                  variant={isActive ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => onStatusChange(isActive ? 'inactive' : 'running')}
+                >
+                  <Power className={`h-4 w-4 ${isActive ? 'text-green-500' : ''}`} />
+                  <span className="ml-2">{isActive ? 'Active' : 'Activate'}</span>
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -80,7 +93,13 @@ export default function TaskCard({
 
           <div className="grid grid-cols-4 gap-4">
             <TaskStats task={task} channels={channels} games={games} />
-            <TaskProgress task={task} />
+            <TaskProgress task={{
+              ...task,
+              progress: {
+                ...task.progress,
+                percentage: actualProgress
+              }
+            }} />
           </div>
         </div>
 

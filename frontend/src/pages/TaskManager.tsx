@@ -7,14 +7,7 @@ import { Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import TaskModal from '@/components/TaskModal';
 import TaskList from '@/components/TaskManager/TaskList';
-import type {
-  Task,
-  Channel,
-  Game,
-  TaskStatus,
-  CreateTaskRequest,
-  UpdateTaskRequest
-} from '@/types/task';
+import type { Task, Channel, Game, TaskStatus } from '@/types/task';
 import { useToast } from '@/components/ui/use-toast';
 
 const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
@@ -71,7 +64,10 @@ export default function TaskManager() {
 
   // Mutations
   const createTaskMutation = useMutation({
-    mutationFn: (data: CreateTaskRequest) => api.createTask(data),
+    mutationFn: async (data: any) => {
+      const taskData = data.body || data;
+      return api.createTask(taskData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
       toast({
@@ -89,8 +85,10 @@ export default function TaskManager() {
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number, data: UpdateTaskRequest }) =>
-      api.updateTask(id, data),
+    mutationFn: ({ id, data }: { id: number, data: any }) => {
+      const taskData = data.body || data;
+      return api.updateTask(id, taskData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
       toast({
@@ -126,15 +124,15 @@ export default function TaskManager() {
   });
 
   // Event handlers
-  const handleTaskSubmit = async (data: CreateTaskRequest | UpdateTaskRequest) => {
+  const handleTaskSubmit = async (data: any) => {
     try {
       if (selectedTask) {
         await updateTaskMutation.mutateAsync({
           id: selectedTask.id,
-          data: data as UpdateTaskRequest
+          data
         });
       } else {
-        await createTaskMutation.mutateAsync(data as CreateTaskRequest);
+        await createTaskMutation.mutateAsync(data);
       }
       setIsModalOpen(false);
       setSelectedTask(null);

@@ -22,25 +22,8 @@ import {
   VodPlaylist
 } from '../types';
 
-interface VodInfo {
-  twitch_id: string;
-  user_name: string;
-  created_at: string;
-  title: string;
-  duration: number;
-  view_count: number;
-}
-
-interface TwitchPlaylistResponse {
-  qualities: Record<string, {
-    segments: Array<{
-      url: string;
-      duration: number;
-      checksum?: string;
-    }>;
-  }>;
-  duration: number;
-}
+const MAX_VODS = 10;
+const MAX_CONCURRENT_DOWNLOADS = 1;
 
 export class DownloadHandler extends EventEmitter {
   private activeDownloads: Map<number, DownloadState>;
@@ -62,7 +45,7 @@ export class DownloadHandler extends EventEmitter {
     return this.activeDownloads;
   }
 
-  createDownloadState(vodId: number, totalSegments: number): DownloadState {
+  private createDownloadState(vodId: number, totalSegments: number): DownloadState {
     return {
       vodId,
       progress: {
@@ -200,124 +183,253 @@ export class DownloadHandler extends EventEmitter {
   }
 
   async processVOD(vod: any): Promise<void> {
-  const client = await this.pool.connect();
-  try {
-    await client.query(`
-      UPDATE vods
-      SET download_status = 'downloading'::vod_status,
-          started_at = NOW(),
-          updated_at = NOW()
-      WHERE id = $1
-    `, [vod.id]);
-
-    const tempDir = await this.fileSystem.createTempDirectory(vod.twitch_id);
-    const state = this.createDownloadState(vod.id, 0);
-    this.activeDownloads.set(vod.id, state);
-
+    const client = await this.pool.connect();
     try {
-      // Add retries for VOD info fetch
-      let vodInfo = null;
-      let attempts = 0;
-      const maxAttempts = 3;
-      let lastError: Error | null = null;
+      // Get download path from user settings with new fields
+      const settingsResult = await client.query(`
+        SELECT 
+          us.settings->'downloads'->>'downloadPath' as download_path,
+          us.settings->'downloads'->>'tempStorageLocation' as temp_path,
+          (us.settings->'downloads'->>'concurrentDownloadLimit')::int as concurrent_limit,
+          (us.settings->'downloads'->>'bandwidthThrottle')::int as bandwidth_limit,
+          us.settings as user_settings,
+          us.updated_at as completed_at
+        FROM user_settings us
+        INNER JOIN tasks t ON t.user_id = us.user_id
+        WHERE t.id = $1
+      `, [vod.task_id]);
 
-      while (attempts < maxAttempts) {
-        try {
-          vodInfo = await this.twitchService.getVODInfo(vod.twitch_id);
-          if (vodInfo) break;
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          logger.warn(`Attempt ${attempts + 1} to fetch VOD info failed:`, error);
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
-        }
-        attempts++;
+      const settings = settingsResult.rows[0];
+      const downloadPath = settings?.download_path || this.tempDir;
+      const tempPath = settings?.temp_path || this.tempDir;
+      const bandwidthLimit = settings?.bandwidth_limit || 0;
+      const concurrentLimit = settings?.concurrent_limit || 3;
+      const userSettings = settings?.user_settings || {};
+      const completedAt = settings?.completed_at;
+
+      // Ensure download directory exists
+      await fs.mkdir(downloadPath, {recursive: true});
+
+      // Check current active downloads
+      const activeDownloads = await client.query(`
+        SELECT COUNT(*) as count
+        FROM vods
+        WHERE download_status = 'downloading'
+      `);
+
+      if (activeDownloads.rows[0].count >= MAX_CONCURRENT_DOWNLOADS) {
+        logger.info(`Another download is in progress. Queuing VOD ${vod.id}`);
+        await client.query(`
+          UPDATE vods
+          SET download_status = 'queued',
+              updated_at      = NOW()
+          WHERE id = $1
+        `, [vod.id]);
+        return;
       }
 
-      if (!vodInfo) {
-        throw new Error(lastError?.message || `Failed to get VOD info after ${maxAttempts} attempts`);
+      // Check active VOD count before proceeding
+      const totalActiveVods = await client.query(`
+        SELECT COUNT(*) as count
+        FROM vods
+        WHERE download_status IN ('downloading', 'pending', 'queued')
+      `);
+
+      if (totalActiveVods.rows[0].count >= MAX_VODS) {
+        logger.warn(`Maximum VOD limit (${MAX_VODS}) reached. Skipping VOD ${vod.id}`);
+        await client.query(`
+          UPDATE vods
+          SET download_status = 'pending',
+              error_message   = 'Maximum concurrent VOD limit reached',
+              updated_at      = NOW()
+          WHERE id = $1
+        `, [vod.id]);
+        return;
       }
-
-      // Add retries for playlist fetch
-      attempts = 0;
-      lastError = null;
-      let playlist = null;
-
-      while (attempts < maxAttempts) {
-        try {
-          playlist = await this.getVODPlaylist(vod.twitch_id, vod.preferred_quality || 'source');
-          if (playlist) break;
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          logger.warn(`Attempt ${attempts + 1} to fetch playlist failed:`, error);
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
-        }
-        attempts++;
-      }
-
-      if (!playlist) {
-        throw new Error(lastError?.message || `Failed to get playlist after ${maxAttempts} attempts`);
-      }
-
-      state.progress.totalSegments = playlist.segments.length;
-
-      // Create download directory with guaranteed non-null vodInfo
-      const downloadPath = await this.fileSystem.createDownloadDirectory(
-        this.tempDir,
-        vodInfo.user_name || 'unknown_user',
-        vodInfo.created_at ? vodInfo.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        vod.twitch_id
-      );
-
-      // Download segments with retries
-      await this.downloadSegmentsInParallel(
-        vod.id,
-        playlist.segments,
-        tempDir,
-        3,
-        vod.bandwidth_throttle
-      );
-
-      // Save metadata with null checks
-      await this.fileSystem.writeMetadata(downloadPath, {
-        ...vodInfo,
-        download_completed: new Date().toISOString(),
-        segments_downloaded: state.completedSegments.size,
-        quality: playlist.quality
-      });
 
       await client.query(`
         UPDATE vods
-        SET download_status = 'completed'::vod_status,
-            download_path = $2,
-            completed_at = NOW(),
-            updated_at = NOW()
+        SET download_status   = 'downloading',
+            started_at        = NOW(),
+            updated_at        = NOW(),
+            download_progress = 0
         WHERE id = $1
-      `, [vod.id, downloadPath]);
+      `, [vod.id]);
 
-      this.emit('download:complete', {
-        vodId: vod.id,
-        downloadPath,
-        quality: playlist.quality,
-        duration: playlist.duration
-      });
+      // Update task progress
+      await client.query(`
+        UPDATE task_monitoring
+        SET status              = 'running',
+            status_message      = 'Starting download',
+            progress_percentage = 0,
+            items_total         = 1,
+            items_completed     = 0,
+            updated_at          = NOW()
+        WHERE task_id = $1
+      `, [vod.task_id]);
+
+      const workingDir = await this.fileSystem.createTempDirectory(vod.twitch_id);
+      const state = this.createDownloadState(vod.id, 0);
+      this.activeDownloads.set(vod.id, state);
+
+      try {
+        // Add retries for VOD info fetch with proper validation
+        let vodInfo = null;
+        let attempts = 0;
+        const maxAttempts = 3;
+        let lastError: Error | null = null;
+
+        while (attempts < maxAttempts) {
+          try {
+            vodInfo = await this.twitchService.getVODInfo(vod.twitch_id);
+
+            // Validate VOD info
+            if (vodInfo && vodInfo.id && vodInfo.user_id) {
+              break;
+            }
+
+            // If VOD info is invalid, treat as an error
+            throw new Error('Invalid VOD info received');
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            logger.warn(`Attempt ${attempts + 1} to fetch VOD info failed:`, error);
+
+            // Check if VOD is permanently unavailable
+            if (error instanceof Error && error.message.includes('404')) {
+              throw new Error('VOD no longer available');
+            }
+
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+          }
+          attempts++;
+        }
+
+        if (!vodInfo) {
+          throw new Error(lastError?.message || `Failed to get VOD info after ${maxAttempts} attempts`);
+        }
+
+        // Add similar error handling for playlist fetch
+        attempts = 0;
+        lastError = null;
+        let playlist = null;
+
+        while (attempts < maxAttempts) {
+          try {
+            playlist = await this.getVODPlaylist(vod.twitch_id, vod.preferred_quality || 'source');
+            if (playlist && playlist.segments && playlist.segments.length > 0) {
+              break;
+            }
+            throw new Error('Invalid playlist data received');
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            logger.warn(`Attempt ${attempts + 1} to fetch playlist failed:`, error);
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+          }
+          attempts++;
+        }
+
+        if (!playlist) {
+          throw new Error(lastError?.message || `Failed to get playlist after ${maxAttempts} attempts`);
+        }
+
+        // Process segments
+        await this.downloadSegmentsInParallel(
+            vod.id,
+            playlist.segments,
+            downloadPath,
+            MAX_CONCURRENT_DOWNLOADS,
+            bandwidthLimit
+        );
+
+        // Update VOD status to completed
+        await client.query(`
+          UPDATE vods
+          SET download_status   = 'completed',
+              completed_at      = NOW(),
+              updated_at        = NOW(),
+              download_progress = 100
+          WHERE id = $1
+        `, [vod.id]);
+
+        // Update task progress
+        await client.query(`
+          UPDATE task_monitoring
+          SET status              = 'completed',
+              status_message      = 'Download completed successfully',
+              progress_percentage = 100,
+              items_completed     = items_completed + 1,
+              updated_at          = NOW()
+          WHERE task_id = $1
+        `, [vod.task_id]);
+
+        // Update user_settings completed_at when relevant
+        if (!completedAt) {
+          await client.query(`
+            UPDATE user_settings
+            SET completed_at = NOW()
+            WHERE user_id = (SELECT user_id FROM tasks WHERE id = $1)
+          `, [vod.task_id]);
+        }
+
+      } catch (error) {
+        // Update VOD status based on error type
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isPermanentError = errorMessage.includes('404') ||
+            errorMessage.includes('no longer available') ||
+            errorMessage.includes('Invalid VOD');
+
+        await client.query(`
+          UPDATE vods
+          SET download_status = $2::vod_status,
+            error_message = $3
+            , updated_at = NOW()
+          WHERE id = $1
+        `, [
+          vod.id,
+          isPermanentError ? 'failed' : 'pending',
+          errorMessage
+        ]);
+
+        // Update task monitoring
+        await client.query(`
+          UPDATE task_monitoring
+          SET status         = 'failed',
+              status_message = $2,
+              updated_at     = NOW()
+          WHERE task_id = $1
+        `, [vod.task_id, errorMessage]);
+
+        throw error;
+      } finally {
+        await this.fileSystem.cleanupDirectory(workingDir);
+        this.activeDownloads.delete(vod.id);
+      }
+
+      // Process next queued VOD if any
+      const nextVod = await client.query(`
+        SELECT id
+        FROM vods
+        WHERE download_status = 'queued'
+        ORDER BY created_at ASC
+        LIMIT 1
+      `);
+
+      if (nextVod.rows.length > 0) {
+        // Process next VOD asynchronously
+        setTimeout(() => {
+          this.processVOD({id: nextVod.rows[0].id}).catch(err => {
+            logger.error(`Error processing next VOD:`, err);
+          });
+        }, 1000); // Small delay before starting next download
+      }
 
     } catch (error) {
-      if (error instanceof Error) {
-        await this.handleDownloadError(vod.id, error);
-      } else {
-        await this.handleDownloadError(vod.id, new Error(String(error)));
-      }
+      logger.error(`Error processing VOD ${vod.id}:`, error);
       throw error;
     } finally {
-      await this.fileSystem.cleanupDirectory(tempDir);
-      this.activeDownloads.delete(vod.id);
+      client.release();
     }
-
-  } finally {
-    client.release();
   }
-}
-
 
   private async handleDownloadError(vodId: number, error: Error): Promise<void> {
     const client = await this.pool.connect();
@@ -345,7 +457,7 @@ export class DownloadHandler extends EventEmitter {
                                 ELSE 'failed'::vod_status
           END,
             retry_count     = $2::integer,
-      error_message = $4, updated_at = NOW()
+            error_message = $4, updated_at = NOW()
         WHERE id = $1
       `, [vodId, retryCount, maxRetries, error.message]);
 
@@ -397,28 +509,101 @@ export class DownloadHandler extends EventEmitter {
       throw new Error(`Failed to get playlist for VOD ${vodId}`);
     }
 
-    const qualities: PlaylistQuality[] = Object.entries(rawPlaylist.qualities || {}).map(([quality, data]) => ({
-      quality: quality as VideoQuality,
-      segments: data.segments
-    }));
+    let selectedQuality = preferredQuality;
+    let selectedSegments = null;
 
-    if (qualities.length === 0) {
-      throw new Error(`No qualities available for VOD ${vodId}`);
+    if (rawPlaylist.qualities[preferredQuality]) {
+      selectedSegments = rawPlaylist.qualities[preferredQuality].segments;
+    } else {
+      const availableQualities = Object.keys(rawPlaylist.qualities);
+      if (availableQualities.length === 0) {
+        throw new Error(`No qualities available for VOD ${vodId}`);
+      }
+      selectedQuality = availableQualities[0];
+      selectedSegments = rawPlaylist.qualities[selectedQuality].segments;
     }
 
-    const selectedQuality = qualities.find(q => q.quality === preferredQuality as VideoQuality)
-        || qualities[0];
+    if (!selectedSegments || selectedSegments.length === 0) {
+      throw new Error(`No segments available for VOD ${vodId}`);
+    }
 
+    // Apply type assertion to tell TypeScript that `selectedSegments` contains `checksum` property
     return {
-      segments: selectedQuality.segments.map((s, index) => ({
+      segments: selectedSegments.map((s, index) => ({
         index,
         url: s.url,
         duration: s.duration,
-        checksum: s.checksum
+        checksum: (s as { checksum?: string }).checksum ?? undefined // Type assertion here
       })),
-      duration: rawPlaylist.duration || 0,
-      quality: selectedQuality.quality
+      duration: rawPlaylist.duration || selectedSegments.reduce((sum, s) => sum + s.duration, 0),
+      quality: selectedQuality
     };
+  }
+
+  public async toggleTaskState(taskId: number, active: boolean): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (active) {
+        // Activate task - update status to watching
+        await client.query(`
+          UPDATE tasks
+          SET status     = 'running',
+              is_active  = true,
+              updated_at = NOW()
+          WHERE id = $1
+        `, [taskId]);
+
+        // Initialize task monitoring
+        await client.query(`
+          INSERT INTO task_monitoring (task_id,
+                                       status,
+                                       status_message,
+                                       progress_percentage,
+                                       items_total,
+                                       items_completed,
+                                       items_failed,
+                                       last_check_at,
+                                       created_at,
+                                       updated_at)
+          VALUES ($1, 'watching', 'Watching for new VODs', 0, 0, 0, 0, NOW(), NOW(), NOW())
+          ON CONFLICT (task_id)
+            DO UPDATE SET status              = 'watching',
+                          status_message      = 'Watching for new VODs',
+                          progress_percentage = 0,
+                          items_completed     = 0,
+                          items_failed        = 0,
+                          last_check_at       = NOW(),
+                          updated_at          = NOW()
+        `, [taskId]);
+      } else {
+        // Deactivate task
+        await client.query(`
+          UPDATE tasks
+          SET status     = 'inactive',
+              is_active  = false,
+              updated_at = NOW()
+          WHERE id = $1
+        `, [taskId]);
+
+        // Update task monitoring
+        await client.query(`
+          UPDATE task_monitoring
+          SET status         = 'inactive',
+              status_message = 'Task deactivated',
+              updated_at     = NOW()
+          WHERE task_id = $1
+        `, [taskId]);
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 

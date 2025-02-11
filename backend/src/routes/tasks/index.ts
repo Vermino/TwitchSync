@@ -5,16 +5,19 @@ import { Pool } from 'pg';
 import DownloadManager from '../../services/downloadManager/index';
 import { authenticate } from '../../middleware/auth';
 import { validateRequest } from '../../middleware/validation';
+import { TaskOperations } from './operations';
 import {
   CreateTaskSchema,
   UpdateTaskSchema,
   BatchUpdateTasksSchema,
   BatchDeleteTasksSchema
 } from './validation';
-import { createTasksController } from './controller';
+import { TasksController } from './controller';
 
 export function setupTaskRoutes(pool: Pool) {
   const router = Router();
+
+  // Initialize managers and operations
   const downloadManager = DownloadManager.getInstance(pool, {
     tempDir: process.env.TEMP_DIR || './temp',
     maxConcurrent: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '3'),
@@ -23,10 +26,14 @@ export function setupTaskRoutes(pool: Pool) {
     cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600')
   });
 
-  const controller = createTasksController(pool, downloadManager);
+  const taskOperations = new TaskOperations(pool, downloadManager);
+  const controller = new TasksController(taskOperations);
 
-  // Use bound methods from the controller instance
-  router.get('/', authenticate(pool), controller.getAllTasks);
+  // Routes
+  router.get('/',
+    authenticate(pool),
+    controller.getAllTasks
+  );
 
   router.post('/',
     authenticate(pool),

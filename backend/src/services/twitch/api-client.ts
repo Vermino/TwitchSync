@@ -13,6 +13,9 @@ import {
   TwitchScheduleResponse,
   TwitchScheduleSegment
 } from './types';
+import axios from "axios";
+
+const MAX_VODS = 10; // Add constant for VOD limit
 
 export class TwitchAPIClient extends TwitchBaseClient {
   private static instance: TwitchAPIClient;
@@ -85,39 +88,70 @@ export class TwitchAPIClient extends TwitchBaseClient {
     }
   }
 
-  async getVODs(userId: string, first: number = 100): Promise<TwitchVOD[]> {
+  async getVODInfo(vodId: string): Promise<TwitchVOD | null> {
     try {
+      // Remove any potential prefixes or special characters
+      const cleanVodId = vodId.replace(/[^\d]/g, '');
+
+      logger.debug(`Fetching VOD info for ID: ${cleanVodId}`);
+
+      const response = await this.makeRequest<TwitchVOD>('/videos', {
+        id: cleanVodId
+      });
+
+      if (!response.data || response.data.length === 0) {
+        logger.warn(`No VOD found for ID ${cleanVodId}`);
+        return null;
+      }
+
+      const vod = response.data[0];
+
+      // Validate required fields
+      if (!vod.id || !vod.user_id) {
+        logger.warn(`Invalid VOD data received for ID ${cleanVodId}:`, vod);
+        return null;
+      }
+
+      return vod;
+    } catch (error) {
+      // Special handling for 404s (VOD not found)
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        logger.warn(`VOD ${vodId} not found`);
+        return null;
+      }
+
+      // For other errors
+      logger.error(`Failed to get VOD info for ${vodId}:`, error);
+      throw new Error(`Failed to fetch VOD info: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async getVODs(userId: string, first: number = MAX_VODS): Promise<TwitchVOD[]> {
+    try {
+      logger.debug(`Fetching VODs for user ${userId} with limit ${first}`);
       const response = await this.makeRequest<TwitchVOD>('/videos', {
         user_id: userId,
-        first: first.toString(),
+        first: Math.min(first, MAX_VODS).toString(), // Ensure we never request more than MAX_VODS
         type: 'all'
       });
 
-      return response.data.filter((vod: TwitchVOD) =>
+      const filteredVods = response.data.filter((vod: TwitchVOD) =>
         vod.viewable === 'public' &&
         ['archive', 'highlight', 'upload'].includes(vod.type)
       );
+
+      logger.info(`Found ${filteredVods.length} downloadable VODs for channel ${userId}`);
+      return filteredVods.slice(0, MAX_VODS); // Double ensure we don't exceed the limit
     } catch (error) {
       logger.error(`Failed to get VODs for user ${userId}:`, error);
       throw error;
     }
   }
 
-  async getVODInfo(vodId: string): Promise<TwitchVOD | null> {
-    try {
-      const response = await this.makeRequest<TwitchVOD>('/videos', {
-        id: vodId
-      });
-      return response.data[0] || null;
-    } catch (error) {
-      logger.error(`Failed to get VOD info for ${vodId}:`, error);
-      throw error;
-    }
-  }
-
   async getVODPlaylist(vodId: string, quality?: string): Promise<PlaylistData | null> {
     try {
-      const response = await this.makeRequest<any>(`/videos/${vodId}/playlist`);
+      const cleanVodId = vodId.replace(/[^\d]/g, '');
+      const response = await this.makeRequest<any>(`/videos/${cleanVodId}/playlist`);
 
       if (!response.data) {
         return null;

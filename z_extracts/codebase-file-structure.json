@@ -1,5 +1,5 @@
 {
-  "updated_at": "2025-02-10T23:49:08.275066",
+  "updated_at": "2025-02-11T13:18:34.676563",
   "tree": {
     "backend": {
       "_files": [
@@ -50,6 +50,8 @@
             "021_add_task_skipped_vods.ts",
             "022_add_vod_content_type.ts",
             "023_add_vod_events.ts",
+            "024_fix_task_monitoring_constraints.ts",
+            "025_add_task_events.ts",
             "runner.ts"
           ]
         },
@@ -126,6 +128,7 @@
             "_files": [
               "controller.ts",
               "index.ts",
+              "operations.ts",
               "validation.ts"
             ]
           },

@@ -27,6 +27,18 @@ export default function VodList({ taskId, loading }: VodListProps) {
 
   const taskVods = vods.filter(vod => vod.task_id === taskId);
 
+  const formatVodDuration = (duration: string | null | undefined) => {
+    if (!duration) return 'Calculating duration...';
+    if (!isValidDuration(duration)) return 'Processing...';
+    return formatDurationString(duration);
+  };
+
+  const formatThumbnailUrl = (url: string | null | undefined) => {
+    if (!url) return null;
+    // Replace Twitch's template with actual dimensions
+    return url.replace(/%{width}x%{height}/, '320x180');
+  };
+
   if (loading) {
     return (
       <div className="p-4 text-center">
@@ -43,13 +55,6 @@ export default function VodList({ taskId, loading }: VodListProps) {
     );
   }
 
-  const formatVodDuration = (duration: string | null | undefined) => {
-    if (!duration || !isValidDuration(duration)) {
-      return 'Unknown duration';
-    }
-    return formatDurationString(duration);
-  };
-
   return (
     <div className="space-y-2">
       {taskVods.map((vod) => (
@@ -61,7 +66,7 @@ export default function VodList({ taskId, loading }: VodListProps) {
             <div className="w-24 h-16 rounded overflow-hidden bg-muted-foreground/10">
               {vod.thumbnail_url ? (
                 <img
-                  src={vod.thumbnail_url}
+                  src={formatThumbnailUrl(vod.thumbnail_url)}
                   alt={vod.title}
                   className="w-full h-full object-cover"
                 />
@@ -72,7 +77,7 @@ export default function VodList({ taskId, loading }: VodListProps) {
               )}
             </div>
             <div>
-              <div className="font-medium">{vod.title}</div>
+              <div className="font-medium truncate max-w-[500px]">{vod.title}</div>
               <div className="text-sm text-muted-foreground">
                 Duration: {formatVodDuration(vod.duration)} • Created: {new Date(vod.created_at).toLocaleString()}
               </div>
@@ -85,7 +90,7 @@ export default function VodList({ taskId, loading }: VodListProps) {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-right">
+            <div className="text-right min-w-[100px]">
               {vod.download_progress < 100 && vod.status !== 'failed' && (
                 <div className="mb-1">
                   <Progress value={vod.download_progress} className="h-1 w-24" />

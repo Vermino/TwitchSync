@@ -56,7 +56,7 @@ export interface PlaylistQuality {
 }
 
 export interface VodPlaylist {
-  qualities: PlaylistQuality[];
+  qualities: Record<string, PlaylistQuality>;
   duration: number;
 }
 
@@ -70,7 +70,7 @@ export interface SegmentInfo {
 export interface SegmentedPlaylist {
   segments: SegmentInfo[];
   duration: number;
-  quality: VideoQuality;
+  quality: string;
 }
 
 export interface SystemResources {

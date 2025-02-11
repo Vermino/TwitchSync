@@ -18,11 +18,11 @@ export class TaskQueueManager {
   private taskRunner: TaskRunner;
   private queue: QueuedTask[] = [];
   private processing: boolean = false;
-  private maxConcurrent: number;
+  private maxConcurrent: number = 1;
   private runningTasks: Set<number> = new Set();
   private queueInterval: NodeJS.Timeout | null = null;
 
-  private constructor(pool: Pool, taskRunner: TaskRunner, maxConcurrent: number = 3) {
+  private constructor(pool: Pool, taskRunner: TaskRunner, maxConcurrent: number = 10) {
     this.pool = pool;
     this.taskRunner = taskRunner;
     this.maxConcurrent = maxConcurrent;
@@ -36,11 +36,14 @@ export class TaskQueueManager {
   }
 
   public async enqueueTask(taskId: number, priority: TaskPriority = 'low'): Promise<void> {
-    // Check if task is already in queue
+    // Check if task is already in queue or running
     if (this.queue.some(t => t.id === taskId) || this.runningTasks.has(taskId)) {
       logger.warn(`Task ${taskId} is already queued or running`);
       return;
     }
+
+    // Implement task cleanup for old/stale tasks
+    await this.cleanupStaleTasks();
 
     const queuedTask: QueuedTask = {
       id: taskId,
@@ -50,7 +53,10 @@ export class TaskQueueManager {
     };
 
     // Insert task into queue based on priority
-    const insertIndex = this.queue.findIndex(t => this.getPriorityValue(t.priority) < this.getPriorityValue(priority));
+    const insertIndex = this.queue.findIndex(t =>
+      this.getPriorityValue(t.priority) < this.getPriorityValue(priority)
+    );
+
     if (insertIndex === -1) {
       this.queue.push(queuedTask);
     } else {
@@ -86,21 +92,22 @@ export class TaskQueueManager {
 
         this.runningTasks.add(task.id);
 
-        // Execute task
         try {
           await this.taskRunner.startTask(task.id);
           logger.info(`Task ${task.id} completed successfully`);
         } catch (error) {
           logger.error(`Error executing task ${task.id}:`, error);
 
-          // Handle retry logic
+          // Implement retry mechanism with backoff
           if (task.retryCount < 3) {
             task.retryCount++;
-            task.scheduledTime = new Date(Date.now() + (task.retryCount * 60000)); // Exponential backoff
+            // Exponential backoff: 1min, 2min, 4min
+            const backoffDelay = Math.pow(2, task.retryCount - 1) * 60000;
+            task.scheduledTime = new Date(Date.now() + backoffDelay);
             this.queue.push(task);
             logger.info(`Task ${task.id} requeued for retry attempt ${task.retryCount}`);
           } else {
-            await this.handleTaskFailure(task.id, error);
+            await this.handleTaskFailure(task.id, error instanceof Error ? error : new Error(String(error)));
           }
         } finally {
           this.runningTasks.delete(task.id);
@@ -113,6 +120,40 @@ export class TaskQueueManager {
       if (this.queue.length > 0 && this.runningTasks.size < this.maxConcurrent) {
         setImmediate(() => this.processQueue());
       }
+    }
+  }
+
+  private async cleanupStaleTasks(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Find and cleanup tasks that have been stuck in 'running' state
+      await client.query(`
+        UPDATE tasks
+        SET status = 'failed',
+            error_message = 'Task cleanup: Task was stuck in running state',
+            updated_at = NOW()
+        WHERE status = 'running'
+        AND updated_at < NOW() - INTERVAL '1 hour'
+      `);
+
+      // Remove stale tasks from monitoring
+      await client.query(`
+        UPDATE task_monitoring
+        SET status = 'failed',
+            status_message = 'Task cleanup: Monitoring entry was stale',
+            updated_at = NOW()
+        WHERE status = 'running'
+        AND updated_at < NOW() - INTERVAL '1 hour'
+      `);
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error cleaning up stale tasks:', error);
+    } finally {
+      client.release();
     }
   }
 
@@ -182,7 +223,15 @@ export class TaskQueueManager {
           OR
           (schedule_type = 'cron' AND next_run <= NOW())
         )
-      `);
+        ORDER BY 
+          CASE priority
+            WHEN 'high' THEN 1
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 3
+          END,
+          next_run ASC
+        LIMIT $1
+      `, [this.maxConcurrent - this.runningTasks.size]);
 
       for (const task of result.rows) {
         await this.enqueueTask(task.id, task.priority);
