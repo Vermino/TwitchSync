@@ -72,6 +72,12 @@ export function setupTaskRoutes(pool: Pool) {
     controller.manualRunTask
   );
 
+  // Add new pause endpoint
+  router.post('/:id/status/pause',
+    authenticate(pool),
+    controller.pauseTask
+  );
+
   // Batch operations
   router.post('/batch',
     authenticate(pool),

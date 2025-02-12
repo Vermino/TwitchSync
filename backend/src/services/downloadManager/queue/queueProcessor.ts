@@ -1,11 +1,29 @@
 // Filepath: backend/src/services/downloadManager/queue/queueProcessor.ts
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { EventEmitter } from 'events';
 import { logger } from '../../../utils/logger';
 import { ResourceMonitor } from '../utils/resourceMonitor';
 import { DownloadHandler } from '../handlers/downloadHandler';
 import { QueueStatus } from '../types';
+
+interface ChannelRow {
+  twitch_id: string;
+}
+
+interface VodRow {
+  twitch_id: string;
+  id: number;
+  task_id: number;
+  download_status: string;
+  channel_twitch_id: string;
+}
+
+interface TaskRow {
+  id: number;
+  channel_ids: number[];
+  game_ids: number[];
+}
 
 export class QueueProcessor extends EventEmitter {
   private processingInterval: NodeJS.Timeout | null = null;
@@ -89,8 +107,30 @@ export class QueueProcessor extends EventEmitter {
         return;
       }
 
+      // First, check for any tasks that need VOD discovery
+      const discoveryResult = await client.query<TaskRow>(`
+        SELECT t.id, t.channel_ids, t.game_ids
+        FROM tasks t
+        WHERE t.status = 'running'
+        AND t.is_active = true
+        AND NOT EXISTS (
+          SELECT 1 FROM vods v
+          WHERE v.task_id = t.id
+          AND v.download_status IN ('queued', 'downloading')
+        )
+      `);
+
+      // Process VOD discovery for each task
+      for (const task of discoveryResult.rows) {
+        try {
+          await this.processTaskVODs(task.id, task.channel_ids, task.game_ids, client);
+        } catch (error) {
+          logger.error(`Error processing VODs for task ${task.id}:`, error);
+        }
+      }
+
       // Get next batch of VODs to process
-      const result = await client.query(`
+      const result = await client.query<VodRow>(`
         SELECT v.*, t.priority as task_priority
         FROM vods v
         LEFT JOIN tasks t ON v.task_id = t.id
@@ -131,6 +171,82 @@ export class QueueProcessor extends EventEmitter {
       this.isProcessing = false;
       client.release();
     }
+  }
+
+  private async processTaskVODs(
+    taskId: number,
+    channelIds: number[],
+    gameIds: number[],
+    client: PoolClient
+  ): Promise<void> {
+    // Get channel Twitch IDs
+    const channelResult = await client.query<ChannelRow>(`
+      SELECT twitch_id FROM channels WHERE id = ANY($1)
+    `, [channelIds]);
+
+    const twitchIds = channelResult.rows.map((row: ChannelRow) => row.twitch_id);
+
+    // Update task monitoring status
+    await client.query(`
+      UPDATE task_monitoring
+      SET status = 'discovering',
+          status_message = 'Discovering new VODs',
+          updated_at = NOW()
+      WHERE task_id = $1
+    `, [taskId]);
+
+    // For each channel, fetch and queue VODs
+    for (const twitchId of twitchIds) {
+      try {
+        // Check for VODs in the last 24 hours
+        const vodResult = await client.query<VodRow>(`
+          SELECT twitch_id
+          FROM vods
+          WHERE channel_twitch_id = $1
+          AND created_at > NOW() - INTERVAL '24 hours'
+        `, [twitchId]);
+
+        const existingVodIds = new Set(
+          vodResult.rows.map((row: VodRow) => row.twitch_id)
+        );
+
+        // Queue new VODs
+        await client.query(`
+          INSERT INTO vods (
+            twitch_id,
+            task_id,
+            channel_twitch_id,
+            download_status,
+            download_priority,
+            created_at,
+            updated_at
+          )
+          SELECT
+            v.id,
+            $1,
+            $2,
+            'queued',
+            'normal',
+            NOW(),
+            NOW()
+          FROM twitch_vods v
+          WHERE v.user_id = $2
+          AND v.id NOT IN (SELECT twitch_id FROM vods)
+          AND v.created_at > NOW() - INTERVAL '24 hours'
+        `, [taskId, twitchId]);
+      } catch (error) {
+        logger.error(`Error processing VODs for channel ${twitchId}:`, error);
+      }
+    }
+
+    // Update task monitoring status
+    await client.query(`
+      UPDATE task_monitoring
+      SET status = 'running',
+          status_message = 'VODs discovered and queued',
+          updated_at = NOW()
+      WHERE task_id = $1
+    `, [taskId]);
   }
 
   async getQueueStatus(): Promise<QueueStatus> {

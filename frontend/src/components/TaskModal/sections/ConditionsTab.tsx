@@ -1,3 +1,5 @@
+// Filepath: frontend/src/components/TaskModal/sections/ConditionsTab.tsx
+
 import React from 'react';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -10,13 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { X } from 'lucide-react';
-
-interface TaskConditions {
-  minFollowers?: number;
-  minViews?: number;
-  minDuration?: number;
-  languages?: string[];
-}
+import type { TaskConditions } from '@/types/task';
 
 interface ConditionsTabProps {
   conditions: TaskConditions;

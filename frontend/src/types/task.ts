@@ -1,8 +1,19 @@
 // Filepath: frontend/src/types/task.ts
 
-export type TaskStatus = 'pending' | 'active' | 'completed' | 'failed' | 'running' | 'inactive' | 'cancelled';
+export type TaskStatus =
+  | 'pending'
+  | 'active'
+  | 'completed'
+  | 'failed'
+  | 'running'
+  | 'inactive'
+  | 'cancelled'
+  | 'paused';
+
 export type TaskType = 'channel' | 'game' | 'combined';
+
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
+
 export type ScheduleType = 'interval' | 'cron' | 'manual';
 
 export interface TaskProgress {

@@ -71,6 +71,58 @@ export class TaskQueueManager {
     }
   }
 
+  public async activateTask(taskId: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Update task status to running and set is_active to true
+      await client.query(`
+        UPDATE tasks 
+        SET status = 'running',
+            is_active = true,
+            updated_at = NOW()
+        WHERE id = $1
+      `, [taskId]);
+
+      // Initialize or update task monitoring
+      await client.query(`
+        INSERT INTO task_monitoring (
+          task_id,
+          status,
+          status_message,
+          progress_percentage,
+          items_total,
+          items_completed,
+          items_failed,
+          last_check_at,
+          created_at,
+          updated_at
+        ) VALUES (
+          $1, 'running', 'Task activated', 0, 0, 0, 0, NOW(), NOW(), NOW()
+        )
+        ON CONFLICT (task_id) 
+        DO UPDATE SET
+          status = 'running',
+          status_message = 'Task activated',
+          progress_percentage = 0,
+          updated_at = NOW()
+      `, [taskId]);
+
+      await client.query('COMMIT');
+
+      // Enqueue task for processing
+      await this.enqueueTask(taskId, 'normal');
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error(`Error activating task ${taskId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private getPriorityValue(priority: TaskPriority): number {
     switch (priority) {
       case 'high': return 3;
@@ -217,9 +269,8 @@ export class TaskQueueManager {
         SELECT id, priority 
         FROM tasks 
         WHERE is_active = true
-        AND status != 'running'
-        AND (
-          (schedule_type = 'interval' AND next_run <= NOW())
+        AND status = 'running'
+        AND (\n          (schedule_type = 'interval' AND next_run <= NOW())
           OR
           (schedule_type = 'cron' AND next_run <= NOW())
         )

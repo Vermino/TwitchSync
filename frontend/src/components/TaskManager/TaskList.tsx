@@ -16,9 +16,9 @@ interface TaskListProps {
 }
 
 export default function TaskList({
-  tasks,
-  channels,
-  games,
+  tasks = [],
+  channels = [],
+  games = [],
   vodsLoading,
   onTaskUpdate,
   onTaskDelete,

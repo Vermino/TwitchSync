@@ -1,16 +1,11 @@
-// Filepath: frontend/src/components/TaskModal/RestrictionsTab.tsx
+// Filepath: frontend/src/components/TaskModal/sections/RestrictionsTab.tsx
+
 import React from 'react';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { HardDrive } from 'lucide-react';
-
-interface TaskRestrictions {
-  maxVodsPerChannel?: number;
-  maxStoragePerChannel?: number;
-  maxTotalVods?: number;
-  maxTotalStorage?: number;
-}
+import type { TaskRestrictions } from '@/types/task';
 
 interface RestrictionsTabProps {
   restrictions: TaskRestrictions;
@@ -119,6 +114,9 @@ const RestrictionsTab: React.FC<RestrictionsTabProps> = ({
             value={(currentStorage.used / currentStorage.limit) * 100}
             className="h-2"
           />
+          <p className="text-sm text-muted-foreground">
+            {((currentStorage.used / currentStorage.limit) * 100).toFixed(1)}% used
+          </p>
         </div>
       )}
     </div>

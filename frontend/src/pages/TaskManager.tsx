@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Plus } from 'lucide-react';
-import { api } from '@/lib/api';
 import TaskModal from '@/components/TaskModal';
 import TaskList from '@/components/TaskManager/TaskList';
 import type { Task, Channel, Game, TaskStatus } from '@/types/task';
@@ -12,11 +11,13 @@ import { useToast } from '@/components/ui/use-toast';
 
 const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   'running': 'pending',
-  'pending': 'inactive',
-  'inactive': 'running',
+  'pending': 'running',
+  'active': 'running',
+  'paused': 'running',
   'completed': 'pending',
   'failed': 'pending',
-  'cancelled': 'pending'
+  'cancelled': 'pending',
+  'inactive': 'running'
 } as const;
 
 export default function TaskManager() {
@@ -30,7 +31,18 @@ export default function TaskManager() {
     queryKey: ['tasks'],
     queryFn: async () => {
       try {
-        const result = await api.getTasks();
+        const response = await fetch('/api/tasks', {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch tasks');
+        }
+
+        const result = await response.json();
         return Array.isArray(result) ? result : [];
       } catch (error) {
         console.error('Error fetching tasks:', error);
@@ -48,25 +60,62 @@ export default function TaskManager() {
 
   const { data: channels = [] } = useQuery<Channel[]>({
     queryKey: ['channels'],
-    queryFn: () => api.getChannels()
+    queryFn: async () => {
+      const response = await fetch('/api/channels', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      });
+      const data = await response.json();
+      return data;
+    }
   });
 
   const { data: games = [] } = useQuery<Game[]>({
     queryKey: ['games'],
-    queryFn: () => api.getGames()
+    queryFn: async () => {
+      const response = await fetch('/api/games', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      });
+      const data = await response.json();
+      return data;
+    }
   });
 
   const { isLoading: vodsLoading } = useQuery({
     queryKey: ['vods'],
-    queryFn: () => api.getVods(),
+    queryFn: async () => {
+      const response = await fetch('/api/vods', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      });
+      const data = await response.json();
+      return data;
+    },
     refetchInterval: 30000
   });
 
   // Mutations
   const createTaskMutation = useMutation({
     mutationFn: async (data: any) => {
-      const taskData = data.body || data;
-      return api.createTask(taskData);
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) {
+        throw new Error('Failed to create task');
+      }
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -85,9 +134,19 @@ export default function TaskManager() {
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number, data: any }) => {
-      const taskData = data.body || data;
-      return api.updateTask(id, taskData);
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update task');
+      }
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -106,7 +165,18 @@ export default function TaskManager() {
   });
 
   const deleteTaskMutation = useMutation({
-    mutationFn: (id: number) => api.deleteTask(id),
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete task');
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
       toast({
@@ -152,17 +222,67 @@ export default function TaskManager() {
 
   const handleStatusToggle = async (taskId: number, currentStatus: TaskStatus) => {
     try {
-      const newStatus = STATUS_CYCLE[currentStatus];
-      await updateTaskMutation.mutateAsync({
-        id: taskId,
-        data: { status: newStatus }
-      });
+      // Determine the next status based on current status
+      const nextStatus = STATUS_CYCLE[currentStatus];
+
+      if (currentStatus === 'running') {
+        // If task is running, pause it
+        const response = await fetch(`/api/tasks/${taskId}/status/pause`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to pause task');
+        }
+      } else if (nextStatus === 'running') {
+        // If next status is running, activate the task
+        const response = await fetch(`/api/tasks/${taskId}/activate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to activate task');
+        }
+
+        // After activation, queue VODs
+        await fetch(`/api/tasks/${taskId}/queue-vods`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+          }
+        });
+      } else {
+        // For other status changes, use the update endpoint
+        await updateTaskMutation.mutateAsync({
+          id: taskId,
+          data: {
+            status: nextStatus,
+            is_active: nextStatus === 'running'
+          }
+        });
+      }
+
+      // Refetch tasks to update the UI
+      await refetchTasks();
     } catch (error) {
       console.error('Error updating task status:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update task status",
+        variant: "destructive",
+      });
     }
   };
 
-  // Loading state
   if (tasksLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -179,7 +299,7 @@ export default function TaskManager() {
           <p className="text-muted-foreground">Manage your download tasks</p>
         </div>
         <Button onClick={() => setIsModalOpen(true)} className="bg-purple-600 hover:bg-purple-700">
-          <Plus className="w-4 h-4 mr-2" />
+          <Plus className="w-4 h-4 mr-2"/>
           Create Task
         </Button>
       </div>
@@ -198,7 +318,6 @@ export default function TaskManager() {
         onRefreshTasks={refetchTasks}
       />
 
-      {/* Task Modal */}
       {isModalOpen && (
         <TaskModal
           isOpen={isModalOpen}
@@ -208,8 +327,6 @@ export default function TaskManager() {
           }}
           onSubmit={handleTaskSubmit}
           task={selectedTask}
-          availableChannels={channels}
-          availableGames={games}
         />
       )}
     </div>

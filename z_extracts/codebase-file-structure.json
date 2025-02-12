@@ -1,5 +1,5 @@
 {
-  "updated_at": "2025-02-11T13:18:34.676563",
+  "updated_at": "2025-02-12T03:39:12.501299",
   "tree": {
     "backend": {
       "_files": [
@@ -129,6 +129,7 @@
               "controller.ts",
               "index.ts",
               "operations.ts",
+              "types.ts",
               "validation.ts"
             ]
           },
@@ -273,7 +274,6 @@
             "ProtectedRoute.tsx",
             "SettingsManager.tsx",
             "StatusBar.tsx",
-            "TaskModal.tsx",
             "TwitchConnect.tsx",
             "UserMenu.tsx"
           ],
@@ -288,13 +288,32 @@
           },
           "TaskModal": {
             "_files": [
-              "ChannelList.tsx",
-              "ConditionsTab.tsx",
-              "Filters.tsx",
-              "RestrictionsTab.tsx",
-              "TaskOperationControls.tsx",
+              "TaskModal.tsx",
               "index.tsx"
-            ]
+            ],
+            "hooks": {
+              "_files": [
+                "useTaskDataManager.ts",
+                "useTaskPersistence.ts",
+                "useTaskValidation.ts"
+              ]
+            },
+            "sections": {
+              "_files": [
+                "ChannelsTab.tsx",
+                "ConditionsTab.tsx",
+                "GamesTab.tsx",
+                "RestrictionsTab.tsx",
+                "SettingsTab.tsx",
+                "TaskBasicInfo.tsx",
+                "index.ts"
+              ]
+            },
+            "utils": {
+              "_files": [
+                "taskUtils.ts"
+              ]
+            }
           },
           "discovery": {
             "_files": [
@@ -315,6 +334,7 @@
               "badge.tsx",
               "button.tsx",
               "card.tsx",
+              "checkbox.tsx",
               "dialog.tsx",
               "dropdown-menu.tsx",
               "input.tsx",
@@ -353,7 +373,17 @@
           ],
           "api": {
             "_files": [
-              "taskMonitoring.ts"
+              "authClient.ts",
+              "baseClient.ts",
+              "channelClient.ts",
+              "discoveryClient.ts",
+              "gameClient.ts",
+              "index.ts",
+              "settingsClient.ts",
+              "taskClient.ts",
+              "taskMonitoringClient.ts",
+              "types.ts",
+              "vodClient.ts"
             ]
           }
         },

@@ -16,16 +16,11 @@ export class ValidationError extends Error {
 export const validateRequest = (schema: z.ZodSchema) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const validatedData = await schema.parseAsync({
-        body: req.body,
-        query: req.query,
-        params: req.params
-      });
+      // Validate just the body directly instead of wrapping it
+      const validatedData = await schema.parseAsync(req.body);
 
-      // Replace request data with validated data
-      req.body = validatedData.body;
-      req.query = validatedData.query;
-      req.params = validatedData.params;
+      // Update the request body with the validated data
+      req.body = validatedData;
 
       next();
     } catch (error) {

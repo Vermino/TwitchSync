@@ -13,14 +13,23 @@ import { api } from '@/lib/api';
 
 interface TaskStatsProps {
   task: Task;
-  channels: Channel[];
-  games: Game[];
+  channels: Channel[] | undefined;
+  games: Game[] | undefined;
 }
 
-export default function TaskStats({ task, channels, games }: TaskStatsProps) {
+export default function TaskStats({ task, channels = [], games = [] }: TaskStatsProps) {
   const { data: vods = [] } = useQuery({
     queryKey: ['vods'],
-    queryFn: () => api.getVods()
+    queryFn: async () => {
+      const response = await fetch('/api/vods', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      });
+      const data = await response.json();
+      return data;
+    }
   });
 
   const getTaskVods = (taskId: number) => {
@@ -28,15 +37,20 @@ export default function TaskStats({ task, channels, games }: TaskStatsProps) {
   };
 
   const getTaskChannels = (channelIds: number[] = []) => {
+    if (!Array.isArray(channels)) return [];
     return channels.filter(channel => channelIds.includes(channel.id));
   };
 
   const getTaskGames = (gameIds: number[] = []) => {
+    if (!Array.isArray(games)) return [];
     return games.filter(game => gameIds.includes(game.id));
   };
 
   const completedVods = getTaskVods(task.id).filter(vod => vod.status === 'completed').length;
   const totalVods = getTaskVods(task.id).length;
+
+  const taskChannels = getTaskChannels(task.channel_ids);
+  const taskGames = getTaskGames(task.game_ids);
 
   return (
     <>
@@ -44,10 +58,10 @@ export default function TaskStats({ task, channels, games }: TaskStatsProps) {
       <div className="space-y-2">
         <div className="text-sm font-medium flex items-center gap-2">
           <Users className="h-4 w-4" />
-          Channels ({task.channel_ids?.length || 0})
+          Channels ({taskChannels.length})
         </div>
         <div className="flex flex-wrap gap-2">
-          {getTaskChannels(task.channel_ids).map(channel => (
+          {taskChannels.map(channel => (
             <TooltipProvider key={channel.id}>
               <Tooltip>
                 <TooltipTrigger>
@@ -70,10 +84,10 @@ export default function TaskStats({ task, channels, games }: TaskStatsProps) {
       <div className="space-y-2">
         <div className="text-sm font-medium flex items-center gap-2">
           <Gamepad2 className="h-4 w-4" />
-          Games ({task.game_ids?.length || 0})
+          Games ({taskGames.length})
         </div>
         <div className="flex flex-wrap gap-2">
-          {getTaskGames(task.game_ids).map(game => (
+          {taskGames.map(game => (
             <TooltipProvider key={game.id}>
               <Tooltip>
                 <TooltipTrigger>

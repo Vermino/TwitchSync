@@ -1,8 +1,17 @@
 {
-  "updated_at": "2025-02-11T13:18:34.678778",
+  "updated_at": "2025-02-12T03:39:12.502303",
   "tree": {
-    "frontend/src/components/_files": [
-      "TaskModal.tsx"
-    ]
+    "backend": {
+      "src/routes/channels/_files": [
+        "controller.ts",
+        "index.ts",
+        "validation.ts"
+      ]
+    },
+    "frontend": {
+      "src/pages/_files": [
+        "Channels.tsx"
+      ]
+    }
   }
 }

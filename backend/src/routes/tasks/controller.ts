@@ -3,7 +3,7 @@
 import { Request, Response } from 'express';
 import { logger } from '../../utils/logger';
 import { TaskOperations } from './operations';
-import { CreateTaskSchema } from './validation';
+import { CreateTaskSchema, UpdateTaskSchema, BatchUpdateTasksSchema, BatchDeleteTasksSchema } from './validation';
 
 export class TasksController {
   constructor(private operations: TaskOperations) {
@@ -12,6 +12,7 @@ export class TasksController {
     this.getTaskById = this.getTaskById.bind(this);
     this.createTask = this.createTask.bind(this);
     this.updateTask = this.updateTask.bind(this);
+    this.pauseTask = this.pauseTask.bind(this);
     this.deleteTask = this.deleteTask.bind(this);
     this.getTaskHistory = this.getTaskHistory.bind(this);
     this.getTaskDetails = this.getTaskDetails.bind(this);
@@ -90,7 +91,31 @@ export class TasksController {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      const task = await this.operations.updateTask(taskId, Number(userId), req.body);
+      // Validate update data
+      const result = UpdateTaskSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: result.error.errors
+        });
+      }
+
+      const updates = result.data;
+
+      // Special handling for task activation
+      if (updates.status === 'running' || (updates.is_active && req.body.start_processing)) {
+        logger.info(`Activating task ${taskId} with processing`, {
+          userId,
+          taskId,
+          updates
+        });
+
+        // Toggle task state to active
+        await this.operations.toggleTaskState(taskId, Number(userId), true);
+      }
+
+      // Update task with provided changes
+      const task = await this.operations.updateTask(taskId, Number(userId), updates);
       res.json(task);
     } catch (err) {
       logger.error('Error updating task:', err);
@@ -100,6 +125,38 @@ export class TasksController {
       } else {
         res.status(500).json({ error: 'Failed to update task' });
       }
+    }
+  }
+
+  async pauseTask(req: Request, res: Response) {
+    try {
+      const userId = req.user?.id;
+      const taskId = parseInt(req.params.id);
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      try {
+        const task = await this.operations.pauseTask(taskId, Number(userId));
+        res.json(task);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === 'Task not found or access denied') {
+            return res.status(404).json({ error: 'Task not found' });
+          }
+          if (error.message === 'Only running tasks can be paused') {
+            return res.status(400).json({ error: error.message });
+          }
+        }
+        throw error;
+      }
+    } catch (err) {
+      logger.error('Error pausing task:', err);
+      res.status(500).json({
+        error: 'Failed to pause task',
+        details: err instanceof Error ? err.message : 'Unknown error'
+      });
     }
   }
 
@@ -184,7 +241,10 @@ export class TasksController {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      // Force task status to running
+      // Activate the task
+      await this.operations.toggleTaskState(taskId, Number(userId), true);
+
+      // Update task status
       const task = await this.operations.updateTask(taskId, Number(userId), {
         status: 'running',
         is_active: true
@@ -218,8 +278,17 @@ export class TasksController {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      const result = await this.operations.batchUpdateTasks(Number(userId), req.body);
-      res.json(result);
+      // Validate batch update data
+      const result = BatchUpdateTasksSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: result.error.errors
+        });
+      }
+
+      const updatedTasks = await this.operations.batchUpdateTasks(Number(userId), result.data);
+      res.json(updatedTasks);
     } catch (err) {
       logger.error('Error updating tasks:', err);
       res.status(500).json({ error: 'Failed to update tasks' });
@@ -233,7 +302,16 @@ export class TasksController {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      await this.operations.deleteTask(Number(userId), req.body.task_ids);
+      // Validate batch delete data
+      const result = BatchDeleteTasksSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: result.error.errors
+        });
+      }
+
+      await this.operations.batchDeleteTasks(Number(userId), result.data.task_ids);
       res.json({ message: 'Tasks deleted successfully' });
     } catch (err) {
       logger.error('Error deleting tasks:', err);

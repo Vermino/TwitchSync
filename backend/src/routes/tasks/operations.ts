@@ -4,10 +4,21 @@ import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
 import DownloadManager from '../../services/downloadManager';
 import type { Task, CreateTaskRequest, UpdateTaskRequest, BatchUpdateRequest } from './validation';
+import type {
+  QueueStatus,
+  SystemResources,
+  DownloadMetrics
+} from '../../services/downloadManager/types';
 
 // Enum types should match database
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type TaskPriority = 'low' | 'medium' | 'high';
+
+export interface TaskManagerDetails {
+  queueStatus: QueueStatus;
+  systemResources: SystemResources;
+  metrics: DownloadMetrics;
+}
 
 export class TaskOperations {
   constructor(
@@ -182,6 +193,143 @@ export class TaskOperations {
     }
   }
 
+  async pauseTask(taskId: number, userId: number): Promise<Task> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Verify task exists and belongs to user
+      const taskResult = await client.query(`
+        SELECT *
+        FROM tasks
+        WHERE id = $1 AND user_id = $2
+      `, [taskId, userId]);
+
+      if (taskResult.rows.length === 0) {
+        throw new Error('Task not found or access denied');
+      }
+
+      const task = taskResult.rows[0];
+
+      // Update task status
+      const updatedTask = await client.query(`
+        UPDATE tasks
+        SET status = 'paused'::task_status,
+            is_active = false,
+            last_paused_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `, [taskId]);
+
+      // Update monitoring status
+      await client.query(`
+        UPDATE task_monitoring
+        SET status = 'paused',
+            status_message = 'Task paused by user',
+            updated_at = NOW()
+        WHERE task_id = $1
+      `, [taskId]);
+
+      // Log the pause event
+      await client.query(`
+        INSERT INTO task_events (
+          task_id,
+          event_type,
+          details,
+          created_at
+        ) VALUES ($1, 'status_change', $2, NOW())
+      `, [
+        taskId,
+        JSON.stringify({
+          previous_status: task.status,
+          new_status: 'paused',
+          reason: 'user_pause',
+          timestamp: new Date().toISOString()
+        })
+      ]);
+
+      // If task was actually running, stop the processing
+      if (task.status === 'running') {
+        await this.downloadManager.stopProcessing();
+      }
+
+      await client.query('COMMIT');
+
+      // Get updated task with all related info
+      return await this.getTaskById(taskId, userId);
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error pausing task:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+    async activateTask(taskId: number, userId: number): Promise<Task> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const taskResult = await client.query(`
+        SELECT t.*, tm.status as monitoring_status 
+        FROM tasks t
+        LEFT JOIN task_monitoring tm ON t.id = tm.task_id
+        WHERE t.id = $1 AND t.user_id = $2
+      `, [taskId, userId]);
+
+      if (taskResult.rows.length === 0) {
+        throw new Error('Task not found or access denied');
+      }
+
+      // First update task status
+      const updatedTask = await client.query(`
+        UPDATE tasks
+        SET status = 'running'::task_status,
+            is_active = true,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `, [taskId]);
+
+      // Update monitoring status
+      await client.query(`
+        INSERT INTO task_monitoring (
+          task_id,
+          status,
+          status_message,
+          progress_percentage,
+          items_total,
+          items_completed,
+          items_failed,
+          created_at,
+          updated_at
+        ) VALUES ($1, 'running', 'Task started', 0, 0, 0, 0, NOW(), NOW())
+        ON CONFLICT (task_id) 
+        DO UPDATE SET 
+          status = 'running',
+          status_message = 'Task started',
+          progress_percentage = 0,
+          updated_at = NOW()
+      `, [taskId]);
+
+      // Start the download manager processing
+      await this.downloadManager.executeTask(taskId);
+
+      await client.query('COMMIT');
+
+      return updatedTask.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error activating task:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async deleteTask(taskId: number, userId: number) {
     const client = await this.pool.connect();
     try {
@@ -201,6 +349,60 @@ export class TaskOperations {
 
     } catch (error) {
       await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async toggleTaskState(taskId: number, userId: number, active: boolean): Promise<Task> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Update task state
+      const result = await client.query(`
+        UPDATE tasks
+        SET is_active = $3,
+            status = CASE 
+              WHEN $3 = true THEN 'running'::task_status 
+              ELSE 'pending'::task_status 
+            END,
+            updated_at = NOW()
+        WHERE id = $1 AND user_id = $2
+        RETURNING *
+      `, [taskId, userId, active]);
+
+      if (result.rows.length === 0) {
+        throw new Error('Task not found or access denied');
+      }
+
+      // Start or stop task processing
+      if (active) {
+        await this.downloadManager.executeTask(taskId);
+      } else {
+        await this.downloadManager.stopProcessing();
+      }
+
+      // Update monitoring status
+      await client.query(`
+        UPDATE task_monitoring
+        SET status = $2,
+            status_message = $3,
+            updated_at = NOW()
+        WHERE task_id = $1
+      `, [
+        taskId,
+        active ? 'running' : 'pending',
+        active ? 'Task activated' : 'Task deactivated'
+      ]);
+
+      await client.query('COMMIT');
+      return result.rows[0];
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error(`Error toggling task ${taskId} state:`, error);
       throw error;
     } finally {
       client.release();
@@ -268,7 +470,7 @@ export class TaskOperations {
     }
   }
 
-  async getTaskManagerDetails() {
+  async getTaskManagerDetails(): Promise<TaskManagerDetails> {
     return {
       queueStatus: await this.downloadManager.getQueueStatus(),
       systemResources: await this.downloadManager.getSystemResources(),
@@ -330,6 +532,31 @@ export class TaskOperations {
       return Promise.all(result.rows.map(task =>
         this.downloadManager.getTaskDetails(task.id)
       ));
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async batchDeleteTasks(userId: number, taskIds: number[]): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const result = await client.query(
+        'DELETE FROM tasks WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+        [taskIds, userId]
+      );
+
+      if (result.rows.length !== taskIds.length) {
+        throw new Error('One or more tasks not found or access denied');
+      }
+
+      await client.query('COMMIT');
+      return true;
 
     } catch (error) {
       await client.query('ROLLBACK');
