@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/C:\\Users\\jesse\\.claude\\context/**)",
+      "Read(/C:\\Users\\jesse\\.claude\\context/**)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
