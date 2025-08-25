@@ -336,7 +336,7 @@ export class DownloadHandler extends EventEmitter {
         await this.downloadSegmentsInParallel(
             vod.id,
             playlist.segments,
-            downloadPath,
+            workingDir,
             MAX_CONCURRENT_DOWNLOADS,
             bandwidthLimit
         );

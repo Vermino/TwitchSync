@@ -4,8 +4,8 @@ import axios, { AxiosInstance } from 'axios';
 
 export class BaseApiClient {
   protected axios: AxiosInstance;
-  protected baseURL = 'http://localhost:3001/api';
-  protected authURL = 'http://localhost:3001/auth';
+  protected baseURL = '/api';
+  protected authURL = '/auth';
 
   constructor() {
     this.axios = axios.create();

@@ -21,7 +21,7 @@ interface TwitchGame {
 }
 
 export class TwitchAPIService {
-  private baseURL = 'http://localhost:3001/api/twitch';
+  private baseURL = '/api/twitch';
 
   // Use backend proxy instead of direct Twitch API calls
   private getHeaders() {

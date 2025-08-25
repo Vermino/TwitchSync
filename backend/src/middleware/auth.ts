@@ -17,8 +17,9 @@ interface DatabaseUser {
 
 // Define the JWT token payload structure
 interface TokenPayload {
-  id: number;
-  twitch_id: string | null;
+  userId: number;
+  twitchId: string | null;
+  username: string;
   exp: number;
 }
 
@@ -81,7 +82,7 @@ export const authenticate = (pool: Pool) => {
             // Get user from database
             const userResult: QueryResult<DatabaseUser> = await client.query(
               'SELECT * FROM users WHERE id = $1',
-              [decoded.id]
+              [decoded.userId]
             );
 
             if (userResult.rows.length === 0) {
@@ -96,8 +97,9 @@ export const authenticate = (pool: Pool) => {
             // Generate new token
             const newToken = jwt.sign(
               {
-                id: user.id,
-                twitch_id: user.twitch_id
+                userId: user.id,
+                twitchId: user.twitch_id,
+                username: user.username
               },
               jwtSecret,
               { expiresIn: '1d' }
@@ -112,8 +114,8 @@ export const authenticate = (pool: Pool) => {
 
         // Set user data in request
         const userData: TwitchSyncUser = {
-          id: decoded.id.toString(),
-          twitch_id: decoded.twitch_id || undefined
+          id: decoded.userId.toString(),
+          twitch_id: decoded.twitchId || undefined
         };
 
         req.user = userData;

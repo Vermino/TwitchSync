@@ -19,36 +19,88 @@ const CallbackHandler = () => {
 
       const params = new URLSearchParams(location.search);
       const code = params.get('code');
+      const token = params.get('token');
       const authError = params.get('error');
       const errorDescription = params.get('error_description');
       const state = params.get('state');
 
-      if (authError || !code) {
-        const errorMsg = errorDescription || authError || 'No authorization code received';
+      // Handle auth errors
+      if (authError) {
+        const errorMsg = errorDescription || authError || 'Authentication error';
         logger.error('Auth error:', errorMsg);
         setError(errorMsg);
         setTimeout(() => navigate('/login'), 3000);
         return;
       }
 
-      // Prevent duplicate processing
-      if (processedCode.current === code) {
+      // Handle token-based auth (backend processed the OAuth)
+      if (token) {
+        // Prevent duplicate processing
+        if (processedCode.current === token) {
+          return;
+        }
+
+        setIsProcessing(true);
+        processedCode.current = token;
+
+        try {
+          // Store the JWT token and fetch user data
+          localStorage.setItem('auth_token', token);
+          
+          // Verify token by fetching user info
+          const response = await fetch('/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to verify authentication');
+          }
+
+          const { user } = await response.json();
+          
+          logger.info('Authentication successful:', { username: user.username });
+          navigate('/dashboard');
+          return;
+        } catch (err) {
+          logger.error('Token verification error:', err);
+          setError('Failed to verify authentication token');
+          setTimeout(() => navigate('/login'), 3000);
+          return;
+        } finally {
+          setIsProcessing(false);
+        }
+      }
+
+      // Handle code-based auth (old flow - frontend processes OAuth)
+      if (code) {
+        // Prevent duplicate processing
+        if (processedCode.current === code) {
+          return;
+        }
+
+        setIsProcessing(true);
+        processedCode.current = code;
+
+        try {
+          await login(code);
+          navigate('/dashboard');
+        } catch (err) {
+          logger.error('Login error:', err);
+          setError(err instanceof Error ? err.message : 'Failed to authenticate with Twitch');
+          setTimeout(() => navigate('/login'), 3000);
+        } finally {
+          setIsProcessing(false);
+        }
         return;
       }
 
-      setIsProcessing(true);
-      processedCode.current = code;
-
-      try {
-        await login(code);
-        navigate('/dashboard');
-      } catch (err) {
-        logger.error('Login error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to authenticate with Twitch');
-        setTimeout(() => navigate('/login'), 3000);
-      } finally {
-        setIsProcessing(false);
-      }
+      // No code or token provided
+      logger.error('No authorization code or token received');
+      setError('No authorization information received');
+      setTimeout(() => navigate('/login'), 3000);
     };
 
     handleCallback();

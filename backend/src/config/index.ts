@@ -20,9 +20,9 @@ const dbConfigSchema = z.object({
 
 // Twitch configuration schema
 const twitchConfigSchema = z.object({
-  clientId: z.string(),
-  clientSecret: z.string(),
-  redirectUri: z.string().url(),
+  clientId: z.string().default(''),
+  clientSecret: z.string().default(''),
+  redirectUri: z.string().url().default('http://localhost:3001/auth/twitch/callback'),
   scopes: z.array(z.string()),
   apiUrl: z.string().url(),
   authUrl: z.string().url()
@@ -32,16 +32,16 @@ const twitchConfigSchema = z.object({
 const serverConfigSchema = z.object({
   port: z.coerce.number().default(3001),
   nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
-  frontendUrl: z.string().url(),
-  corsOrigin: z.string()
+  frontendUrl: z.string().url().default('http://localhost:3000'),
+  corsOrigin: z.string().default('http://localhost:3000')
 });
 
 // Storage configuration schema
 const storageConfigSchema = z.object({
-  mediaServerPath: z.string(),
-  storagePath: z.string(),
-  tempPath: z.string(),
-  tempDownloadPath: z.string()
+  mediaServerPath: z.string().default('./storage/media'),
+  storagePath: z.string().default('./storage'),
+  tempPath: z.string().default('./temp'),
+  tempDownloadPath: z.string().default('./temp/downloads')
 });
 
 // Export configuration
@@ -60,9 +60,9 @@ export const config = {
   }),
 
   twitch: twitchConfigSchema.parse({
-    clientId: process.env.TWITCH_CLIENT_ID,
-    clientSecret: process.env.TWITCH_CLIENT_SECRET,
-    redirectUri: process.env.TWITCH_REDIRECT_URI,
+    clientId: process.env.TWITCH_CLIENT_ID || '',
+    clientSecret: process.env.TWITCH_CLIENT_SECRET || '',
+    redirectUri: process.env.TWITCH_REDIRECT_URI || 'http://localhost:3001/auth/twitch/callback',
     scopes: [
       'user:read:email',
       'channel:read:vods',
@@ -79,15 +79,15 @@ export const config = {
   server: serverConfigSchema.parse({
     port: process.env.PORT,
     nodeEnv: process.env.NODE_ENV as 'development' | 'production' | 'test',
-    frontendUrl: process.env.FRONTEND_URL!,
-    corsOrigin: process.env.CORS_ORIGIN!
+    frontendUrl: process.env.FRONTEND_URL,
+    corsOrigin: process.env.CORS_ORIGIN
   }),
 
   storage: storageConfigSchema.parse({
-    mediaServerPath: process.env.MEDIA_SERVER_PATH!,
-    storagePath: process.env.STORAGE_PATH!,
-    tempPath: process.env.TEMP_PATH!,
-    tempDownloadPath: process.env.TEMP_DOWNLOAD_PATH!
+    mediaServerPath: process.env.MEDIA_SERVER_PATH,
+    storagePath: process.env.STORAGE_PATH,
+    tempPath: process.env.TEMP_PATH,
+    tempDownloadPath: process.env.TEMP_DOWNLOAD_PATH
   })
 };
 
@@ -99,27 +99,40 @@ export type StorageConfig = z.infer<typeof storageConfigSchema>;
 
 // Validate critical configuration on startup
 try {
-  // Validate database configuration
+  // Check for critical configuration and warn about missing optional items
+  const criticalMissing = [];
+  const warningMissing = [];
+
+  // Critical: Database configuration
   if (!config.database.host || !config.database.database || !config.database.user) {
-    throw new Error('Missing required database configuration');
+    criticalMissing.push('database configuration (DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)');
   }
 
-  // Validate Twitch configuration
-  if (!config.twitch.clientId || !config.twitch.clientSecret || !config.twitch.redirectUri) {
-    throw new Error('Missing required Twitch configuration');
+  // Warning: Twitch configuration (for development, can work without Twitch features)
+  if (!config.twitch.clientId || config.twitch.clientId === '' || 
+      !config.twitch.clientSecret || config.twitch.clientSecret === '') {
+    warningMissing.push('Twitch API configuration (TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_REDIRECT_URI)');
   }
 
-  // Validate server configuration
+  // Warning: Server configuration (has defaults)
   if (!config.server.frontendUrl || !config.server.corsOrigin) {
-    throw new Error('Missing required server configuration');
+    warningMissing.push('frontend/CORS configuration (FRONTEND_URL, CORS_ORIGIN)');
   }
 
-  // Validate storage configuration
+  // Warning: Storage configuration (has defaults)
   if (!config.storage.mediaServerPath || !config.storage.storagePath) {
-    throw new Error('Missing required storage configuration');
+    warningMissing.push('storage paths configuration (MEDIA_SERVER_PATH, STORAGE_PATH, TEMP_PATH)');
   }
 
-  logger.info('Configuration validated successfully');
+  if (criticalMissing.length > 0) {
+    throw new Error(`Missing critical configuration: ${criticalMissing.join(', ')}`);
+  }
+
+  if (warningMissing.length > 0) {
+    logger.warn(`Missing optional configuration (limited functionality): ${warningMissing.join(', ')}`);
+  }
+
+  logger.info('Configuration validation completed');
 } catch (error) {
   logger.error('Configuration validation failed:', error);
   throw error;

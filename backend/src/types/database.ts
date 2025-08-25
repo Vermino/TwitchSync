@@ -275,31 +275,8 @@ export interface TaskVODStats {
 export interface TaskDetails {
   id: number;
   task_id: number;
-  progress: TaskProgressInfo;
-  storage: TaskStorageInfo;
-  vod_stats: TaskVODStats;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface TaskDetails {
-  id: number;
-  task_id: number;
-  progress: {
-    percentage: number;
-    completed: number;
-    total: number;
-    current_item?: {
-      type: 'channel' | 'game';
-      name: string;
-      status: string;
-    };
-  };
-  storage: {
-    used: number;
-    limit: number;
-    remaining: number;
-  };
+  progress: TaskProgress;
+  storage: TaskStorage;
   vod_stats: TaskVODStats;
   created_at: Date;
   updated_at: Date;

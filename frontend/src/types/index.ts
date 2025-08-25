@@ -24,6 +24,8 @@ export type {
   TaskConfig,
   CreateTaskRequest,
   UpdateTaskRequest,
+  TaskDetails,
+  TaskStorage,
   Channel,
   Game
 } from './task';

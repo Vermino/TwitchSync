@@ -10,7 +10,22 @@
       "Bash(npm run dev:*)",
       "Bash(pkill:*)",
       "Bash(taskkill:*)",
-      "Read(/C:\\Users\\jesse\\.claude\\context/**)"
+      "Read(/C:\\Users\\jesse\\.claude\\context/**)",
+      "Bash(psql:*)",
+      "Bash(where psql)",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -U postgres -c \"\\l\")",
+      "Bash(set PGPASSWORD=postgres)",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\createuser.exe\" -U postgres -h localhost twitchsync_user)",
+      "Bash(node:*)",
+      "Bash(timeout 10s npm run dev)",
+      "Bash(npm run migrate:*)",
+      "Bash(where:*)",
+      "Bash(timeout 15s npm run dev)",
+      "Bash(curl:*)",
+      "Bash(cat:*)",
+      "Bash(timeout 5s tail -f C:UsersjesseWebstormProjectsTwitchSyncbackend.log)",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -U postgres -d twitchsync -c \"\\dt\")",
+      "Bash(npx ts-node:*)"
     ],
     "deny": [],
     "ask": []

@@ -23,10 +23,19 @@ export const TWITCH_CONFIG = {
 export const TWITCH_API_URL = 'https://api.twitch.tv/helix';
 export const TWITCH_AUTH_URL = 'https://id.twitch.tv/oauth2';
 
-// Validation
-if (!TWITCH_CONFIG.clientId || !TWITCH_CONFIG.clientSecret || !TWITCH_CONFIG.redirectUri) {
+// Development-friendly validation
+const isDevelopment = process.env.NODE_ENV === 'development';
+const hasValidCredentials = TWITCH_CONFIG.clientId && 
+                           TWITCH_CONFIG.clientSecret && 
+                           !TWITCH_CONFIG.clientId.includes('your_twitch_client_id') &&
+                           !TWITCH_CONFIG.clientId.includes('dev_test_client');
+
+if (!hasValidCredentials && !isDevelopment) {
   logger.error('Missing required Twitch configuration. Please check your environment variables.');
   throw new Error('Missing required Twitch configuration');
+} else if (!hasValidCredentials && isDevelopment) {
+  logger.warn('Using placeholder Twitch credentials. Twitch authentication will not work until real credentials are provided.');
+  logger.info('To get real credentials: https://dev.twitch.tv/console/apps');
 }
 
 // Additional Twitch-specific constants

@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/me`, {
+        const response = await fetch('/auth/me', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -96,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('auth_token', token);
 
       // Fetch user data after successful login
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/me`, {
+      const response = await fetch('/auth/me', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = localStorage.getItem('auth_token');
       if (token) {
-        await fetch(`${import.meta.env.VITE_API_URL}/auth/logout`, {
+        await fetch('/auth/logout', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -152,9 +152,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const connectTwitch = () => {
-    const authUrl = twitchAuth.getAuthUrl();
-    window.location.href = authUrl;
+  const connectTwitch = async () => {
+    try {
+      const result = await twitchAuth.getAuthUrl();
+      
+      if (result.error) {
+        // Handle configuration error
+        setAuthState(prev => ({
+          ...prev,
+          error: result.error
+        }));
+        logger.error('Twitch connection error:', result.error);
+        
+        // Optionally redirect to settings or show instructions
+        if (result.redirectTo) {
+          // You could navigate to settings here if you have a settings page
+          console.warn('Redirect to:', result.redirectTo);
+        }
+        return;
+      }
+      
+      if (result.url) {
+        window.location.href = result.url;
+      } else {
+        throw new Error('No auth URL returned');
+      }
+    } catch (error) {
+      logger.error('Failed to initiate Twitch connection:', error);
+      setAuthState(prev => ({
+        ...prev,
+        error: 'Failed to connect to Twitch. Please check your configuration.'
+      }));
+    }
   };
 
   const disconnectTwitch = async () => {

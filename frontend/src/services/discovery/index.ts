@@ -9,7 +9,7 @@ import type {
 } from '@/types/discovery';
 
 export class DiscoveryService {
-  private baseURL = 'http://localhost:3001/api/discovery';
+  private baseURL = '/api/discovery';
 
   private getHeaders() {
     const token = localStorage.getItem('auth_token');

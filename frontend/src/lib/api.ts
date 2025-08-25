@@ -26,8 +26,8 @@ import {DashboardStats} from "../types";
 
 class ApiClient {
   private static instance: ApiClient;
-  private baseURL = 'http://localhost:3001/api';
-  private authURL = 'http://localhost:3001/auth';
+  private baseURL = '/api';
+  private authURL = '/auth';
 
   private constructor() {
     // Add request interceptor for auth token

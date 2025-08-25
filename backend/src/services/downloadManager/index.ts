@@ -13,7 +13,8 @@ import {
   QueueStatus,
   DownloadState,
   SystemResources,
-  DownloadMetrics
+  DownloadMetrics,
+  DownloadPriority
 } from './types';
 
 export class DownloadManager extends EventEmitter {
@@ -172,6 +173,73 @@ export class DownloadManager extends EventEmitter {
 
   public async executeTask(taskId: number): Promise<void> {
     return this.taskHandler.executeTask(taskId);
+  }
+
+  public async addToQueue(vodId: number, priority?: DownloadPriority): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(`
+        UPDATE vods 
+        SET download_status = 'queued',
+            download_priority = $2,
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vodId, priority || 'normal']);
+      
+      logger.info(`Added VOD ${vodId} to download queue with priority ${priority || 'normal'}`);
+    } catch (error) {
+      logger.error(`Error adding VOD ${vodId} to queue:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async retryFailedDownload(vodId: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(`
+        UPDATE vods 
+        SET download_status = 'queued',
+            error_message = NULL,
+            retry_count = retry_count + 1,
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vodId]);
+      
+      logger.info(`Retrying failed download for VOD ${vodId}`);
+    } catch (error) {
+      logger.error(`Error retrying download for VOD ${vodId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async cancelDownload(vodId: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      // Update database status
+      await client.query(`
+        UPDATE vods 
+        SET download_status = 'cancelled',
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vodId]);
+
+      // Cancel active download if running
+      if (this.downloadHandler.getActiveDownloads().has(vodId)) {
+        // The download handler will clean up the active download state
+        this.downloadHandler.getActiveDownloads().delete(vodId);
+      }
+      
+      logger.info(`Cancelled download for VOD ${vodId}`);
+    } catch (error) {
+      logger.error(`Error cancelling download for VOD ${vodId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   public async getTaskDetails(taskId: number): Promise<any> {

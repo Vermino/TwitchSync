@@ -54,22 +54,61 @@ export class ResourceMonitor extends EventEmitter {
         const { promisify } = require('util');
         const execFileAsync = promisify(execFile);
 
-        const { stdout } = await execFileAsync('wmic', ['logicaldisk', 'get', 'size,freespace']);
-        const lines = stdout.trim().split('\n');
-        const values = lines[1].trim().split(/\s+/);
+        try {
+          // Try wmic first
+          const { stdout } = await execFileAsync('wmic', ['logicaldisk', 'get', 'size,freespace']);
+          const lines = stdout.trim().split('\n');
+          const values = lines[1].trim().split(/\s+/);
 
-        return {
-          total: parseInt(values[1]),
-          free: parseInt(values[0]),
-          available: parseInt(values[0])
-        };
+          return {
+            total: parseInt(values[1]),
+            free: parseInt(values[0]),
+            available: parseInt(values[0])
+          };
+        } catch (wmicError) {
+          // Fall back to PowerShell if wmic is not available
+          const { stdout } = await execFileAsync('powershell', [
+            '-Command',
+            'Get-WmiObject -Class Win32_LogicalDisk | Select-Object Size,FreeSpace | ConvertTo-Json'
+          ]);
+          
+          const diskData = JSON.parse(stdout);
+          const disk = Array.isArray(diskData) ? diskData[0] : diskData;
+          
+          return {
+            total: disk.Size,
+            free: disk.FreeSpace,
+            available: disk.FreeSpace
+          };
+        }
       } else {
-        // Unix-like systems
-        const stats = await fs.statfs(this.tempDir);
+        // Unix-like systems - use statvfs via child_process
+        const { execFile } = require('child_process');
+        const { promisify } = require('util');
+        const execFileAsync = promisify(execFile);
+
+        try {
+          const { stdout } = await execFileAsync('df', ['-B1', this.tempDir]);
+          const lines = stdout.trim().split('\n');
+          if (lines.length >= 2) {
+            const values = lines[1].trim().split(/\s+/);
+            const total = parseInt(values[1]);
+            const available = parseInt(values[3]);
+            return {
+              total,
+              free: available,
+              available
+            };
+          }
+        } catch (dfError) {
+          logger.warn('df command failed, using fallback disk space detection');
+        }
+
+        // Fallback for systems where df isn't available
         return {
-          total: stats.blocks * stats.bsize,
-          free: stats.bfree * stats.bsize,
-          available: stats.bavail * stats.bsize
+          total: 1024 * 1024 * 1024 * 100, // 100GB default
+          free: 1024 * 1024 * 1024 * 50,   // 50GB default
+          available: 1024 * 1024 * 1024 * 50
         };
       }
     } catch (error) {

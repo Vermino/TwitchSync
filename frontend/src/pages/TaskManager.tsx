@@ -8,6 +8,7 @@ import TaskModal from '@/components/TaskModal';
 import TaskList from '@/components/TaskManager/TaskList';
 import type { Task, Channel, Game, TaskStatus } from '@/types/task';
 import { useToast } from '@/components/ui/use-toast';
+import { api } from '@/lib/api';
 
 const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   'running': 'pending',
@@ -31,18 +32,7 @@ export default function TaskManager() {
     queryKey: ['tasks'],
     queryFn: async () => {
       try {
-        const response = await fetch('/api/tasks', {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch tasks');
-        }
-
-        const result = await response.json();
+        const result = await api.tasks.getTasks();
         return Array.isArray(result) ? result : [];
       } catch (error) {
         console.error('Error fetching tasks:', error);
@@ -61,42 +51,21 @@ export default function TaskManager() {
   const { data: channels = [] } = useQuery<Channel[]>({
     queryKey: ['channels'],
     queryFn: async () => {
-      const response = await fetch('/api/channels', {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-      const data = await response.json();
-      return data;
+      return await api.channels.getChannels();
     }
   });
 
   const { data: games = [] } = useQuery<Game[]>({
     queryKey: ['games'],
     queryFn: async () => {
-      const response = await fetch('/api/games', {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-      const data = await response.json();
-      return data;
+      return await api.games.getGames();
     }
   });
 
   const { isLoading: vodsLoading } = useQuery({
     queryKey: ['vods'],
     queryFn: async () => {
-      const response = await fetch('/api/vods', {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-      const data = await response.json();
-      return data;
+      return await api.vods.getVods();
     },
     refetchInterval: 30000
   });
@@ -104,18 +73,7 @@ export default function TaskManager() {
   // Mutations
   const createTaskMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        },
-        body: JSON.stringify(data)
-      });
-      if (!response.ok) {
-        throw new Error('Failed to create task');
-      }
-      return response.json();
+      return await api.tasks.createTask(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -135,18 +93,7 @@ export default function TaskManager() {
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        },
-        body: JSON.stringify(data)
-      });
-      if (!response.ok) {
-        throw new Error('Failed to update task');
-      }
-      return response.json();
+      return await api.tasks.updateTask(id, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -166,16 +113,7 @@ export default function TaskManager() {
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-      if (!response.ok) {
-        throw new Error('Failed to delete task');
-      }
+      return await api.tasks.deleteTask(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -227,39 +165,17 @@ export default function TaskManager() {
 
       if (currentStatus === 'running') {
         // If task is running, pause it
-        const response = await fetch(`/api/tasks/${taskId}/status/pause`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to pause task');
-        }
+        await api.tasks.pauseTask(taskId);
       } else if (nextStatus === 'running') {
         // If next status is running, activate the task
-        const response = await fetch(`/api/tasks/${taskId}/activate`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to activate task');
+        await api.tasks.activateTask(taskId);
+        
+        // After activation, queue VODs if available
+        try {
+          await api.tasks.queueVodsForTask(taskId);
+        } catch (error) {
+          console.warn('Failed to queue VODs after task activation:', error);
         }
-
-        // After activation, queue VODs
-        await fetch(`/api/tasks/${taskId}/queue-vods`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
-        });
       } else {
         // For other status changes, use the update endpoint
         await updateTaskMutation.mutateAsync({

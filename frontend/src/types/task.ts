@@ -116,3 +116,22 @@ export interface CreateTaskRequest {
 export interface UpdateTaskRequest extends Partial<CreateTaskRequest> {
   status?: TaskStatus;
 }
+
+export interface TaskDetails extends Task {
+  vods_count?: number;
+  total_size_mb?: number;
+  last_error?: string;
+  performance_stats?: {
+    average_speed: number;
+    success_rate: number;
+    total_downloads: number;
+  };
+}
+
+export interface TaskStorage {
+  used_gb: number;
+  limit_gb?: number;
+  files_count: number;
+  oldest_file?: string;
+  newest_file?: string;
+}

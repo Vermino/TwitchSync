@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Task, CreateTaskRequest, UpdateTaskRequest, TaskDetails, TaskProgress, TaskStorage } from '@/types/task';
 import { logger } from '@/utils/logger';
 
-const BASE_URL = 'http://localhost:3001/api';
+const BASE_URL = '/api';
 
 function getHeaders() {
   const token = localStorage.getItem('auth_token');

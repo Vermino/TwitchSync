@@ -39,19 +39,42 @@ export class TwitchAuth {
 
   /**
    * Get the authorization URL for Twitch OAuth
-   * @returns The complete authorization URL
+   * @returns Promise resolving to the complete authorization URL
    */
-  public getAuthUrl(): string {
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: this.config.clientId,
-      redirect_uri: this.config.redirectUri,
-      scope: TwitchAuth.SCOPES.join(' '),
-      force_verify: String(TwitchAuth.FORCE_VERIFY),
-      state: this.generateState()
-    });
+  public async getAuthUrl(): Promise<{ url?: string; error?: string; instructions?: string; redirectTo?: string }> {
+    try {
+      // Get the auth URL from our backend to ensure credentials are valid
+      const response = await fetch('/auth/twitch/url');
+      
+      if (!response.ok) {
+        const error = await response.json();
+        logger.warn('Backend auth URL generation failed:', error);
+        
+        return {
+          error: error.error || 'Configuration error',
+          instructions: error.instructions || 'Please configure Twitch credentials',
+          redirectTo: error.redirectTo
+        };
+      }
+      
+      const data = await response.json();
+      return { url: data.url };
+      
+    } catch (error) {
+      logger.error('Failed to get auth URL from backend, falling back to frontend generation:', error);
+      
+      // Fallback to frontend generation (may not work with invalid credentials)
+      const params = new URLSearchParams({
+        response_type: 'code',
+        client_id: this.config.clientId,
+        redirect_uri: this.config.redirectUri,
+        scope: TwitchAuth.SCOPES.join(' '),
+        force_verify: String(TwitchAuth.FORCE_VERIFY),
+        state: this.generateState()
+      });
 
-    return `${TwitchAuth.AUTH_URL}?${params.toString()}`;
+      return { url: `${TwitchAuth.AUTH_URL}?${params.toString()}` };
+    }
   }
 
   /**
@@ -63,7 +86,7 @@ export class TwitchAuth {
     try {
       logger.info('Processing Twitch callback code');
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/twitch/callback`, {
+      const response = await fetch('/auth/twitch/callback', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -92,7 +115,7 @@ export class TwitchAuth {
    */
   public async disconnect(token: string): Promise<void> {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/twitch/disconnect`, {
+      const response = await fetch('/auth/twitch/disconnect', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

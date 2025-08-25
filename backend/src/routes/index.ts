@@ -12,8 +12,10 @@ import { setupTaskRoutes } from './tasks';
 import { setupTwitchSearchRoutes } from './twitch/search';
 import { setupVodRoutes } from './vods';
 import createDiscoveryRouter from './discovery';
+import createDownloadsRouter from './downloads';
 import { authenticate } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import DownloadManager from '../services/downloadManager';
 
 export function setupRoutes(pool: Pool): Router {
   const router = Router();
@@ -27,6 +29,15 @@ export function setupRoutes(pool: Pool): Router {
   // Public routes
   router.use('/auth', setupAuthRoutes(pool));
 
+  // Get download manager instance for downloads routes
+  const downloadManager = DownloadManager.getInstance(pool, {
+    tempDir: process.env.TEMP_DIR || './temp',
+    maxConcurrent: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '3'),
+    retryAttempts: parseInt(process.env.DOWNLOAD_RETRY_ATTEMPTS || '3'),
+    retryDelay: parseInt(process.env.DOWNLOAD_RETRY_DELAY || '5000'),
+    cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600')
+  });
+
   // Protected routes
   const protectedRoutes = [
     { path: '/channels', handler: setupChannelRoutes },
@@ -37,7 +48,8 @@ export function setupRoutes(pool: Pool): Router {
     { path: '/tasks', handler: setupTaskRoutes },
     { path: '/twitch', handler: setupTwitchSearchRoutes },
     { path: '/vods', handler: setupVodRoutes },
-    { path: '/discovery', handler: createDiscoveryRouter }
+    { path: '/discovery', handler: () => createDiscoveryRouter },
+    { path: '/downloads', handler: (poolArg: Pool) => createDownloadsRouter(poolArg, downloadManager) }
   ];
 
   // Set up protected routes

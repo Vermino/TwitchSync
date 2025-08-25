@@ -12,7 +12,9 @@ const pool = new Pool({
   password: config.database.password,
   ssl: config.database.ssl,
   max: config.database.max,
-  idleTimeoutMillis: config.database.idleTimeoutMillis
+  idleTimeoutMillis: config.database.idleTimeoutMillis,
+  connectionTimeoutMillis: 5000,
+  query_timeout: 10000
 });
 
 export const setupDatabase = async () => {

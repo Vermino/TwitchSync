@@ -2,6 +2,9 @@ import { Pool } from 'pg';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
+
+// Configure axios defaults for all Twitch API calls
+axios.defaults.timeout = 15000;
 import type {
   User,
   TwitchAccount,
@@ -46,7 +49,8 @@ export class AuthService {
             code,
             grant_type: 'authorization_code',
             redirect_uri: process.env.TWITCH_REDIRECT_URI
-          }
+          },
+          timeout: 10000
         }
       );
 
@@ -61,7 +65,10 @@ export class AuthService {
     try {
       const response = await axios.get<{ data: TwitchUserResponse[] }>(
         `${this.TWITCH_API_URL}/users`,
-        { headers: this.getHeaders(accessToken) }
+        { 
+          headers: this.getHeaders(accessToken),
+          timeout: 10000
+        }
       );
 
       return response.data.data[0];
@@ -219,7 +226,8 @@ export class AuthService {
             client_secret: process.env.TWITCH_CLIENT_SECRET,
             refresh_token: refreshToken,
             grant_type: 'refresh_token'
-          }
+          },
+          timeout: 10000
         }
       );
 
@@ -257,7 +265,8 @@ export class AuthService {
         {
           headers: {
             'Authorization': `OAuth ${accessToken}`
-          }
+          },
+          timeout: 10000
         }
       );
       return true;
@@ -290,7 +299,8 @@ export class AuthService {
               params: {
                 client_id: process.env.TWITCH_CLIENT_ID,
                 token: access_token
-              }
+              },
+              timeout: 10000
             }
           );
         } catch (error) {
