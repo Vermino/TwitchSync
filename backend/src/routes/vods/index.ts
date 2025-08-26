@@ -36,29 +36,8 @@ export function setupVodRoutes(pool: Pool): Router {
           ORDER BY v.created_at DESC
         `, [userId]);
 
-        // Get detailed stats for each VOD
-        const vodsWithStats = await Promise.all(vodsQuery.rows.map(async (vod) => {
-          const statsQuery = await client.query(`
-            SELECT 
-              COUNT(*) as total_segments,
-              COUNT(*) FILTER (WHERE download_status = 'completed') as completed_segments,
-              SUM(CASE WHEN download_status = 'completed' THEN file_size ELSE 0 END) as total_size,
-              MAX(error_message) as latest_error
-            FROM vod_segments
-            WHERE vod_id = $1
-          `, [vod.id]);
-
-          const stats = statsQuery.rows[0];
-          return {
-            ...vod,
-            download_progress: stats.total_segments > 0 ?
-              (stats.completed_segments / stats.total_segments) * 100 : 0,
-            downloaded_size: stats.total_size || 0,
-            error_message: stats.latest_error
-          };
-        }));
-
-        return vodsWithStats;
+        // Return VODs directly - download_progress is already in the vods table
+        return vodsQuery.rows;
       });
 
       res.json(result);
@@ -92,9 +71,6 @@ export function setupVodRoutes(pool: Pool): Router {
         if (verifyQuery.rows.length === 0) {
           throw new Error('VOD not found or access denied');
         }
-
-        // Delete associated segments first
-        await client.query('DELETE FROM vod_segments WHERE vod_id = $1', [vodId]);
 
         // Delete the VOD
         await client.query('DELETE FROM vods WHERE id = $1', [vodId]);

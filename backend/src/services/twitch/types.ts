@@ -7,6 +7,7 @@ export interface TwitchAPIResponse<T> {
   pagination?: {
     cursor?: string;
   };
+  total?: number;
 }
 
 export interface TwitchStreamInfo {

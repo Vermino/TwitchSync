@@ -86,8 +86,31 @@ export const BatchDeleteTasksSchema = z.object({
   task_ids: z.array(z.number()).min(1)
 });
 
+// Base task schema for database operations
+export const BaseTaskSchema = z.object({
+  id: z.number(),
+  user_id: z.number(),
+  name: z.string(),
+  description: z.string().optional(),
+  task_type: TaskTypeEnum,
+  channel_ids: z.array(z.number()),
+  game_ids: z.array(z.number()),
+  schedule_type: TaskScheduleTypeEnum,
+  schedule_value: z.string(),
+  storage_limit_gb: z.number().optional(),
+  retention_days: z.number().optional(),
+  auto_delete: z.boolean(),
+  is_active: z.boolean(),
+  status: TaskStatusEnum,
+  priority: TaskPriorityEnum,
+  created_at: z.date(),
+  updated_at: z.date(),
+  monitoring_status: z.string().optional(),
+  monitoring_enabled: z.boolean().optional()
+});
+
 // Type exports
-export type Task = z.infer<typeof CreateTaskSchema>;
+export type Task = z.infer<typeof BaseTaskSchema>;
 export type CreateTaskRequest = z.infer<typeof CreateTaskSchema>;
 export type UpdateTaskRequest = z.infer<typeof UpdateTaskSchema>;
 export type BatchUpdateRequest = z.infer<typeof BatchUpdateTasksSchema>;

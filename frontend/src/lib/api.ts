@@ -436,7 +436,7 @@ class ApiClient {
         storage_limit_gb: Number(data.storage_limit_gb) || 0,
         retention_days: Number(data.retention_days) || 7,
         auto_delete: Boolean(data.auto_delete),
-        priority: data.priority || 'normal',
+        priority: data.priority || 'low',
         is_active: true,
         conditions: data.conditions || {},
         restrictions: data.restrictions || {}

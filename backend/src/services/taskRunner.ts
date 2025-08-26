@@ -105,7 +105,7 @@ export class TaskRunner {
       await this.updateTaskCompletion(taskId, 'completed');
     } catch (error) {
       logger.error(`Task ${taskId} execution failed:`, error);
-      await this.updateTaskCompletion(taskId, 'failed', error);
+      await this.updateTaskCompletion(taskId, 'failed', error instanceof Error ? error : new Error(String(error)));
     } finally {
       this.activeTasks.delete(taskId);
     }

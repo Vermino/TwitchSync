@@ -36,11 +36,9 @@ export default function TaskCard({
   onDelete,
   onEdit
 }: TaskCardProps) {
-  // Calculate actual progress based on downloaded VODs
-  const completedVods = task.progress?.current_progress?.completed || 0;
-  const totalVods = task.progress?.current_progress?.total || 0;
-  const actualProgress = totalVods > 0 ? (completedVods / totalVods) * 100 : 0;
-
+  // Use the actual progress percentage from backend (which tracks segment download progress)
+  // Don't override it with VOD completion percentage
+  
   // Determine if task is active
   const isActive = task.status === 'running';
 
@@ -103,13 +101,7 @@ export default function TaskCard({
               channelsLoading={channelsLoading}
               gamesLoading={gamesLoading}
             />
-            <TaskProgress task={{
-              ...task,
-              progress: {
-                ...task.progress,
-                percentage: actualProgress
-              }
-            }} />
+            <TaskProgress task={task} />
           </div>
         </div>
 

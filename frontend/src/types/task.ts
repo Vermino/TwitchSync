@@ -12,7 +12,7 @@ export type TaskStatus =
 
 export type TaskType = 'channel' | 'game' | 'combined';
 
-export type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
+export type TaskPriority = 'low' | 'medium' | 'high';
 
 export type ScheduleType = 'interval' | 'cron' | 'manual';
 

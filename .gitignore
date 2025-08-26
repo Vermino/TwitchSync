@@ -46,3 +46,4 @@ frontend/build/
 
 # Docker volumes
 pgdata/
+backend/temp/

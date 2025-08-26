@@ -112,7 +112,7 @@ export class TaskQueueManager {
       await client.query('COMMIT');
 
       // Enqueue task for processing
-      await this.enqueueTask(taskId, 'normal');
+      await this.enqueueTask(taskId, 'medium');
 
     } catch (error) {
       await client.query('ROLLBACK');

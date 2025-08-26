@@ -25,6 +25,75 @@ export interface Task {
   monitoring_enabled?: boolean;
 }
 
+// Request type interfaces
+export interface CreateTaskRequest {
+  name: string;
+  description?: string;
+  task_type: 'channel' | 'game' | 'combined';
+  channel_ids?: number[];
+  game_ids?: number[];
+  schedule_type: 'interval' | 'cron' | 'manual';
+  schedule_value: string;
+  storage_limit_gb?: number;
+  retention_days?: number;
+  auto_delete?: boolean;
+  is_active?: boolean;
+  priority?: TaskPriority;
+  conditions?: {
+    minFollowers?: number;
+    minViews?: number;
+    minDuration?: number;
+    languages?: string[];
+    requireChat?: boolean;
+  };
+  restrictions?: {
+    maxVodsPerChannel?: number;
+    maxStoragePerChannel?: number;
+    maxTotalVods?: number;
+    maxTotalStorage?: number;
+  };
+}
+
+export interface UpdateTaskRequest {
+  name?: string;
+  description?: string;
+  channel_ids?: number[];
+  game_ids?: number[];
+  schedule_type?: 'interval' | 'cron' | 'manual';
+  schedule_value?: string;
+  storage_limit_gb?: number;
+  retention_days?: number;
+  auto_delete?: boolean;
+  is_active?: boolean;
+  priority?: TaskPriority;
+  status?: TaskStatus;
+  conditions?: {
+    minFollowers?: number;
+    minViews?: number;
+    minDuration?: number;
+    languages?: string[];
+    requireChat?: boolean;
+  };
+  restrictions?: {
+    maxVodsPerChannel?: number;
+    maxStoragePerChannel?: number;
+    maxTotalVods?: number;
+    maxTotalStorage?: number;
+  };
+}
+
+export interface BatchUpdateRequest {
+  task_ids: number[];
+  updates: {
+    is_active?: boolean;
+    priority?: TaskPriority;
+    status?: TaskStatus;
+    storage_limit_gb?: number;
+    retention_days?: number;
+    auto_delete?: boolean;
+  };
+}
+
 export interface TaskOperationsInterface {
   getAllTasks(userId: number): Promise<Task[]>;
   getTaskById(taskId: number, userId: number): Promise<Task>;

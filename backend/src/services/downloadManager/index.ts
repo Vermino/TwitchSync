@@ -172,7 +172,26 @@ export class DownloadManager extends EventEmitter {
   }
 
   public async executeTask(taskId: number): Promise<void> {
-    return this.taskHandler.executeTask(taskId);
+    logger.info(`Starting execution for task ${taskId}`);
+    
+    // Start task execution in background to prevent HTTP timeouts
+    setImmediate(() => {
+      this.taskHandler.executeTask(taskId)
+        .then(() => {
+          logger.info(`Task ${taskId} VODs queued, triggering immediate download processing`);
+          // Process the queue immediately instead of waiting for the interval
+          if (!this.isShuttingDown) {
+            this.queueProcessor.triggerImmediateProcessing();
+          }
+          logger.info(`Task ${taskId} execution completed successfully`);
+        })
+        .catch(error => {
+          logger.error(`Task ${taskId} execution failed:`, error);
+        });
+    });
+    
+    // Return immediately to prevent HTTP timeout
+    logger.info(`Task ${taskId} execution started in background`);
   }
 
   public async addToQueue(vodId: number, priority?: DownloadPriority): Promise<void> {

@@ -91,7 +91,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
       storage_limit_gb: taskData.storage_limit_gb || 0,
       retention_days: taskData.retention_days || 7,
       auto_delete: taskData.auto_delete || false,
-      priority: taskData.priority || 'normal',
+      priority: taskData.priority || 'low',
       conditions: taskData.conditions || {},
       restrictions: taskData.restrictions || {}
     };

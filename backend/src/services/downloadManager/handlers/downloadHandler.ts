@@ -22,8 +22,8 @@ import {
   VodPlaylist
 } from '../types';
 
-const MAX_VODS = 10;
-const MAX_CONCURRENT_DOWNLOADS = 1;
+const MAX_VODS = 50;  // Increased to allow more VODs in queue
+const MAX_CONCURRENT_DOWNLOADS = 3;  // Allow 3 concurrent downloads
 
 export class DownloadHandler extends EventEmitter {
   private activeDownloads: Map<number, DownloadState>;
@@ -88,7 +88,28 @@ export class DownloadHandler extends EventEmitter {
     const state = this.activeDownloads.get(vodId);
     if (!state) throw new Error(`No download state found for VOD ${vodId}`);
 
-    const queue = [...segments];
+    // Check for existing segments and skip already downloaded ones
+    const existingSegments = new Set<number>();
+    try {
+      const files = await fs.readdir(tempDir);
+      files.forEach(file => {
+        const match = file.match(/^segment-(\d+)\.ts$/);
+        if (match) {
+          const segmentIndex = parseInt(match[1]);
+          existingSegments.add(segmentIndex);
+          state.completedSegments.add(segmentIndex);
+        }
+      });
+      if (existingSegments.size > 0) {
+        logger.info(`Found ${existingSegments.size} existing segments for VOD ${vodId}, resuming download`);
+        // Update progress immediately to reflect existing segments
+        await this.updateDownloadProgress(vodId, segments.length);
+      }
+    } catch (err) {
+      logger.debug(`No existing segments found for VOD ${vodId}`);
+    }
+
+    const queue = segments.filter(s => !existingSegments.has(s.index));
     const inProgress = new Set<Promise<void>>();
 
     while (queue.length > 0 || inProgress.size > 0) {
@@ -100,6 +121,10 @@ export class DownloadHandler extends EventEmitter {
         const downloadPromise = this.downloadSegment(vodId, segment, outputPath, throttleSpeed)
             .then(() => {
               inProgress.delete(downloadPromise);
+              // Update progress after each segment completes (don't await to avoid blocking)
+              this.updateDownloadProgress(vodId, segments.length).catch(err => {
+                logger.error(`Error updating progress for VOD ${vodId}:`, err);
+              });
             })
             .catch((error) => {
               logger.error(`Error downloading segment ${segment.index}:`, error);
@@ -192,20 +217,18 @@ export class DownloadHandler extends EventEmitter {
           us.settings->'downloads'->>'tempStorageLocation' as temp_path,
           (us.settings->'downloads'->>'concurrentDownloadLimit')::int as concurrent_limit,
           (us.settings->'downloads'->>'bandwidthThrottle')::int as bandwidth_limit,
-          us.settings as user_settings,
-          us.updated_at as completed_at
+          us.settings as user_settings
         FROM user_settings us
         INNER JOIN tasks t ON t.user_id = us.user_id
         WHERE t.id = $1
       `, [vod.task_id]);
 
       const settings = settingsResult.rows[0];
-      const downloadPath = settings?.download_path || this.tempDir;
+      const downloadPath = settings?.download_path || 'C:\\Users\\jesse\\TwitchSync\\Downloads';
       const tempPath = settings?.temp_path || this.tempDir;
       const bandwidthLimit = settings?.bandwidth_limit || 0;
       const concurrentLimit = settings?.concurrent_limit || 3;
       const userSettings = settings?.user_settings || {};
-      const completedAt = settings?.completed_at;
 
       // Ensure download directory exists
       await fs.mkdir(downloadPath, {recursive: true});
@@ -228,11 +251,11 @@ export class DownloadHandler extends EventEmitter {
         return;
       }
 
-      // Check active VOD count before proceeding
+      // Check active VOD count before proceeding (only count actually downloading VODs)
       const totalActiveVods = await client.query(`
         SELECT COUNT(*) as count
         FROM vods
-        WHERE download_status IN ('downloading', 'pending', 'queued')
+        WHERE download_status = 'downloading'
       `);
 
       if (totalActiveVods.rows[0].count >= MAX_VODS) {
@@ -341,15 +364,20 @@ export class DownloadHandler extends EventEmitter {
             bandwidthLimit
         );
 
-        // Update VOD status to completed
+        // Combine segments into final video file
+        logger.info(`Combining ${playlist.segments.length} segments for VOD ${vod.id}`);
+        const finalVideoPath = await this.combineSegments(vod, workingDir, downloadPath, playlist.segments.length);
+        
+        // Update VOD status to completed with file path
         await client.query(`
           UPDATE vods
           SET download_status   = 'completed',
-              completed_at      = NOW(),
+              downloaded_at     = NOW(),
               updated_at        = NOW(),
-              download_progress = 100
+              download_progress = 100,
+              download_path     = $2
           WHERE id = $1
-        `, [vod.id]);
+        `, [vod.id, finalVideoPath]);
 
         // Update task progress
         await client.query(`
@@ -362,14 +390,7 @@ export class DownloadHandler extends EventEmitter {
           WHERE task_id = $1
         `, [vod.task_id]);
 
-        // Update user_settings completed_at when relevant
-        if (!completedAt) {
-          await client.query(`
-            UPDATE user_settings
-            SET completed_at = NOW()
-            WHERE user_id = (SELECT user_id FROM tasks WHERE id = $1)
-          `, [vod.task_id]);
-        }
+        // Note: user_settings update removed as completed_at column doesn't exist
 
       } catch (error) {
         // Update VOD status based on error type
@@ -603,6 +624,110 @@ export class DownloadHandler extends EventEmitter {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  private async combineSegments(vod: any, tempDir: string, outputDir: string, segmentCount: number): Promise<string> {
+    try {
+      // Ensure output directory exists
+      await fs.mkdir(outputDir, { recursive: true });
+      
+      // Create output file path
+      const sanitizedTitle = vod.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
+      const outputFileName = `${vod.twitch_id}_${sanitizedTitle}.ts`;
+      const outputPath = path.join(outputDir, outputFileName);
+      
+      logger.info(`Combining segments to: ${outputPath}`);
+      
+      // Create file list for ffmpeg concat
+      const fileListPath = path.join(tempDir, 'filelist.txt');
+      let fileListContent = '';
+      
+      for (let i = 0; i < segmentCount; i++) {
+        const segmentPath = path.join(tempDir, `segment-${i}.ts`);
+        if (fsSync.existsSync(segmentPath)) {
+          fileListContent += `file '${segmentPath.replace(/\\/g, '/')}'\n`;
+        }
+      }
+      
+      await fs.writeFile(fileListPath, fileListContent);
+      
+      // Use simple concatenation for .ts files (they can be concatenated directly)
+      // For better compatibility, we'll just concatenate the files directly
+      const writeStream = fsSync.createWriteStream(outputPath);
+      
+      for (let i = 0; i < segmentCount; i++) {
+        const segmentPath = path.join(tempDir, `segment-${i}.ts`);
+        if (fsSync.existsSync(segmentPath)) {
+          const readStream = fsSync.createReadStream(segmentPath);
+          await new Promise((resolve, reject) => {
+            readStream.pipe(writeStream, { end: false });
+            readStream.on('end', resolve);
+            readStream.on('error', reject);
+          });
+        }
+      }
+      
+      writeStream.end();
+      
+      // Wait for write to complete
+      await new Promise((resolve) => writeStream.on('finish', resolve));
+      
+      logger.info(`Successfully combined segments into: ${outputPath}`);
+      return outputPath;
+      
+    } catch (error) {
+      logger.error(`Error combining segments for VOD ${vod.id}:`, error);
+      throw error;
+    }
+  }
+
+  private async updateDownloadProgress(vodId: number, totalSegments: number): Promise<void> {
+    const state = this.activeDownloads.get(vodId);
+    if (!state) {
+      logger.warn(`No download state found for VOD ${vodId} when updating progress`);
+      return;
+    }
+
+    const completedSegments = state.completedSegments.size;
+    const progressPercentage = Math.round((completedSegments / totalSegments) * 100);
+
+    // Update every 5 segments or every 1% change
+    const lastProgressUpdate = (state as any).lastProgressUpdate || 0;
+    if (completedSegments > 0 && 
+        completedSegments % 5 !== 0 && 
+        progressPercentage === lastProgressUpdate && 
+        progressPercentage < 100) {
+      return;
+    }
+    (state as any).lastProgressUpdate = progressPercentage;
+
+    try {
+      const client = await this.pool.connect();
+      try {
+        // Update VOD progress
+        await client.query(`
+          UPDATE vods
+          SET download_progress = $2,
+              updated_at = NOW()
+          WHERE id = $1
+        `, [vodId, progressPercentage]);
+
+        // Update task progress  
+        await client.query(`
+          UPDATE task_monitoring
+          SET status_message = $2,
+              progress_percentage = $3,
+              updated_at = NOW()
+          WHERE task_id = (SELECT task_id FROM vods WHERE id = $1)
+        `, [vodId, `Downloading segments: ${completedSegments}/${totalSegments}`, progressPercentage]);
+
+        logger.info(`VOD ${vodId} progress updated: ${completedSegments}/${totalSegments} segments (${progressPercentage}%)`);
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      logger.error(`Error updating progress for VOD ${vodId}:`, error);
     }
   }
 }

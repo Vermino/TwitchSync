@@ -91,26 +91,26 @@ export class TasksController {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      // Validate update data
-      const result = UpdateTaskSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: result.error.errors
-        });
-      }
-
-      const updates = result.data;
+      // The validateRequest middleware has already validated the data
+      const updates = req.body;
 
       // Special handling for task activation
-      if (updates.status === 'running' || (updates.is_active && req.body.start_processing)) {
-        logger.info(`Activating task ${taskId} with processing`, {
+      if (updates.status === 'running') {
+        logger.info(`Activating task ${taskId} - starting VOD discovery and downloads`, {
           userId,
           taskId,
           updates
         });
 
-        // Toggle task state to active
+        // Activate task and start processing
+        await this.operations.toggleTaskState(taskId, Number(userId), true);
+      } else if (updates.is_active === true) {
+        logger.info(`Activating task ${taskId} via is_active flag`, {
+          userId,
+          taskId
+        });
+        
+        // Activate task and start processing
         await this.operations.toggleTaskState(taskId, Number(userId), true);
       }
 
@@ -278,16 +278,8 @@ export class TasksController {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      // Validate batch update data
-      const result = BatchUpdateTasksSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: result.error.errors
-        });
-      }
-
-      const updatedTasks = await this.operations.batchUpdateTasks(Number(userId), result.data);
+      // The validateRequest middleware has already validated the data
+      const updatedTasks = await this.operations.batchUpdateTasks(Number(userId), req.body);
       res.json(updatedTasks);
     } catch (err) {
       logger.error('Error updating tasks:', err);
@@ -302,16 +294,8 @@ export class TasksController {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      // Validate batch delete data
-      const result = BatchDeleteTasksSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: result.error.errors
-        });
-      }
-
-      await this.operations.batchDeleteTasks(Number(userId), result.data.task_ids);
+      // The validateRequest middleware has already validated the data
+      await this.operations.batchDeleteTasks(Number(userId), req.body.task_ids);
       res.json({ message: 'Tasks deleted successfully' });
     } catch (err) {
       logger.error('Error deleting tasks:', err);

@@ -32,7 +32,7 @@ export default function TaskManager() {
     queryKey: ['tasks'],
     queryFn: async () => {
       try {
-        const result = await api.tasks.getTasks();
+        const result = await api.getTasks();
         return Array.isArray(result) ? result : [];
       } catch (error) {
         console.error('Error fetching tasks:', error);
@@ -48,24 +48,24 @@ export default function TaskManager() {
     staleTime: 1000
   });
 
-  const { data: channels = [] } = useQuery<Channel[]>({
+  const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
     queryKey: ['channels'],
     queryFn: async () => {
-      return await api.channels.getChannels();
+      return await api.getChannels();
     }
   });
 
-  const { data: games = [] } = useQuery<Game[]>({
+  const { data: games = [], isLoading: gamesLoading } = useQuery<Game[]>({
     queryKey: ['games'],
     queryFn: async () => {
-      return await api.games.getGames();
+      return await api.getGames();
     }
   });
 
   const { isLoading: vodsLoading } = useQuery({
     queryKey: ['vods'],
     queryFn: async () => {
-      return await api.vods.getVods();
+      return await api.getVods();
     },
     refetchInterval: 30000
   });
@@ -73,7 +73,7 @@ export default function TaskManager() {
   // Mutations
   const createTaskMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await api.tasks.createTask(data);
+      return await api.createTask(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -93,7 +93,7 @@ export default function TaskManager() {
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      return await api.tasks.updateTask(id, data);
+      return await api.updateTask(id, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -113,7 +113,7 @@ export default function TaskManager() {
 
   const deleteTaskMutation = useMutation({
     mutationFn: async (id: number) => {
-      return await api.tasks.deleteTask(id);
+      return await api.deleteTask(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['tasks']);
@@ -163,29 +163,14 @@ export default function TaskManager() {
       // Determine the next status based on current status
       const nextStatus = STATUS_CYCLE[currentStatus];
 
-      if (currentStatus === 'running') {
-        // If task is running, pause it
-        await api.tasks.pauseTask(taskId);
-      } else if (nextStatus === 'running') {
-        // If next status is running, activate the task
-        await api.tasks.activateTask(taskId);
-        
-        // After activation, queue VODs if available
-        try {
-          await api.tasks.queueVodsForTask(taskId);
-        } catch (error) {
-          console.warn('Failed to queue VODs after task activation:', error);
+      // Use updateTask for all status changes
+      await updateTaskMutation.mutateAsync({
+        id: taskId,
+        data: {
+          status: nextStatus,
+          is_active: nextStatus === 'running'
         }
-      } else {
-        // For other status changes, use the update endpoint
-        await updateTaskMutation.mutateAsync({
-          id: taskId,
-          data: {
-            status: nextStatus,
-            is_active: nextStatus === 'running'
-          }
-        });
-      }
+      });
 
       // Refetch tasks to update the UI
       await refetchTasks();
@@ -199,7 +184,7 @@ export default function TaskManager() {
     }
   };
 
-  if (tasksLoading) {
+  if (tasksLoading || channelsLoading || gamesLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
@@ -224,6 +209,8 @@ export default function TaskManager() {
         tasks={tasks}
         channels={channels}
         games={games}
+        channelsLoading={channelsLoading}
+        gamesLoading={gamesLoading}
         vodsLoading={vodsLoading}
         onTaskUpdate={handleStatusToggle}
         onTaskDelete={handleDeleteTask}

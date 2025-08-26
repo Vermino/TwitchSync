@@ -26,13 +26,34 @@ export class TaskHandler extends EventEmitter {
     this.twitchService = TwitchService.getInstance();
   }
 
+  /**
+   * Maps task priority levels to valid download priority enum values  
+   */
+  private mapTaskPriorityToDownloadPriority(taskPriority: string): string {
+    switch (taskPriority?.toLowerCase()) {
+      case 'low':
+        return 'low';
+      case 'medium':
+        return 'normal';  // Map medium to normal
+      case 'high':
+        return 'high';
+      case 'critical':
+        return 'critical';
+      default:
+        return 'normal';  // Default fallback
+    }
+  }
+
   async executeTask(taskId: number): Promise<void> {
     const client = await this.pool.connect();
     try {
+      logger.info(`TaskHandler: Starting execution for task ${taskId}`);
+      
       // Verify task exists and is active
       const taskResult = await client.query(`
         SELECT t.*, 
-               array_agg(DISTINCT c.twitch_id) as channel_ids,
+               array_agg(DISTINCT c.twitch_id) as channel_twitch_ids,
+               array_agg(DISTINCT c.id) as channel_db_ids,
                array_agg(DISTINCT g.twitch_game_id) as game_ids
         FROM tasks t
         LEFT JOIN channels c ON c.id = ANY(t.channel_ids)
@@ -45,6 +66,13 @@ export class TaskHandler extends EventEmitter {
         throw new Error(`Task ${taskId} not found or is inactive`);
       }
 
+      logger.info(`TaskHandler: Found task ${taskId}`, {
+        name: taskResult.rows[0].name,
+        channel_twitch_ids: taskResult.rows[0].channel_twitch_ids,
+        channel_db_ids: taskResult.rows[0].channel_db_ids,
+        game_ids: taskResult.rows[0].game_ids
+      });
+
       const task = taskResult.rows[0];
       let totalChannels = 0;
       let processedChannels = 0;
@@ -53,20 +81,26 @@ export class TaskHandler extends EventEmitter {
       let skippedVods = 0;
 
       // Process channels
-      if (task.channel_ids?.length > 0) {
-        totalChannels = task.channel_ids.length;
+      if (task.channel_twitch_ids?.length > 0) {
+        totalChannels = task.channel_twitch_ids.length;
+        logger.info(`TaskHandler: Processing ${totalChannels} channels for task ${taskId}`);
 
-        for (const channelId of task.channel_ids) {
+        for (let i = 0; i < task.channel_twitch_ids.length; i++) {
+          const channelTwitchId = task.channel_twitch_ids[i];
+          const channelDbId = task.channel_db_ids[i];
           try {
+            logger.info(`TaskHandler: Processing channel ${channelTwitchId} (${processedChannels + 1}/${totalChannels})`);
+            
             await this.updateTaskProgress(taskId, {
-              message: `Processing channel ${channelId}`,
+              message: `Processing channel ${channelTwitchId}`,
               total: totalChannels,
               completed: processedChannels,
               percentage: (processedChannels / totalChannels) * 100
             }, client);
 
-            const vods = await this.twitchService.getChannelVODs(channelId.toString());
-            logger.info(`Found ${vods.length} downloadable VODs for channel ${channelId}`);
+            logger.info(`TaskHandler: Fetching VODs for channel ${channelTwitchId}...`);
+            const vods = await this.twitchService.getChannelVODs(channelTwitchId.toString());
+            logger.info(`TaskHandler: Found ${vods.length} downloadable VODs for channel ${channelTwitchId}`);
             totalVods += vods.length;
 
             for (const vod of vods) {
@@ -76,7 +110,10 @@ export class TaskHandler extends EventEmitter {
                   throw new Error(`Failed to get metadata for VOD ${vod.id}`);
                 }
 
-                await this.queueVODDownload(vodInfo, task.priority, taskId, client);
+                // Map task priority to valid download priority
+                const downloadPriority = this.mapTaskPriorityToDownloadPriority(task.priority);
+                logger.info(`Task ${taskId}: mapping priority "${task.priority}" -> "${downloadPriority}"`);
+                await this.queueVODDownload(vodInfo, downloadPriority, taskId, channelDbId, client);
                 processedVods++;
 
                 await this.updateTaskProgress(taskId, {
@@ -115,17 +152,37 @@ export class TaskHandler extends EventEmitter {
 
             processedChannels++;
           } catch (error) {
-            logger.error(`Error processing channel ${channelId}:`, error);
+            logger.error(`Error processing channel ${channelTwitchId}:`, error);
           }
         }
       }
 
-      // Update task completion
-      await this.updateTaskCompletion(taskId, 'completed', {
-        total_vods: totalVods,
-        processed_vods: processedVods,
-        skipped_vods: skippedVods
-      }, client);
+      // Update task monitoring to show discovery completed but task still running
+      await client.query(`
+        UPDATE task_monitoring
+        SET status_message = $2,
+            items_total = $3,
+            items_completed = $4,
+            progress_percentage = 50,
+            updated_at = NOW()
+        WHERE task_id = $1
+      `, [
+        taskId,
+        `VOD discovery completed: ${processedVods} VODs queued for download`,
+        totalVods,
+        processedVods
+      ]);
+
+      // Keep task status as 'running' (don't mark as completed)
+      await client.query(`
+        UPDATE tasks
+        SET status = 'running',
+            last_run = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+      `, [taskId]);
+
+      logger.info(`Task ${taskId} VOD discovery completed - ${processedVods} VODs queued for download, ${skippedVods} skipped. Task remains running.`);
 
       this.emit('task:complete', {
         taskId,
@@ -150,6 +207,7 @@ export class TaskHandler extends EventEmitter {
     vod: TwitchVOD,
     priority: string,
     taskId: number,
+    channelId: number,
     client: PoolClient
   ): Promise<void> {
     try {
@@ -168,12 +226,14 @@ export class TaskHandler extends EventEmitter {
           INSERT INTO vods (
             twitch_id,
             task_id,
+            channel_id,
             title,
             description,
             duration,
             content_type,
             language,
             view_count,
+            status,
             download_status,
             download_priority,
             retry_count,
@@ -187,12 +247,13 @@ export class TaskHandler extends EventEmitter {
             created_at,
             updated_at
           ) VALUES (
-            $1::bigint, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, 0, 3, 'source',
-            true, true, $10, $11, $12, NOW(), NOW()
+            $1::bigint, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, 'source',
+            true, true, $11, $12, $13, NOW(), NOW()
           )
         `, [
           vod.id,
           taskId,
+          channelId,
           vod.title,
           vod.description,
           vod.duration,
@@ -208,24 +269,27 @@ export class TaskHandler extends EventEmitter {
         // Update existing VOD
         await client.query(`
           UPDATE vods 
-          SET download_status = 'queued',
+          SET status = 'queued',
+              download_status = 'queued',
               task_id = $2,
-              title = $3,
-              description = $4,
-              duration = $5,
-              content_type = $6,
-              language = $7,
-              view_count = $8,
-              download_priority = $9,
-              thumbnail_url = $10,
-              published_at = $11,
-              processing_options = $12,
+              channel_id = $3,
+              title = $4,
+              description = $5,
+              duration = $6,
+              content_type = $7,
+              language = $8,
+              view_count = $9,
+              download_priority = $10,
+              thumbnail_url = $11,
+              published_at = $12,
+              processing_options = $13,
               retry_count = 0,
               updated_at = NOW()
           WHERE twitch_id = $1::bigint
         `, [
           vod.id,
           taskId,
+          channelId,
           vod.title,
           vod.description,
           vod.duration,

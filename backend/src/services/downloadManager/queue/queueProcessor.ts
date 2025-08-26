@@ -16,7 +16,7 @@ interface VodRow {
   id: number;
   task_id: number;
   download_status: string;
-  channel_twitch_id: string;
+  channel_id: number;
 }
 
 interface TaskRow {
@@ -85,7 +85,7 @@ export class QueueProcessor extends EventEmitter {
     logger.info('Queue processing stopped');
   }
 
-  private async processQueue(): Promise<void> {
+  public async processQueue(): Promise<void> {
     if (this.isShuttingDown || this.isProcessing) {
       return;
     }
@@ -200,40 +200,19 @@ export class QueueProcessor extends EventEmitter {
       try {
         // Check for VODs in the last 24 hours
         const vodResult = await client.query<VodRow>(`
-          SELECT twitch_id
-          FROM vods
-          WHERE channel_twitch_id = $1
-          AND created_at > NOW() - INTERVAL '24 hours'
+          SELECT v.twitch_id
+          FROM vods v
+          JOIN channels c ON v.channel_id = c.id
+          WHERE c.twitch_id = $1
+          AND v.created_at > NOW() - INTERVAL '24 hours'
         `, [twitchId]);
 
         const existingVodIds = new Set(
           vodResult.rows.map((row: VodRow) => row.twitch_id)
         );
 
-        // Queue new VODs
-        await client.query(`
-          INSERT INTO vods (
-            twitch_id,
-            task_id,
-            channel_twitch_id,
-            download_status,
-            download_priority,
-            created_at,
-            updated_at
-          )
-          SELECT
-            v.id,
-            $1,
-            $2,
-            'queued',
-            'normal',
-            NOW(),
-            NOW()
-          FROM twitch_vods v
-          WHERE v.user_id = $2
-          AND v.id NOT IN (SELECT twitch_id FROM vods)
-          AND v.created_at > NOW() - INTERVAL '24 hours'
-        `, [taskId, twitchId]);
+        // VODs are already queued by task handler, we don't need to insert them here
+        logger.debug(`Processed channel ${twitchId} for task ${taskId}`);
       } catch (error) {
         logger.error(`Error processing VODs for channel ${twitchId}:`, error);
       }
@@ -247,6 +226,19 @@ export class QueueProcessor extends EventEmitter {
           updated_at = NOW()
       WHERE task_id = $1
     `, [taskId]);
+  }
+
+  async triggerImmediateProcessing(): Promise<void> {
+    if (this.isShuttingDown) {
+      return;
+    }
+    
+    logger.info('Triggering immediate queue processing');
+    setImmediate(() => {
+      this.processQueue().catch(error => {
+        logger.error('Error in triggered queue processing:', error);
+      });
+    });
   }
 
   async getQueueStatus(): Promise<QueueStatus> {

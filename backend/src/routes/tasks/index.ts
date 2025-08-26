@@ -37,7 +37,6 @@ export function setupTaskRoutes(pool: Pool) {
 
   router.post('/',
     authenticate(pool),
-    validateRequest(CreateTaskSchema),
     controller.createTask
   );
 

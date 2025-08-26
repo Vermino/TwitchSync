@@ -6,8 +6,10 @@ import TaskCard from './TaskCard';
 
 interface TaskListProps {
   tasks: Task[];
-  channels: Channel[];
-  games: Game[];
+  channels: Channel[] | undefined;
+  games: Game[] | undefined;
+  channelsLoading: boolean;
+  gamesLoading: boolean;
   vodsLoading: boolean;
   onTaskUpdate: (taskId: number, status: string) => Promise<void>;
   onTaskDelete: (taskId: number) => Promise<void>;
@@ -17,8 +19,10 @@ interface TaskListProps {
 
 export default function TaskList({
   tasks = [],
-  channels = [],
-  games = [],
+  channels,
+  games,
+  channelsLoading,
+  gamesLoading,
   vodsLoading,
   onTaskUpdate,
   onTaskDelete,
@@ -43,6 +47,8 @@ export default function TaskList({
               task={task}
               channels={channels}
               games={games}
+              channelsLoading={channelsLoading}
+              gamesLoading={gamesLoading}
               vodsLoading={vodsLoading}
               onStatusChange={(status) => onTaskUpdate(task.id, status)}
               onDelete={() => onTaskDelete(task.id)}

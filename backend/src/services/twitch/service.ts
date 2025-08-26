@@ -68,6 +68,9 @@ export class TwitchService implements ITwitchService {
         })
       );
 
+      // Sort channels by follower count (highest first)
+      enrichedChannels.sort((a, b) => b.follower_count - a.follower_count);
+      
       return enrichedChannels;
     } catch (error) {
       logger.error('Error searching channels:', error);

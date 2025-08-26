@@ -15,9 +15,21 @@ interface TaskStatsProps {
   task: Task;
   channels: Channel[] | undefined;
   games: Game[] | undefined;
+  channelsLoading: boolean;
+  gamesLoading: boolean;
 }
 
-export default function TaskStats({ task, channels = [], games = [] }: TaskStatsProps) {
+export default function TaskStats({ task, channels = [], games = [], channelsLoading, gamesLoading }: TaskStatsProps) {
+  // Early return if dependent data is still loading to prevent race condition
+  if (channelsLoading || gamesLoading) {
+    return (
+      <div className="space-y-2">
+        <div className="text-sm text-muted-foreground">Loading task details...</div>
+      </div>
+    );
+  }
+
+
   const { data: vods = [] } = useQuery({
     queryKey: ['vods'],
     queryFn: async () => {

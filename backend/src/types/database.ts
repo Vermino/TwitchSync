@@ -176,7 +176,7 @@ export interface VODSegment {
   error_message: string | null;
   checksum: string | null;
   started_at: Date | null;
-  completed_at: Date | null;
+  downloaded_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }

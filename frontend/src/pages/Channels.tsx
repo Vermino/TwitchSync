@@ -74,34 +74,42 @@ const Channels = () => {
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const { data: channelsData, isLoading } = useQuery<Channel[]>({
+  const { data: channelsData, isLoading, error } = useQuery<Channel[]>({
     queryKey: ['channels'],
     queryFn: async () => {
-      const response = await api.getChannels();
-      console.log('Raw channels response:', response);
-      // Transform the data to match our interface
-      if (Array.isArray(response)) {
-        return response.map(channel => ({
-          id: channel.id,
-          twitch_id: channel.twitch_id,
-          username: channel.username,
-          display_name: channel.display_name || channel.username,
-          profile_image_url: channel.profile_image_url,
-          description: channel.description || '',
-          follower_count: channel.follower_count || 0,
-          is_active: channel.is_active || true,
-          is_live: channel.is_live || false,
-          last_stream_date: channel.last_stream_date,
-          last_game_id: channel.last_game_id,
-          last_game_name: channel.last_game_name,
-          last_game_box_art: channel.last_game_box_art,
-          most_played_game: channel.most_played_game,
-          premieres: channel.premieres || []
-        }));
+      try {
+        const response = await api.getChannels();
+        console.log('Raw channels response:', response);
+        console.log('Auth token in localStorage:', localStorage.getItem('auth_token'));
+        // Transform the data to match our interface
+        if (Array.isArray(response)) {
+          return response.map(channel => ({
+            id: channel.id,
+            twitch_id: channel.twitch_id,
+            username: channel.username,
+            display_name: channel.display_name || channel.username,
+            profile_image_url: channel.profile_image_url,
+            description: channel.description || '',
+            follower_count: channel.follower_count || 0,
+            is_active: channel.is_active || true,
+            is_live: channel.is_live || false,
+            last_stream_date: channel.last_stream_date,
+            last_game_id: channel.last_game_id,
+            last_game_name: channel.last_game_name,
+            last_game_box_art: channel.last_game_box_art,
+            most_played_game: channel.most_played_game,
+            premieres: channel.premieres || []
+          }));
+        }
+        return [];
+      } catch (error) {
+        console.error('API call failed:', error);
+        console.error('Auth token:', localStorage.getItem('auth_token'));
+        throw error;
       }
-      return [];
     },
     refetchInterval: 60000, // Refetch every minute to update live status
+    retry: false, // Don't retry failed auth calls
   });
 
   const channels = channelsData || [];
@@ -124,8 +132,7 @@ const Channels = () => {
             display_name: channel.display_name,
             profile_image_url: channel.thumbnail_url || channel.profile_image_url,
             follower_count: channel.follower_count || 0,
-            description: channel.description || '',
-            is_active: true
+            description: channel.description || ''
           });
           results.push(result);
         } catch (error: any) {
@@ -154,6 +161,18 @@ const Channels = () => {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <h2 className="text-red-800 font-semibold mb-2">Error Loading Channels</h2>
+          <p className="text-red-600">{error instanceof Error ? error.message : 'Unknown error occurred'}</p>
+          <p className="text-sm text-red-500 mt-2">Check browser console for details</p>
+        </div>
       </div>
     );
   }

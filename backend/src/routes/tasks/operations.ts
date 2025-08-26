@@ -3,7 +3,8 @@
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
 import DownloadManager from '../../services/downloadManager';
-import type { Task, CreateTaskRequest, UpdateTaskRequest, BatchUpdateRequest } from './validation';
+import type { CreateTaskRequest, UpdateTaskRequest, BatchUpdateRequest } from './validation';
+import type { Task } from './types';
 import type {
   QueueStatus,
   SystemResources,
@@ -121,15 +122,18 @@ export class TaskOperations {
     }
   }
 
-  async updateTask(taskId: number, userId: number, updates: UpdateTaskRequest) {
+  async updateTask(taskId: number, userId: number, updates: UpdateTaskRequest): Promise<Task> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
 
       // Handle status changes that require downloadManager
       if (updates.status === 'running') {
+        logger.info(`Task ${taskId} status changed to running - starting download processing`);
         await this.downloadManager.executeTask(taskId);
+        logger.info(`Task ${taskId} download processing initiated`);
       } else if (updates.status === 'pending') {
+        logger.info(`Task ${taskId} status changed to pending - stopping download processing`);
         await this.downloadManager.stopProcessing();
       }
 
@@ -315,8 +319,10 @@ export class TaskOperations {
           updated_at = NOW()
       `, [taskId]);
 
-      // Start the download manager processing
+      // Start the download manager processing (async to avoid timeout)
+      logger.info(`Executing task ${taskId} - discovering VODs and starting downloads`);
       await this.downloadManager.executeTask(taskId);
+      logger.info(`Task ${taskId} execution initiated - VOD discovery running in background`);
 
       await client.query('COMMIT');
 
@@ -358,9 +364,10 @@ export class TaskOperations {
   async toggleTaskState(taskId: number, userId: number, active: boolean): Promise<Task> {
     const client = await this.pool.connect();
     try {
+      // Use a shorter transaction to avoid deadlocks
       await client.query('BEGIN');
 
-      // Update task state
+      // Update task state with shorter lock time
       const result = await client.query(`
         UPDATE tasks
         SET is_active = $3,
@@ -377,31 +384,54 @@ export class TaskOperations {
         throw new Error('Task not found or access denied');
       }
 
-      // Start or stop task processing
-      if (active) {
-        await this.downloadManager.executeTask(taskId);
+      // Update monitoring status (use UPDATE or INSERT separately to avoid constraint issues)
+      const monitoringExists = await client.query(`
+        SELECT id FROM task_monitoring WHERE task_id = $1
+      `, [taskId]);
+
+      if (monitoringExists.rows.length > 0) {
+        await client.query(`
+          UPDATE task_monitoring
+          SET status = $2,
+              status_message = $3,
+              updated_at = NOW()
+          WHERE task_id = $1
+        `, [
+          taskId,
+          active ? 'running' : 'pending',
+          active ? 'Task activated' : 'Task deactivated'
+        ]);
       } else {
+        await client.query(`
+          INSERT INTO task_monitoring (
+            task_id, status, status_message, progress_percentage,
+            items_total, items_completed, items_failed,
+            created_at, updated_at
+          ) VALUES ($1, $2, $3, 0, 0, 0, 0, NOW(), NOW())
+        `, [
+          taskId,
+          active ? 'running' : 'pending',
+          active ? 'Task activated' : 'Task deactivated'
+        ]);
+      }
+
+      await client.query('COMMIT');
+
+      // Start or stop task processing AFTER transaction commit
+      if (active) {
+        logger.info(`Activating task ${taskId} - starting VOD discovery and download processing`);
+        // Note: executeTask now runs in background and returns immediately
+        await this.downloadManager.executeTask(taskId);
+        logger.info(`Task ${taskId} activation initiated - VOD discovery running in background`);
+      } else {
+        logger.info(`Deactivating task ${taskId} - stopping download processing`);
         await this.downloadManager.stopProcessing();
       }
 
-      // Update monitoring status
-      await client.query(`
-        UPDATE task_monitoring
-        SET status = $2,
-            status_message = $3,
-            updated_at = NOW()
-        WHERE task_id = $1
-      `, [
-        taskId,
-        active ? 'running' : 'pending',
-        active ? 'Task activated' : 'Task deactivated'
-      ]);
-
-      await client.query('COMMIT');
       return result.rows[0];
 
     } catch (error) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {}); // Ignore rollback errors
       logger.error(`Error toggling task ${taskId} state:`, error);
       throw error;
     } finally {
@@ -423,6 +453,7 @@ export class TaskOperations {
                ts.successful_downloads,
                jsonb_build_object(
                  'percentage', COALESCE(tm.progress_percentage, 0),
+                 'status_message', tm.status_message,
                  'message', tm.status_message,
                  'current_progress', jsonb_build_object(
                    'completed', COALESCE(tm.items_completed, 0),
@@ -478,7 +509,7 @@ export class TaskOperations {
     };
   }
 
-  async batchUpdateTasks(userId: number, { task_ids, updates }: BatchUpdateRequest) {
+  async batchUpdateTasks(userId: number, { task_ids, updates }: BatchUpdateRequest): Promise<Task[]> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
