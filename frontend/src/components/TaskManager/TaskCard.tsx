@@ -14,8 +14,10 @@ import {
 
 interface TaskCardProps {
   task: Task;
-  channels: Channel[];
-  games: Game[];
+  channels: Channel[] | undefined;
+  games: Game[] | undefined;
+  channelsLoading: boolean;
+  gamesLoading: boolean;
   vodsLoading: boolean;
   onStatusChange: (status: string) => void;
   onDelete: () => void;
@@ -27,6 +29,8 @@ export default function TaskCard({
   task,
   channels,
   games,
+  channelsLoading,
+  gamesLoading,
   vodsLoading,
   onStatusChange,
   onDelete,
@@ -68,7 +72,7 @@ export default function TaskCard({
                 <Button
                   variant={isActive ? "default" : "outline"}
                   size="sm"
-                  onClick={() => onStatusChange(isActive ? 'inactive' : 'running')}
+                  onClick={() => onStatusChange(task.status)}
                 >
                   <Power className={`h-4 w-4 ${isActive ? 'text-green-500' : ''}`} />
                   <span className="ml-2">{isActive ? 'Active' : 'Activate'}</span>
@@ -92,7 +96,13 @@ export default function TaskCard({
           </div>
 
           <div className="grid grid-cols-4 gap-4">
-            <TaskStats task={task} channels={channels} games={games} />
+            <TaskStats 
+              task={task} 
+              channels={channels} 
+              games={games}
+              channelsLoading={channelsLoading}
+              gamesLoading={gamesLoading}
+            />
             <TaskProgress task={{
               ...task,
               progress: {
