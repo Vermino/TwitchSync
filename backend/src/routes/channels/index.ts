@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { Pool } from 'pg';
 import ChannelsController from './controller';
-import { validateRequest } from '../../middleware/validation';
+import { validateRequest, validateParams } from '../../middleware/validation';
 import {
   SearchChannelSchema,
   CreateChannelSchema,
@@ -33,7 +33,7 @@ export function setupChannelRoutes(pool: Pool): Router {
 
   // Get channel stats
   router.get('/:id/stats',
-    validateRequest(DeleteChannelSchema), // Reusing the ID validation schema
+    validateParams(DeleteChannelSchema), // Reusing the ID validation schema
     controller.getChannelStats
   );
 
@@ -47,14 +47,15 @@ export function setupChannelRoutes(pool: Pool): Router {
   // Update channel
   router.put('/:id',
     channelMutationLimiter,
-    validateRequest(UpdateChannelSchema),
+    validateParams(DeleteChannelSchema), // Validate the ID parameter
+    validateRequest(UpdateChannelSchema), // Validate the body
     controller.updateChannel
   );
 
   // Delete channel
   router.delete('/:id',
     channelDeletionLimiter,
-    validateRequest(DeleteChannelSchema),
+    validateParams(DeleteChannelSchema),
     controller.deleteChannel
   );
 

@@ -1,0 +1,10 @@
+{
+  "name": "Test Rimworld disnof",
+  "task_type": "channel",
+  "schedule_type": "manual",
+  "schedule_value": "manual",
+  "priority": "medium",
+  "restrictions": {
+    "maxVodsPerChannel": 1
+  }
+}

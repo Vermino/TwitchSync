@@ -16,17 +16,53 @@ export class ValidationError extends Error {
 export const validateRequest = (schema: z.ZodSchema) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Validate just the body directly instead of wrapping it
+      // For body validation schemas, validate just the body
       const validatedData = await schema.parseAsync(req.body);
-
-      // Update the request body with the validated data
+      
+      // Update request body with validated data
       req.body = validatedData;
-
+      
       next();
     } catch (error) {
       logger.error('Validation error:', error);
       if (error instanceof z.ZodError) {
         next(new ValidationError('Validation failed', error.errors));
+      } else {
+        next(error);
+      }
+    }
+  };
+};
+
+// For validating request params
+export const validateParams = (schema: z.ZodSchema) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const validatedData = await schema.parseAsync(req.params);
+      req.params = validatedData;
+      next();
+    } catch (error) {
+      logger.error('Params validation error:', error);
+      if (error instanceof z.ZodError) {
+        next(new ValidationError('Parameter validation failed', error.errors));
+      } else {
+        next(error);
+      }
+    }
+  };
+};
+
+// For validating query parameters
+export const validateQuery = (schema: z.ZodSchema) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const validatedData = await schema.parseAsync(req.query);
+      req.query = validatedData;
+      next();
+    } catch (error) {
+      logger.error('Query validation error:', error);
+      if (error instanceof z.ZodError) {
+        next(new ValidationError('Query validation failed', error.errors));
       } else {
         next(error);
       }

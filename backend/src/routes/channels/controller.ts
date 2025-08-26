@@ -168,10 +168,7 @@ export class ChannelsController {
 
   addChannel = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const channelData = req.body as CreateChannelRequest['body'];
-
-      // Validate input data
-      validateChannelData(channelData);
+      const channelData = req.body as CreateChannelRequest;
 
       const result = await withTransaction(this.pool, async (client) => {
         // Check for existing channel
@@ -237,7 +234,7 @@ export class ChannelsController {
   updateChannel = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
-      const updates = req.body as UpdateChannelRequest['body'];
+      const updates = req.body as UpdateChannelRequest;
 
       const result = await withTransaction(this.pool, async (client) => {
         // Check if channel exists
@@ -306,11 +303,14 @@ export class ChannelsController {
           throw new ChannelError('Channel not found', 404);
         }
 
-        // Delete related records from dependent tables
-        await client.query(`
-          DELETE FROM channel_game_history WHERE channel_id = $1;
-          DELETE FROM channel_game_stats WHERE channel_id = $1;
-        `, [id]);
+        // Delete related records from dependent tables (if they exist)
+        try {
+          await client.query('DELETE FROM channel_game_history WHERE channel_id = $1', [id]);
+          await client.query('DELETE FROM channel_game_stats WHERE channel_id = $1', [id]);
+        } catch (error) {
+          // Tables might not exist, continue with channel deletion
+          logger.warn('Could not delete from dependent tables:', error instanceof Error ? error.message : 'Unknown error');
+        }
 
         // Delete the channel
         await client.query(
