@@ -70,7 +70,8 @@ export class TaskHandler extends EventEmitter {
         name: taskResult.rows[0].name,
         channel_twitch_ids: taskResult.rows[0].channel_twitch_ids,
         channel_db_ids: taskResult.rows[0].channel_db_ids,
-        game_ids: taskResult.rows[0].game_ids
+        game_ids: taskResult.rows[0].game_ids,
+        has_game_filters: taskResult.rows[0].game_ids && taskResult.rows[0].game_ids.filter(id => id != null).length > 0
       });
 
       const task = taskResult.rows[0];
@@ -99,11 +100,16 @@ export class TaskHandler extends EventEmitter {
             }, client);
 
             logger.info(`TaskHandler: Fetching VODs for channel ${channelTwitchId}...`);
-            const vods = await this.twitchService.getChannelVODs(channelTwitchId.toString());
-            logger.info(`TaskHandler: Found ${vods.length} downloadable VODs for channel ${channelTwitchId}`);
-            totalVods += vods.length;
+            const allVods = await this.twitchService.getChannelVODs(channelTwitchId.toString());
+            logger.info(`TaskHandler: Found ${allVods.length} total VODs for channel ${channelTwitchId}`);
+            
+            // Filter VODs by game if game filters are specified
+            const filteredVods = await this.filterVODsByGames(allVods, task.game_ids);
+            logger.info(`TaskHandler: After game filtering: ${filteredVods.length} VODs match task criteria for channel ${channelTwitchId}`);
+            
+            totalVods += filteredVods.length;
 
-            for (const vod of vods) {
+            for (const vod of filteredVods) {
               try {
                 const vodInfo = await this.twitchService.getVODInfo(vod.id);
                 if (!vodInfo) {
@@ -113,6 +119,9 @@ export class TaskHandler extends EventEmitter {
                 // Map task priority to valid download priority
                 const downloadPriority = this.mapTaskPriorityToDownloadPriority(task.priority);
                 logger.info(`Task ${taskId}: mapping priority "${task.priority}" -> "${downloadPriority}"`);
+                
+                // Ensure the game exists in our database before queuing
+                await this.ensureGameExists(vodInfo, client);
                 await this.queueVODDownload(vodInfo, downloadPriority, taskId, channelDbId, client);
                 processedVods++;
 
@@ -203,6 +212,111 @@ export class TaskHandler extends EventEmitter {
     }
   }
 
+  /**
+   * Filters VODs by the specified game IDs. If no game filters are provided,
+   * returns all VODs. Otherwise, only returns VODs that match the specified games.
+   */
+  private async filterVODsByGames(vods: any[], gameIds: string[] | null): Promise<any[]> {
+    // Clean up the game IDs array (remove nulls)
+    const validGameIds = gameIds?.filter(id => id != null && id !== '') || [];
+    
+    // If no game filters specified, return all VODs
+    if (validGameIds.length === 0) {
+      logger.info('No game filters specified, returning all VODs');
+      return vods;
+    }
+
+    logger.info(`Filtering ${vods.length} VODs by ${validGameIds.length} game(s):`, validGameIds);
+    const filteredVods = [];
+    let checkedCount = 0;
+    let matchedCount = 0;
+    let errorCount = 0;
+
+    for (const vod of vods) {
+      try {
+        checkedCount++;
+        
+        // Get detailed VOD info to check the game
+        const vodInfo = await this.twitchService.getVODInfo(vod.id);
+        
+        if (!vodInfo) {
+          logger.warn(`Skipping VOD ${vod.id} - could not get VOD info`);
+          continue;
+        }
+
+        // Check if VOD's game matches any of the specified games
+        if (vodInfo.game_id && validGameIds.includes(vodInfo.game_id)) {
+          filteredVods.push(vod);
+          matchedCount++;
+          logger.debug(`✓ VOD ${vod.id} matches game filter (game: ${vodInfo.game_id}, title: "${vodInfo.title?.substring(0, 50)}...")`);
+        } else {
+          logger.debug(`✗ VOD ${vod.id} does not match game filter (game: ${vodInfo.game_id || 'none'}, title: "${vodInfo.title?.substring(0, 50)}...")`);
+        }
+        
+        // Add a small delay to avoid rate limiting
+        if (checkedCount % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        errorCount++;
+        logger.warn(`Error checking game for VOD ${vod.id}:`, error);
+        // Continue to next VOD instead of failing entire task
+        continue;
+      }
+    }
+
+    logger.info(`Game filtering complete: ${matchedCount}/${checkedCount} VODs matched (${errorCount} errors)`);
+    return filteredVods;
+  }
+
+  /**
+   * Ensures that a game referenced by a VOD exists in our database.
+   * If not, fetches the game info from Twitch and creates it.
+   */
+  private async ensureGameExists(vodInfo: any, client: PoolClient): Promise<void> {
+    if (!vodInfo.game_id) {
+      return; // No game to check
+    }
+
+    try {
+      // Check if game already exists
+      const gameCheck = await client.query(`
+        SELECT id FROM games WHERE twitch_game_id = $1
+      `, [vodInfo.game_id]);
+
+      if (gameCheck.rows.length === 0) {
+        logger.info(`Game ${vodInfo.game_id} not in database, fetching from Twitch...`);
+        
+        // Fetch game info from Twitch
+        const gameInfo = await this.twitchService.getGameById(vodInfo.game_id);
+        
+        if (gameInfo) {
+          // Create the game in our database
+          await client.query(`
+            INSERT INTO games (
+              twitch_game_id, name, box_art_url, category, status, is_active, 
+              created_at, updated_at, last_checked
+            ) VALUES (
+              $1, $2, $3, $4, 'active', true, NOW(), NOW(), NOW()
+            ) ON CONFLICT (twitch_game_id) DO NOTHING
+          `, [
+            gameInfo.id,
+            gameInfo.name,
+            gameInfo.box_art_url,
+            gameInfo.category || 'general'
+          ]);
+          
+          logger.info(`Created game in database: ${gameInfo.name} (${gameInfo.id})`);
+        } else {
+          logger.warn(`Could not fetch game info for ${vodInfo.game_id}`);
+        }
+      }
+    } catch (error) {
+      logger.error(`Error ensuring game ${vodInfo.game_id} exists:`, error);
+      // Don't throw - continue with VOD processing even if game creation fails
+    }
+  }
+
   private async queueVODDownload(
     vod: TwitchVOD,
     priority: string,
@@ -221,12 +335,13 @@ export class TaskHandler extends EventEmitter {
       `, [vod.id]);
 
       if (vodExists.rows.length === 0) {
-        // Create new VOD entry
+        // Create new VOD entry with game_id populated
         await client.query(`
           INSERT INTO vods (
             twitch_id,
             task_id,
             channel_id,
+            game_id,
             title,
             description,
             duration,
@@ -247,7 +362,9 @@ export class TaskHandler extends EventEmitter {
             created_at,
             updated_at
           ) VALUES (
-            $1::bigint, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, 'source',
+            $1::bigint, $2, $3, 
+            (SELECT id FROM games WHERE twitch_game_id = $14 LIMIT 1),
+            $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, 'source',
             true, true, $11, $12, $13, NOW(), NOW()
           )
         `, [
@@ -263,16 +380,18 @@ export class TaskHandler extends EventEmitter {
           priority,
           vod.thumbnail_url,
           vod.published_at,
-          { transcode: false, extract_chat: true }
+          { transcode: false, extract_chat: true },
+          vod.game_id // Add the game_id parameter
         ]);
       } else {
-        // Update existing VOD
+        // Update existing VOD with game_id
         await client.query(`
           UPDATE vods 
           SET status = 'queued',
               download_status = 'queued',
               task_id = $2,
               channel_id = $3,
+              game_id = (SELECT id FROM games WHERE twitch_game_id = $14 LIMIT 1),
               title = $4,
               description = $5,
               duration = $6,
@@ -299,7 +418,8 @@ export class TaskHandler extends EventEmitter {
           priority,
           vod.thumbnail_url,
           vod.published_at,
-          { transcode: false, extract_chat: true }
+          { transcode: false, extract_chat: true },
+          vod.game_id // Add the game_id parameter
         ]);
       }
 
