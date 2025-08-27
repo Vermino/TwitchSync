@@ -1,11 +1,9 @@
 // frontend/src/components/discovery/PremiereCard.tsx
 
-import React from 'react';
 import { Clock, Users, Trophy, Radio, Heart, TrendingUp } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { PremiereCardProps } from '../../types/discovery';
 
 const PremiereCard = ({ premiere, onTrack, onIgnore }: PremiereCardProps) => {

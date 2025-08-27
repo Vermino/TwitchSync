@@ -70,7 +70,7 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
           </div>
 
           <button
-            onClick={() => onAction(channelRec.id, 'channel')}
+            onClick={() => onAction(channelRec.id)}
             className="w-full px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
           >
             Follow Channel
@@ -122,7 +122,7 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
         </div>
 
         <button
-          onClick={() => onAction(gameRec.id, 'game')}
+          onClick={() => onAction(gameRec.id)}
           className="w-full px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
         >
           Track Game

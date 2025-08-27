@@ -4,7 +4,6 @@ import axios from 'axios';
 import type {
   ChannelRecommendation,
   GameRecommendation,
-  DiscoveryPreferences,
   FilterSettings
 } from '@/types/discovery';
 

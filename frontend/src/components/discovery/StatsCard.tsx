@@ -1,6 +1,5 @@
 // frontend/src/components/discovery/StatsCard.tsx
 
-import React from 'react';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import {
   Star, TrendingUp, Clock, Archive,

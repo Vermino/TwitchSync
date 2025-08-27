@@ -1,13 +1,11 @@
 // frontend/src/components/discovery/FilterPanel.tsx
 
-import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
   Bell,
-  Clock,
   Filter,
   Globe,
   Users

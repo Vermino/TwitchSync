@@ -1,6 +1,5 @@
 // frontend/src/components/discovery/DiscoveryHeader.tsx
 
-import React from 'react';
 import { Star, Sparkles, History, Settings, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {

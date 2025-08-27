@@ -1,6 +1,5 @@
 // frontend/src/components/discovery/DiscoverySettings.tsx
 
-import React from 'react';
 import {
   Dialog,
   DialogContent,

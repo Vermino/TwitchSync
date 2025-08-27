@@ -25,9 +25,18 @@
       "Bash(cat:*)",
       "Bash(timeout 5s tail -f C:UsersjesseWebstormProjectsTwitchSyncbackend.log)",
       "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -U postgres -d twitchsync -c \"\\dt\")",
-      "Bash(npx ts-node:*)"
+      "Bash(npx ts-node:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Read(C:\\Users\\jesse\\.claude\\context/**)",
+      "Read(C:\\Users\\jesse\\.claude/**)",
+      "Bash(npm run:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\c\\Users\\jesse\\WebstormProjects\\TwitchSync"
+    ]
   }
 }

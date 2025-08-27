@@ -10,6 +10,7 @@ import StatsCard from '../components/discovery/StatsCard';
 import RecommendationCard from '../components/discovery/RecommendationCard';
 import PremiereCard from '../components/discovery/PremiereCard';
 import RisingChannelCard from '../components/discovery/RisingChannelCard';
+import DiscoverySettings from '../components/discovery/DiscoverySettings';
 import { RefreshCw, Settings as SettingsIcon, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type {
@@ -77,6 +78,24 @@ const ContentDiscovery: React.FC = () => {
   });
   const [discoveryData, setDiscoveryData] = useState<DiscoveryFeedResponse>(defaultDiscoveryData);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userSettings, setUserSettings] = useState({
+    notifications: {
+      premieres: true,
+      risingStars: true,
+      recommendations: false
+    },
+    archiving: {
+      autoArchive: true,
+      quality: 'best',
+      retention: 30
+    },
+    discovery: {
+      scheduleMatch: true,
+      minConfidence: 0.7,
+      autoTrack: false
+    }
+  });
 
   const loadRecommendations = async () => {
     setRecommendations(prev => ({ ...prev, loading: true }));
@@ -95,7 +114,7 @@ const ContentDiscovery: React.FC = () => {
       });
 
       // Also update stats
-      const statsData = await api.getDiscoveryStats();
+      const statsData = await discoveryService.getDiscoveryStats();
       setStats(statsData);
 
     } catch (error) {
@@ -117,7 +136,11 @@ const ContentDiscovery: React.FC = () => {
 
   const handleTrackChannel = async (channelId: string) => {
     try {
-      await api.trackChannel(channelId, {
+      // Find the channel data to get the actual name
+      const channel = recommendations.channels.find(c => c.id === channelId);
+      const channelName = channel?.channel.name || channelId;
+
+      await discoveryService.trackChannel(channelName, {
         quality: 'best',
         notifications: true,
         autoArchive: true
@@ -125,7 +148,7 @@ const ContentDiscovery: React.FC = () => {
 
       toast({
         title: "Success",
-        description: "Channel will be tracked",
+        description: `${channelName} is now being tracked`,
       });
 
       // Remove from recommendations
@@ -145,14 +168,18 @@ const ContentDiscovery: React.FC = () => {
 
   const handleTrackGame = async (gameId: string) => {
     try {
-      await api.trackGame(gameId, {
+      // Find the game data to get the actual name
+      const game = recommendations.games.find(g => g.id === gameId);
+      const gameName = game?.game.name || gameId;
+
+      await discoveryService.trackGame(gameName, {
         notifications: true,
         autoArchive: true
       });
 
       toast({
         title: "Success",
-        description: "Game will be tracked",
+        description: `${gameName} is now being tracked`,
       });
 
       // Remove from recommendations
@@ -179,47 +206,92 @@ const ContentDiscovery: React.FC = () => {
       );
     }
 
+    const hasChannels = recommendations.channels.length > 0;
+    const hasGames = recommendations.games.length > 0;
+
+    if (!hasChannels && !hasGames) {
+      return (
+        <div className="text-center py-12">
+          <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <RefreshCw className="w-8 h-8 text-purple-600" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No recommendations found</h3>
+          <p className="text-gray-600 mb-6">
+            We couldn't find any recommendations based on your current preferences.<br />
+            Try adjusting your filters or check back later.
+          </p>
+          <Button
+            onClick={loadRecommendations}
+            variant="outline"
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Try Again
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <>
         {/* Channel Recommendations */}
-        <div className="space-y-4 mb-8">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold">Channel Recommendations</h2>
-            <span className="text-sm text-gray-500">
-              {recommendations.channels.length} channels found
-            </span>
+        {hasChannels && (
+          <div className="space-y-4 mb-8">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Channel Recommendations</h2>
+              <span className="text-sm text-gray-500">
+                {recommendations.channels.length} channels found
+              </span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {recommendations.channels.map(channel => (
+                <RecommendationCard
+                  key={`channel-${channel.id}`}
+                  item={channel}
+                  type="channel"
+                  onAction={(id) => handleTrackChannel(id)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {recommendations.channels.map(channel => (
-              <RecommendationCard
-                key={`channel-${channel.id}`}
-                item={channel}
-                type="channel"
-                onAction={handleTrackChannel}
-              />
-            ))}
-          </div>
-        </div>
+        )}
 
         {/* Game Recommendations */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold">Game Recommendations</h2>
-            <span className="text-sm text-gray-500">
-              {recommendations.games.length} games found
-            </span>
+        {hasGames && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Game Recommendations</h2>
+              <span className="text-sm text-gray-500">
+                {recommendations.games.length} games found
+              </span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {recommendations.games.map(game => (
+                <RecommendationCard
+                  key={`game-${game.id}`}
+                  item={game}
+                  type="game"
+                  onAction={(id) => handleTrackGame(id)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {recommendations.games.map(game => (
-              <RecommendationCard
-                key={`game-${game.id}`}
-                item={game}
-                type="game"
-                onAction={handleTrackGame}
-              />
-            ))}
+        )}
+
+        {/* Show individual empty states if only one type is missing */}
+        {!hasChannels && hasGames && (
+          <div className="mb-8 text-center py-8 bg-gray-50 rounded-lg">
+            <h3 className="text-sm font-medium text-gray-900 mb-1">No channel recommendations</h3>
+            <p className="text-sm text-gray-600">Try adjusting your filters to see more options.</p>
           </div>
-        </div>
+        )}
+
+        {hasChannels && !hasGames && (
+          <div className="text-center py-8 bg-gray-50 rounded-lg">
+            <h3 className="text-sm font-medium text-gray-900 mb-1">No game recommendations</h3>
+            <p className="text-sm text-gray-600">Try adjusting your filters to see more options.</p>
+          </div>
+        )}
       </>
     );
   };
@@ -229,7 +301,7 @@ const ContentDiscovery: React.FC = () => {
       <DiscoveryHeader
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        onSettingsClick={() => {/* TODO: Implement settings modal */}}
+        onSettingsClick={() => setShowSettings(true)}
         notificationCount={stats?.pendingArchives ?? 0}
       />
 
@@ -287,6 +359,14 @@ const ContentDiscovery: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      <DiscoverySettings
+        open={showSettings}
+        onOpenChange={setShowSettings}
+        settings={userSettings}
+        onSettingsChange={setUserSettings}
+      />
     </div>
   );
 };
