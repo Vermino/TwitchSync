@@ -65,6 +65,7 @@ export interface TwitchVOD {
   type: 'upload' | 'archive' | 'highlight';
   duration: string;
   muted_segments: null | any[];
+  game_id?: string; // Added for filtering support
 }
 
 export interface TwitchGame {

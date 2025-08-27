@@ -71,7 +71,7 @@ export class TaskHandler extends EventEmitter {
         channel_twitch_ids: taskResult.rows[0].channel_twitch_ids,
         channel_db_ids: taskResult.rows[0].channel_db_ids,
         game_ids: taskResult.rows[0].game_ids,
-        has_game_filters: taskResult.rows[0].game_ids && taskResult.rows[0].game_ids.filter(id => id != null).length > 0
+        has_game_filters: taskResult.rows[0].game_ids && taskResult.rows[0].game_ids.filter((id: any) => id != null).length > 0
       });
 
       const task = taskResult.rows[0];
@@ -381,7 +381,7 @@ export class TaskHandler extends EventEmitter {
           vod.thumbnail_url,
           vod.published_at,
           { transcode: false, extract_chat: true },
-          vod.game_id // Add the game_id parameter
+          vod.game_id || null // Add the game_id parameter
         ]);
       } else {
         // Update existing VOD with game_id
@@ -419,7 +419,7 @@ export class TaskHandler extends EventEmitter {
           vod.thumbnail_url,
           vod.published_at,
           { transcode: false, extract_chat: true },
-          vod.game_id // Add the game_id parameter
+          vod.game_id || null // Add the game_id parameter
         ]);
       }
 
