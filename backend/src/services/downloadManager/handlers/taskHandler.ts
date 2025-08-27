@@ -104,7 +104,7 @@ export class TaskHandler extends EventEmitter {
             logger.info(`TaskHandler: Found ${allVods.length} total VODs for channel ${channelTwitchId}`);
             
             // Filter VODs by game if game filters are specified
-            const filteredVods = await this.filterVODsByGames(allVods, task.game_ids);
+            const filteredVods = await this.filterVODsByGames(allVods, task.game_ids, taskId);
             logger.info(`TaskHandler: After game filtering: ${filteredVods.length} VODs match task criteria for channel ${channelTwitchId}`);
             
             totalVods += filteredVods.length;
@@ -167,25 +167,30 @@ export class TaskHandler extends EventEmitter {
       }
 
       // Update task monitoring to show discovery completed but task still running
+      const hasGameFilters = task.game_ids && task.game_ids.filter((id: any) => id != null).length > 0;
+      const statusMessage = hasGameFilters 
+        ? `VOD discovery completed: ${processedVods} VODs queued (filtered by title matching)`
+        : `VOD discovery completed: ${processedVods} VODs queued for download`;
+
       await client.query(`
         UPDATE task_monitoring
         SET status_message = $2,
             items_total = $3,
             items_completed = $4,
-            progress_percentage = 50,
+            progress_percentage = 100,
             updated_at = NOW()
         WHERE task_id = $1
       `, [
         taskId,
-        `VOD discovery completed: ${processedVods} VODs queued for download`,
+        statusMessage,
         totalVods,
         processedVods
       ]);
 
-      // Keep task status as 'running' (don't mark as completed)
+      // Mark task as completed since VOD discovery is done
       await client.query(`
         UPDATE tasks
-        SET status = 'running',
+        SET status = 'completed',
             last_run = NOW(),
             updated_at = NOW()
         WHERE id = $1
@@ -213,12 +218,17 @@ export class TaskHandler extends EventEmitter {
   }
 
   /**
-   * Filters VODs by the specified game IDs. If no game filters are provided,
-   * returns all VODs. Otherwise, only returns VODs that match the specified games.
+   * Filters VODs by the specified game IDs using enhanced title-based matching.
+   * 
+   * Since Twitch's Videos API does not include game_id information,
+   * we use the game names from our database to search for matches in VOD titles.
+   * Enhanced with fuzzy matching, partial matches, and detailed logging.
    */
-  private async filterVODsByGames(vods: any[], gameIds: string[] | null): Promise<any[]> {
+  private async filterVODsByGames(vods: any[], gameIds: string[] | null, taskId?: number): Promise<any[]> {
     // Clean up the game IDs array (remove nulls)
     const validGameIds = gameIds?.filter(id => id != null && id !== '') || [];
+    
+    logger.info(`filterVODsByGames called with gameIds: ${JSON.stringify(gameIds)}, validGameIds: ${JSON.stringify(validGameIds)}`);
     
     // If no game filters specified, return all VODs
     if (validGameIds.length === 0) {
@@ -226,47 +236,351 @@ export class TaskHandler extends EventEmitter {
       return vods;
     }
 
-    logger.info(`Filtering ${vods.length} VODs by ${validGameIds.length} game(s):`, validGameIds);
+    // Get game names from database for title-based filtering
+    const client = await this.pool.connect();
+    let gameNames: string[] = [];
+    
+    try {
+      logger.info(`Querying games table with IDs: ${JSON.stringify(validGameIds)}`);
+      
+      const gameResult = await client.query(`
+        SELECT id, name FROM games WHERE twitch_game_id = ANY($1)
+      `, [validGameIds]);
+      
+      logger.info(`Database query returned ${gameResult.rows.length} games:`, gameResult.rows);
+      
+      gameNames = gameResult.rows.map(row => row.name);
+      logger.info(`Title-based filtering: Looking for games: ${gameNames.join(', ')}`);
+    } catch (error) {
+      logger.error('Error fetching game names for filtering:', error);
+      // If we can't get game names, return all VODs as fallback
+      return vods;
+    } finally {
+      client.release();
+    }
+
+    if (gameNames.length === 0) {
+      logger.warn('No game names found for filtering, returning all VODs');
+      return vods;
+    }
+
+    // Enhanced VOD filtering with fuzzy matching and detailed logging
     const filteredVods = [];
+    const filteredOutVods = [];
     let checkedCount = 0;
     let matchedCount = 0;
-    let errorCount = 0;
 
     for (const vod of vods) {
       try {
         checkedCount++;
+        const title = vod.title?.toLowerCase() || '';
+        const originalTitle = vod.title || '';
         
-        // Get detailed VOD info to check the game
-        const vodInfo = await this.twitchService.getVODInfo(vod.id);
+        // Check if any game name appears in the VOD title using enhanced matching
+        const gameMatchResult = this.checkGameMatch(title, gameNames);
         
-        if (!vodInfo) {
-          logger.warn(`Skipping VOD ${vod.id} - could not get VOD info`);
-          continue;
-        }
-
-        // Check if VOD's game matches any of the specified games
-        if (vodInfo.game_id && validGameIds.includes(vodInfo.game_id)) {
+        if (gameMatchResult.matches) {
           filteredVods.push(vod);
           matchedCount++;
-          logger.debug(`✓ VOD ${vod.id} matches game filter (game: ${vodInfo.game_id}, title: "${vodInfo.title?.substring(0, 50)}...")`);
+          logger.info(`✓ VOD ${vod.id} matches game filter (${gameMatchResult.matchType}: "${gameMatchResult.matchedGame}") - title: "${originalTitle.substring(0, 100)}"`);
         } else {
-          logger.debug(`✗ VOD ${vod.id} does not match game filter (game: ${vodInfo.game_id || 'none'}, title: "${vodInfo.title?.substring(0, 50)}...")`);
-        }
-        
-        // Add a small delay to avoid rate limiting
-        if (checkedCount % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          // Determine specific skip reason based on match result
+          let skipReason = 'GAME_FILTER';
+          if (gameMatchResult.details?.includes('promotional') || gameMatchResult.details?.includes('coming') || 
+              gameMatchResult.details?.includes('dlc') || gameMatchResult.details?.includes('until')) {
+            skipReason = 'GAME_FILTER_PROMOTIONAL';
+          } else if (gameMatchResult.details?.includes('context') || gameMatchResult.details?.includes('position')) {
+            skipReason = 'GAME_FILTER_CONTEXT';
+          }
+
+          filteredOutVods.push({
+            vodId: vod.id,
+            title: originalTitle,
+            reason: skipReason,
+            gamesSearched: gameNames,
+            details: gameMatchResult.details
+          });
+          logger.info(`✗ VOD ${vod.id} filtered out (${skipReason}) - title: "${originalTitle.substring(0, 100)}" (${gameMatchResult.details})`);
         }
       } catch (error) {
-        errorCount++;
-        logger.warn(`Error checking game for VOD ${vod.id}:`, error);
-        // Continue to next VOD instead of failing entire task
+        logger.warn(`Error checking title for VOD ${vod.id}:`, error);
+        // When in doubt, include the VOD to avoid missing content
+        filteredVods.push(vod);
         continue;
       }
     }
 
-    logger.info(`Game filtering complete: ${matchedCount}/${checkedCount} VODs matched (${errorCount} errors)`);
+    // Store filtered VODs for user visibility if taskId provided
+    if (taskId && filteredOutVods.length > 0) {
+      await this.recordFilteredVODs(taskId, filteredOutVods);
+    }
+
+    logger.info(`Title-based filtering complete: ${matchedCount}/${checkedCount} VODs matched game criteria`);
     return filteredVods;
+  }
+
+  /**
+   * Enhanced game matching with context-aware filtering to avoid false positives
+   * where games are mentioned but not being played
+   */
+  private checkGameMatch(title: string, gameNames: string[]): { 
+    matches: boolean; 
+    matchType: string; 
+    matchedGame?: string; 
+    details: string;
+  } {
+    for (const gameName of gameNames) {
+      const gameNameLower = gameName.toLowerCase();
+      const gameWords = gameNameLower.split(/\s+/);
+      const titleLower = title.toLowerCase();
+      const titleWords = titleLower.split(/\s+/);
+      
+      // First check if the game name appears at all in the title
+      const gameAppears = titleLower.includes(gameNameLower) || 
+        gameWords.every(word => titleWords.some(titleWord => titleWord.includes(word)));
+      
+      if (!gameAppears) {
+        continue; // Skip to next game if this one doesn't appear
+      }
+      
+      // Now check if it's likely being played vs just mentioned
+      const contextResult = this.analyzeGameContext(title, gameNameLower, gameName);
+      
+      if (contextResult.isActualGameplay) {
+        return {
+          matches: true,
+          matchType: contextResult.matchType,
+          matchedGame: gameName,
+          details: contextResult.reason
+        };
+      } else {
+        // Game appears but context suggests it's not being played
+        logger.info(`Game "${gameName}" appears in title but context suggests it's not being played: ${contextResult.reason}`);
+      }
+    }
+    
+    return { 
+      matches: false, 
+      matchType: 'none', 
+      details: `Games found but context suggests they're not being played: ${gameNames.join(', ')}` 
+    };
+  }
+
+  /**
+   * Analyzes the context around a game name to determine if it's likely being played
+   * vs just mentioned/promoted
+   */
+  private analyzeGameContext(title: string, gameNameLower: string, originalGameName: string): {
+    isActualGameplay: boolean;
+    matchType: string;
+    reason: string;
+  } {
+    const titleLower = title.toLowerCase();
+    const words = titleLower.split(/\s+/);
+    
+    // Find the position/index where the game name appears
+    const gameIndex = titleLower.indexOf(gameNameLower);
+    const gameWordCount = gameNameLower.split(/\s+/).length;
+    
+    // Calculate relative position in title (0 = start, 1 = end)
+    const relativePosition = gameIndex / Math.max(1, titleLower.length - gameNameLower.length);
+    
+    // Context indicators that suggest it's NOT actual gameplay
+    const promotionalIndicators = [
+      'coming soon', 'tomorrow', 'next week', 'next month', 'later', 'afterwards', 'after',
+      'dlc', 'expansion', 'update', 'patch', 'announcement', 'reveal', 'trailer',
+      'until', 'days until', 'weeks until', 'months until', 'waiting for',
+      'hyped for', 'excited for', 'looking forward', 'can\'t wait',
+      'preview', 'teaser', 'leak', 'rumors', 'speculation',
+      'it is coming', 'is coming', 'will be', 'gonna be', 'going to be'
+    ];
+    
+    // Context indicators that suggest it IS actual gameplay
+    const gameplayIndicators = [
+      'playing', 'stream', 'gaming', 'run', 'playthrough', 'let\'s play',
+      'session', 'continues', 'continuing', 'part', 'episode',
+      'build', 'colony', 'base', 'world', 'save', 'file',
+      'challenge', 'permadeath', 'hardcore', 'modded', 'vanilla',
+      'first time', 'blind', 'reaction', 'tutorial', 'guide',
+      'speedrun', 'race', 'competition'
+    ];
+    
+    // Negative context words that appear near the game name
+    const surroundingText = this.extractSurroundingContext(titleLower, gameIndex, gameNameLower.length, 50);
+    
+    // Check for promotional language
+    for (const indicator of promotionalIndicators) {
+      if (surroundingText.includes(indicator)) {
+        return {
+          isActualGameplay: false,
+          matchType: 'promotional_mention',
+          reason: `Contains promotional language: "${indicator}"`
+        };
+      }
+    }
+    
+    // If game appears very late in title (last 25%), it's often promotional
+    if (relativePosition > 0.75) {
+      return {
+        isActualGameplay: false,
+        matchType: 'late_position_mention',
+        reason: `Game appears late in title (${Math.round(relativePosition * 100)}% through), likely promotional`
+      };
+    }
+    
+    // Check for gameplay indicators, but be careful about context
+    let gameplayScore = 0;
+    const foundGameplayIndicators: string[] = [];
+    
+    for (const indicator of gameplayIndicators) {
+      if (titleLower.includes(indicator)) {
+        // Special case: "world" indicator should only count if it's part of the game name or in gameplay context
+        if (indicator === 'world') {
+          // Don't count "world" if it appears in listing/comparison context
+          const listingContext = ['like', 'such as', 'including', 'games', 'exist', 'and', 'or', 'great'];
+          const hasListingContext = listingContext.some(ctx => titleLower.includes(ctx));
+          
+          if (hasListingContext) {
+            continue; // Skip this "world" as it's likely just part of game name in listing context
+          }
+          
+          // Only count "world" if it's close to actual gameplay words
+          const gameplayContext = ['playing', 'new', 'build', 'create', 'start', 'explore', 'my', 'starting'];
+          const hasGameplayContext = gameplayContext.some(ctx => titleLower.includes(ctx));
+          
+          if (!hasGameplayContext) {
+            continue; // Skip this "world" as it's likely just part of game name in non-gameplay context
+          }
+        }
+        
+        gameplayScore++;
+        foundGameplayIndicators.push(indicator);
+      }
+    }
+    
+    // If game appears early in title (first 50%) and has gameplay context, likely playing
+    if (relativePosition <= 0.5 && gameplayScore > 0) {
+      return {
+        isActualGameplay: true,
+        matchType: 'early_position_with_context',
+        reason: `Game appears early in title with gameplay indicators: ${foundGameplayIndicators.join(', ')}`
+      };
+    }
+    
+    // If game appears at the very beginning (first 20%), likely being played
+    if (relativePosition <= 0.2) {
+      return {
+        isActualGameplay: true,
+        matchType: 'title_start_position',
+        reason: `Game appears at beginning of title (${Math.round(relativePosition * 100)}% position)`
+      };
+    }
+    
+    // Check for exact word boundaries (not partial matches in compound words)
+    const exactWordMatch = this.hasExactWordBoundaryMatch(titleLower, gameNameLower);
+    if (exactWordMatch && relativePosition <= 0.6) {
+      // Even with exact word boundary, check for listing/comparison context
+      const listingContext = ['like', 'such as', 'including', 'games', 'exist', 'similar to', 'compared to', 'versus', 'vs'];
+      const hasListingContext = listingContext.some(ctx => titleLower.includes(ctx));
+      
+      if (hasListingContext) {
+        return {
+          isActualGameplay: false,
+          matchType: 'listing_context_mention',
+          reason: `Game appears in listing/comparison context despite exact word match`
+        };
+      }
+      
+      return {
+        isActualGameplay: true,
+        matchType: 'exact_word_boundary',
+        reason: `Exact word boundary match in reasonable position`
+      };
+    }
+    
+    // For partial word matches, be more strict
+    if (!exactWordMatch) {
+      // Check if it's just a partial match within a different word
+      const gameWords = gameNameLower.split(/\s+/);
+      if (gameWords.length === 1 && gameWords[0].length <= 6) {
+        // Short single words are more likely to be false positives when partial
+        return {
+          isActualGameplay: false,
+          matchType: 'partial_word_false_positive',
+          reason: `Short game name "${gameWords[0]}" appears as partial match, likely false positive`
+        };
+      }
+    }
+    
+    // Default: if no strong promotional indicators and reasonable position, assume gameplay
+    if (relativePosition <= 0.6) {
+      return {
+        isActualGameplay: true,
+        matchType: 'default_reasonable_position',
+        reason: `Game appears in reasonable position without promotional context`
+      };
+    }
+    
+    // Late position without clear context - be conservative
+    return {
+      isActualGameplay: false,
+      matchType: 'ambiguous_late_position',
+      reason: `Game appears late in title without clear gameplay context`
+    };
+  }
+
+  /**
+   * Extracts text around the game name for context analysis
+   */
+  private extractSurroundingContext(text: string, startIndex: number, gameLength: number, contextWindow: number): string {
+    const contextStart = Math.max(0, startIndex - contextWindow);
+    const contextEnd = Math.min(text.length, startIndex + gameLength + contextWindow);
+    return text.substring(contextStart, contextEnd);
+  }
+
+  /**
+   * Checks if the game name appears with exact word boundaries (not as part of other words)
+   */
+  private hasExactWordBoundaryMatch(title: string, gameName: string): boolean {
+    // Create regex with word boundaries
+    const regex = new RegExp(`\\b${gameName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    return regex.test(title);
+  }
+
+
+  /**
+   * Records filtered out VODs for user visibility and debugging
+   */
+  private async recordFilteredVODs(taskId: number, filteredVods: any[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      for (const filtered of filteredVods) {
+        await client.query(`
+          INSERT INTO task_skipped_vods 
+            (task_id, vod_id, reason, error_message, created_at)
+          VALUES 
+            ($1, $2, 'GAME_FILTER', $3, NOW())
+          ON CONFLICT (task_id, vod_id) DO UPDATE SET
+            reason = EXCLUDED.reason,
+            error_message = EXCLUDED.error_message,
+            created_at = EXCLUDED.created_at
+        `, [
+          taskId, 
+          filtered.vodId, 
+          JSON.stringify({
+            title: filtered.title,
+            reason: filtered.reason,
+            games_searched: filtered.gamesSearched,
+            details: filtered.details
+          })
+        ]);
+      }
+      logger.info(`Recorded ${filteredVods.length} filtered VODs for task ${taskId}`);
+    } catch (error) {
+      logger.error(`Error recording filtered VODs for task ${taskId}:`, error);
+    } finally {
+      client.release();
+    }
   }
 
   /**
