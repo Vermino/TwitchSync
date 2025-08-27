@@ -1,6 +1,0 @@
-{
-  "name": "Test",
-  "task_type": "channel",
-  "schedule_type": "manual",
-  "schedule_value": "manual"
-}
