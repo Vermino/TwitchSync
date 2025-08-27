@@ -5,7 +5,7 @@ import { Pool } from 'pg';
 import axios from 'axios';
 import { promises as fs } from 'fs';
 import * as fsSync from 'fs';
-import path from 'path';
+import * as path from 'path';
 import { Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import { logger } from '../../../utils/logger';
@@ -13,6 +13,7 @@ import { FileSystemManager } from '../utils/fileSystem';
 import { BandwidthThrottler } from '../utils/throttle';
 import { Checksums } from '../utils/checksums';
 import { TwitchService } from '../../twitch/service';
+import { CompletedVodService } from '../../completedVodService';
 import {
   DownloadState,
   SegmentInfo,
@@ -21,6 +22,7 @@ import {
   PlaylistQuality,
   VodPlaylist
 } from '../types';
+import * as crypto from 'crypto';
 
 const MAX_VODS = 50;  // Increased to allow more VODs in queue
 const MAX_CONCURRENT_DOWNLOADS = 3;  // Allow 3 concurrent downloads
@@ -29,6 +31,7 @@ export class DownloadHandler extends EventEmitter {
   private activeDownloads: Map<number, DownloadState>;
   private fileSystem: FileSystemManager;
   private twitchService: TwitchService;
+  private completedVodService: CompletedVodService;
 
   constructor(
       private pool: Pool,
@@ -39,6 +42,7 @@ export class DownloadHandler extends EventEmitter {
     this.activeDownloads = new Map();
     this.fileSystem = new FileSystemManager(tempDir);
     this.twitchService = TwitchService.getInstance();
+    this.completedVodService = new CompletedVodService(pool);
   }
 
   public getActiveDownloads(): Map<number, DownloadState> {
@@ -88,8 +92,36 @@ export class DownloadHandler extends EventEmitter {
     const state = this.activeDownloads.get(vodId);
     if (!state) throw new Error(`No download state found for VOD ${vodId}`);
 
-    // Check for existing segments and skip already downloaded ones
+    // Check for existing segments and database resume position
     const existingSegments = new Set<number>();
+    let resumeSegmentIndex = 0;
+
+    // Check database for resume position
+    try {
+      const client = await this.pool.connect();
+      try {
+        const resumeResult = await client.query(`
+          SELECT resume_segment_index, download_status
+          FROM vods 
+          WHERE id = $1
+        `, [vodId]);
+        
+        if (resumeResult.rows.length > 0) {
+          resumeSegmentIndex = resumeResult.rows[0].resume_segment_index || 0;
+          const downloadStatus = resumeResult.rows[0].download_status;
+          
+          if (resumeSegmentIndex > 0) {
+            logger.info(`VOD ${vodId}: Database indicates resume from segment ${resumeSegmentIndex} (status: ${downloadStatus})`);
+          }
+        }
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      logger.warn(`Error checking database resume position for VOD ${vodId}:`, err);
+    }
+
+    // Check for existing segment files on disk
     try {
       const files = await fs.readdir(tempDir);
       files.forEach(file => {
@@ -100,8 +132,24 @@ export class DownloadHandler extends EventEmitter {
           state.completedSegments.add(segmentIndex);
         }
       });
-      if (existingSegments.size > 0) {
-        logger.info(`Found ${existingSegments.size} existing segments for VOD ${vodId}, resuming download`);
+      
+      // Use the higher value between database resume position and existing files
+      const fileBasedResume = existingSegments.size > 0 ? Math.max(...Array.from(existingSegments)) + 1 : 0;
+      const actualResumePosition = Math.max(resumeSegmentIndex, fileBasedResume);
+      
+      if (actualResumePosition > 0) {
+        logger.info(`VOD ${vodId}: Resuming from segment ${actualResumePosition} (DB: ${resumeSegmentIndex}, Files: ${fileBasedResume})`);
+        
+        // Mark all segments before resume position as completed
+        for (let i = 0; i < actualResumePosition; i++) {
+          existingSegments.add(i);
+          state.completedSegments.add(i);
+        }
+        
+        // Update download state
+        state.resumePosition = actualResumePosition;
+        state.progress.segmentIndex = actualResumePosition;
+        
         // Update progress immediately to reflect existing segments
         await this.updateDownloadProgress(vodId, segments.length);
       }
@@ -210,6 +258,12 @@ export class DownloadHandler extends EventEmitter {
   async processVOD(vod: any): Promise<void> {
     const client = await this.pool.connect();
     try {
+      // Check if VOD is already completed before starting download
+      const isCompleted = await this.completedVodService.isVodCompleted(vod.twitch_id, vod.task_id);
+      if (isCompleted) {
+        logger.info(`Skipping VOD ${vod.twitch_id} - already completed for task ${vod.task_id}`);
+        return;
+      }
       // Get download path from user settings with new fields
       const settingsResult = await client.query(`
         SELECT 
@@ -366,7 +420,27 @@ export class DownloadHandler extends EventEmitter {
 
         // Combine segments into final video file
         logger.info(`Combining ${playlist.segments.length} segments for VOD ${vod.id}`);
+        const downloadStartTime = new Date(state.resources.startTime);
         const finalVideoPath = await this.combineSegments(vod, workingDir, downloadPath, playlist.segments.length);
+        
+        // Calculate download metrics for completion tracking
+        const downloadEndTime = new Date();
+        const downloadDurationSeconds = Math.round(
+          (downloadEndTime.getTime() - downloadStartTime.getTime()) / 1000
+        );
+        
+        // Get file stats
+        const fileStats = await fs.stat(finalVideoPath);
+        const fileSizeBytes = fileStats.size;
+        const fileName = require('path').basename(finalVideoPath);
+        
+        // Calculate download speed in Mbps
+        const downloadSpeedMbps = downloadDurationSeconds > 0 
+          ? Number(((fileSizeBytes * 8) / (downloadDurationSeconds * 1000000)).toFixed(2))
+          : null;
+        
+        // Calculate MD5 checksum for integrity verification
+        const checksum = await this.calculateMD5(finalVideoPath);
         
         // Update VOD status to completed with file path
         await client.query(`
@@ -375,20 +449,66 @@ export class DownloadHandler extends EventEmitter {
               downloaded_at     = NOW(),
               updated_at        = NOW(),
               download_progress = 100,
-              download_path     = $2
+              download_path     = $2,
+              file_size         = $3,
+              checksum          = $4
           WHERE id = $1
-        `, [vod.id, finalVideoPath]);
+        `, [vod.id, finalVideoPath, fileSizeBytes, checksum]);
 
-        // Update task progress
+        // Mark VOD as completed in completed_vods table for tracking
+        await this.completedVodService.markVodCompleted({
+          vod_id: vod.id,
+          task_id: vod.task_id,
+          twitch_id: vod.twitch_id,
+          file_path: finalVideoPath,
+          file_name: fileName,
+          file_size_bytes: fileSizeBytes,
+          download_duration_seconds: downloadDurationSeconds,
+          download_speed_mbps: downloadSpeedMbps ?? undefined,
+          checksum_md5: checksum,
+          metadata: {
+            quality: vod.preferred_quality || 'source',
+            format: 'ts',
+            duration: vod.duration,
+            title: vod.title,
+            channel_name: vod.channel_name || 'unknown',
+            completed_timestamp: downloadEndTime.toISOString()
+          }
+        });
+
+        // Get updated completion statistics for task progress
+        const completionStats = await this.completedVodService.getTaskCompletionStats(vod.task_id);
+        
+        // Update task progress with actual completion data
         await client.query(`
           UPDATE task_monitoring
-          SET status              = 'completed',
-              status_message      = 'Download completed successfully',
-              progress_percentage = 100,
-              items_completed     = items_completed + 1,
+          SET status              = CASE 
+                                      WHEN $3 >= $4 THEN 'completed'
+                                      ELSE 'running'
+                                    END,
+              status_message      = CONCAT('Downloaded: ', $3, '/', $4, ' VODs completed'),
+              progress_percentage = $5,
+              items_completed     = $3,
+              items_total         = $4,
               updated_at          = NOW()
           WHERE task_id = $1
-        `, [vod.task_id]);
+        `, [
+          vod.task_id,
+          vod.id,
+          completionStats.completed_vods,
+          completionStats.total_vods,
+          Math.round(completionStats.completion_percentage)
+        ]);
+        
+        logger.info(`Successfully completed and tracked VOD download`, {
+          vod_id: vod.id,
+          task_id: vod.task_id,
+          twitch_id: vod.twitch_id,
+          file_size: fileSizeBytes,
+          download_duration: downloadDurationSeconds,
+          download_speed: downloadSpeedMbps,
+          completion_percentage: completionStats.completion_percentage
+        });
 
         // Note: user_settings update removed as completed_at column doesn't exist
 
@@ -411,14 +531,29 @@ export class DownloadHandler extends EventEmitter {
           errorMessage
         ]);
 
-        // Update task monitoring
-        await client.query(`
-          UPDATE task_monitoring
-          SET status         = 'failed',
-              status_message = $2,
-              updated_at     = NOW()
-          WHERE task_id = $1
-        `, [vod.task_id, errorMessage]);
+        // Update task monitoring with completion statistics
+        try {
+          const completionStats = await this.completedVodService.getTaskCompletionStats(vod.task_id);
+          await client.query(`
+            UPDATE task_monitoring
+            SET status         = 'running',
+                status_message = CONCAT('Error with VOD download - Downloaded: ', $3, '/', $4, ' VODs | Error: ', $2),
+                progress_percentage = $5,
+                items_completed = $3,
+                items_total = $4,
+                updated_at     = NOW()
+            WHERE task_id = $1
+          `, [vod.task_id, errorMessage, completionStats.completed_vods, completionStats.total_vods, Math.round(completionStats.completion_percentage)]);
+        } catch (statsError) {
+          // Fallback to simple error message if stats retrieval fails
+          await client.query(`
+            UPDATE task_monitoring
+            SET status         = 'failed',
+                status_message = $2,
+                updated_at     = NOW()
+            WHERE task_id = $1
+          `, [vod.task_id, errorMessage]);
+        }
 
         throw error;
       } finally {
@@ -682,6 +817,20 @@ export class DownloadHandler extends EventEmitter {
     }
   }
 
+  /**
+   * Calculate MD5 checksum for file integrity verification
+   */
+  private async calculateMD5(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('md5');
+      const stream = fsSync.createReadStream(filePath);
+      
+      stream.on('data', data => hash.update(data));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', reject);
+    });
+  }
+
   private async updateDownloadProgress(vodId: number, totalSegments: number): Promise<void> {
     const state = this.activeDownloads.get(vodId);
     if (!state) {
@@ -713,14 +862,37 @@ export class DownloadHandler extends EventEmitter {
           WHERE id = $1
         `, [vodId, progressPercentage]);
 
-        // Update task progress  
-        await client.query(`
-          UPDATE task_monitoring
-          SET status_message = $2,
-              progress_percentage = $3,
-              updated_at = NOW()
-          WHERE task_id = (SELECT task_id FROM vods WHERE id = $1)
-        `, [vodId, `Downloading segments: ${completedSegments}/${totalSegments}`, progressPercentage]);
+        // Get task completion statistics for accurate task progress
+        const taskId = await client.query(`SELECT task_id FROM vods WHERE id = $1`, [vodId]);
+        if (taskId.rows.length > 0) {
+          const completionStats = await this.completedVodService.getTaskCompletionStats(taskId.rows[0].task_id);
+          
+          // Update task progress with actual completion data and current segment progress
+          await client.query(`
+            UPDATE task_monitoring
+            SET status_message = CASE 
+                                   WHEN $4 > 0 THEN CONCAT('Downloading VOD - Segments: ', $2, '/', $3, ' | Downloaded: ', $5, '/', $6, ' VODs')
+                                   ELSE CONCAT('Downloading segments: ', $2, '/', $3)
+                                 END,
+                progress_percentage = CASE 
+                                        WHEN $6 > 0 THEN GREATEST($7::numeric, $8::numeric)
+                                        ELSE $8::numeric
+                                      END,
+                items_completed = $5,
+                items_total = $6,
+                updated_at = NOW()
+            WHERE task_id = $1
+          `, [
+            taskId.rows[0].task_id, 
+            completedSegments, 
+            totalSegments, 
+            completionStats.total_vods,
+            completionStats.completed_vods,
+            completionStats.total_vods,
+            completionStats.completion_percentage,
+            progressPercentage
+          ]);
+        }
 
         logger.info(`VOD ${vodId} progress updated: ${completedSegments}/${totalSegments} segments (${progressPercentage}%)`);
       } finally {

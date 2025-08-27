@@ -6,9 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Plus } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
 import TaskList from '@/components/TaskManager/TaskList';
+import BulkActions from '@/components/TaskManager/BulkActions';
 import type { Task, Channel, Game, TaskStatus } from '@/types/task';
+import type { QueueStats } from '@/types/queue';
 import { useToast } from '@/components/ui/use-toast';
 import { api } from '@/lib/api';
+import { QueueClient } from '@/lib/api/queueClient';
 
 const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   'running': 'pending',
@@ -21,9 +24,12 @@ const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   'inactive': 'running'
 } as const;
 
+const queueClient = new QueueClient();
+
 export default function TaskManager() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedQueueItems, setSelectedQueueItems] = useState<string[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -67,7 +73,29 @@ export default function TaskManager() {
     queryFn: async () => {
       return await api.getVods();
     },
-    refetchInterval: 30000
+    refetchInterval: 5000 // Updated to refresh every 5 seconds for real-time updates
+  });
+
+  // Queue stats for bulk actions
+  const { data: queueStats, isLoading: queueStatsLoading } = useQuery<QueueStats>({
+    queryKey: ['queueStats'],
+    queryFn: async () => {
+      try {
+        return await queueClient.getQueueStats();
+      } catch (error) {
+        console.error('Error fetching queue stats:', error);
+        // Return default stats if API isn't available yet
+        return {
+          total_items: 0,
+          pending: 0,
+          downloading: 0,
+          completed: 0,
+          failed: 0,
+          paused: 0,
+        };
+      }
+    },
+    refetchInterval: 5000,
   });
 
   // Mutations
@@ -184,6 +212,52 @@ export default function TaskManager() {
     }
   };
 
+  // Bulk Action Handlers
+  const handleBulkAction = async (action: () => Promise<void>, actionName: string) => {
+    try {
+      await action();
+      await Promise.all([
+        refetchTasks(),
+        queryClient.invalidateQueries(['queueStats']),
+        queryClient.invalidateQueries(['vods']),
+        queryClient.invalidateQueries(['downloadHistory'])
+      ]);
+      toast({
+        title: "Success",
+        description: `${actionName} completed successfully`,
+      });
+    } catch (error) {
+      console.error(`Error ${actionName}:`, error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : `Failed to ${actionName}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handlePauseAll = () => handleBulkAction(() => queueClient.pauseAll(), 'pause all downloads');
+  const handleResumeAll = () => handleBulkAction(() => queueClient.resumeAll(), 'resume all downloads');
+  const handleClearCompleted = () => handleBulkAction(() => queueClient.clearCompleted(), 'clear completed downloads');
+  const handleCancelAll = () => handleBulkAction(() => queueClient.executeBulkAction({ type: 'cancel_all', target: 'all' }), 'cancel all downloads');
+  
+  const handleSetPriority = (priority: 'high' | 'normal' | 'low') => 
+    handleBulkAction(() => queueClient.executeBulkAction({ 
+      type: 'set_priority', 
+      target: 'selected', 
+      priority,
+      item_ids: selectedQueueItems 
+    }), `set priority to ${priority}`);
+
+  const handleRefreshAll = async () => {
+    await Promise.all([
+      refetchTasks(),
+      queryClient.invalidateQueries(['queueStats']),
+      queryClient.invalidateQueries(['vods']),
+      queryClient.invalidateQueries(['downloadHistory'])
+    ]);
+  };
+
   if (tasksLoading || channelsLoading || gamesLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -204,6 +278,21 @@ export default function TaskManager() {
           Create Task
         </Button>
       </div>
+
+      {/* Bulk Actions for Queue Management */}
+      {queueStats && !queueStatsLoading && (
+        <BulkActions
+          stats={queueStats}
+          selectedItems={selectedQueueItems}
+          onPauseAll={handlePauseAll}
+          onResumeAll={handleResumeAll}
+          onClearCompleted={handleClearCompleted}
+          onCancelAll={handleCancelAll}
+          onSetPriority={handleSetPriority}
+          onRefresh={handleRefreshAll}
+          isLoading={tasksLoading}
+        />
+      )}
 
       <TaskList
         tasks={tasks}

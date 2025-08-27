@@ -47,7 +47,7 @@ describe('Task Creation E2E Tests', () => {
     
     // Setup successful database responses
     mockClient.query.mockImplementation((query: string, params?: any[]) => {
-      if (query.includes('INSERT INTO tasks')) {
+      if (query.includes('INSERT INTO tasks') && params) {
         return Promise.resolve({
           rows: [{
             id: 1,
@@ -186,7 +186,7 @@ describe('Task Creation E2E Tests', () => {
         // Clear mocks between iterations
         jest.clearAllMocks();
         mockClient.query.mockImplementation((query: string, params?: any[]) => {
-          if (query.includes('INSERT INTO tasks')) {
+          if (query.includes('INSERT INTO tasks') && params) {
             return Promise.resolve({
               rows: [{
                 id: Math.floor(Math.random() * 1000),
@@ -226,7 +226,7 @@ describe('Task Creation E2E Tests', () => {
     test('should successfully update task priority via HTTP', async () => {
       // Mock task exists check and update
       mockClient.query.mockImplementation((query: string, params?: any[]) => {
-        if (query.includes('UPDATE tasks')) {
+        if (query.includes('UPDATE tasks') && params) {
           return Promise.resolve({
             rows: [{
               id: 1,

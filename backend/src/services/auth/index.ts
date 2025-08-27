@@ -385,7 +385,9 @@ export class AuthService {
 
       if (result.rows.length > 0) {
         const { refresh_token } = result.rows[0];
-        await this.refreshTwitchToken(refresh_token);
+        if (refresh_token) {
+          await this.refreshTwitchToken(refresh_token);
+        }
       }
     } catch (error) {
       logger.error('Error refreshing token:', error);

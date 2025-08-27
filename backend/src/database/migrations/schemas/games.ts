@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { Game } from '../types';
+// @ts-ignore - Types will be resolved at runtime
+import { Game } from '../../types/database';
 
 export const gamesQueries = {
   CREATE_TABLE: `
@@ -58,7 +59,7 @@ export const gamesQueries = {
 
   deleteGame: async (pool: Pool, id: number): Promise<boolean> => {
     const result = await pool.query('DELETE FROM tracked_games WHERE id = $1', [id]);
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   },
 
   updateLastChecked: async (pool: Pool, id: number): Promise<void> => {

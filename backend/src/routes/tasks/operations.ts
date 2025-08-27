@@ -12,7 +12,7 @@ import type {
 } from '../../services/downloadManager/types';
 
 // Enum types should match database
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
 export type TaskPriority = 'low' | 'medium' | 'high';
 
 export interface TaskManagerDetails {
@@ -253,8 +253,28 @@ export class TaskOperations {
         })
       ]);
 
-      // If task was actually running, stop the processing
+      // If task was actually running, stop the processing and store download positions
       if (task.status === 'running') {
+        // Get current download states to preserve segment positions
+        const activeDownloads = this.downloadManager.getActiveDownloads();
+        
+        // Store segment positions for active downloads
+        for (const [vodId, downloadState] of Array.from(activeDownloads.entries())) {
+          await client.query(`
+            UPDATE vods 
+            SET resume_segment_index = $1,
+                download_status = 'paused',
+                pause_reason = 'task_paused',
+                paused_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $2 AND task_id = $3
+          `, [
+            downloadState.progress.segmentIndex,
+            vodId,
+            taskId
+          ]);
+        }
+
         await this.downloadManager.stopProcessing();
       }
 
@@ -266,6 +286,93 @@ export class TaskOperations {
     } catch (error) {
       await client.query('ROLLBACK');
       logger.error('Error pausing task:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async resumeTask(taskId: number, userId: number): Promise<Task> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Verify task exists, belongs to user, and is paused
+      const taskResult = await client.query(`
+        SELECT *
+        FROM tasks
+        WHERE id = $1 AND user_id = $2
+      `, [taskId, userId]);
+
+      if (taskResult.rows.length === 0) {
+        throw new Error('Task not found or access denied');
+      }
+
+      const task = taskResult.rows[0];
+
+      // Only paused tasks can be resumed
+      if (task.status !== 'paused') {
+        throw new Error('Only paused tasks can be resumed');
+      }
+
+      // Update task status to running
+      const updatedTask = await client.query(`
+        UPDATE tasks
+        SET status = 'running'::task_status,
+            is_active = true,
+            last_resumed_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `, [taskId]);
+
+      // Resume any paused VODs for this task
+      await client.query(`
+        SELECT resume_task_downloads($1)
+      `, [taskId]);
+
+      // Update monitoring status
+      await client.query(`
+        UPDATE task_monitoring
+        SET status = 'running',
+            status_message = 'Task resumed by user',
+            updated_at = NOW()
+        WHERE task_id = $1
+      `, [taskId]);
+
+      // Log the resume event
+      await client.query(`
+        INSERT INTO task_events (
+          task_id,
+          event_type,
+          details,
+          created_at
+        ) VALUES ($1, 'status_change', $2, NOW())
+      `, [
+        taskId,
+        JSON.stringify({
+          previous_status: 'paused',
+          new_status: 'running',
+          reason: 'user_resume',
+          timestamp: new Date().toISOString(),
+          paused_duration_seconds: task.last_paused_at ? 
+            Math.floor((Date.now() - new Date(task.last_paused_at).getTime()) / 1000) : 0
+        })
+      ]);
+
+      await client.query('COMMIT');
+
+      // Restart download processing
+      logger.info(`Resuming task ${taskId} - restarting download processing from last position`);
+      await this.downloadManager.executeTask(taskId);
+      logger.info(`Task ${taskId} resume processing initiated`);
+
+      // Get updated task with all related info
+      return await this.getTaskById(taskId, userId);
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error resuming task:', error);
       throw error;
     } finally {
       client.release();
@@ -298,7 +405,21 @@ export class TaskOperations {
         RETURNING *
       `, [taskId]);
 
-      // Update monitoring status
+      // Get current completion statistics for proper initialization
+      const completionStatsQuery = await client.query(`
+        SELECT 
+          COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = $1), 0) as completed_count,
+          COALESCE((SELECT COUNT(*) FROM vods v WHERE v.task_id = $1), 0) as total_count
+      `, [taskId]);
+      
+      const { completed_count, total_count } = completionStatsQuery.rows[0];
+      const completionPercentage = total_count > 0 ? Math.round((completed_count / total_count) * 100) : 0;
+      const statusMessage = total_count > 0 
+        ? `Downloaded: ${completed_count}/${total_count} VODs completed`
+        : 'Task started - discovering VODs';
+
+      // Update monitoring status with accurate progress
+      // The trigger will automatically remove any existing entry for this task_id
       await client.query(`
         INSERT INTO task_monitoring (
           task_id,
@@ -310,14 +431,8 @@ export class TaskOperations {
           items_failed,
           created_at,
           updated_at
-        ) VALUES ($1, 'running', 'Task started', 0, 0, 0, 0, NOW(), NOW())
-        ON CONFLICT (task_id) 
-        DO UPDATE SET 
-          status = 'running',
-          status_message = 'Task started',
-          progress_percentage = 0,
-          updated_at = NOW()
-      `, [taskId]);
+        ) VALUES ($1, 'running', $2, $3, $4, $5, 0, NOW(), NOW())
+      `, [taskId, statusMessage, completionPercentage, total_count, completed_count]);
 
       // Start the download manager processing (async to avoid timeout)
       logger.info(`Executing task ${taskId} - discovering VODs and starting downloads`);
@@ -389,30 +504,59 @@ export class TaskOperations {
         SELECT id FROM task_monitoring WHERE task_id = $1
       `, [taskId]);
 
-      if (monitoringExists.rows.length > 0) {
-        await client.query(`
-          UPDATE task_monitoring
-          SET status = $2,
-              status_message = $3,
-              updated_at = NOW()
-          WHERE task_id = $1
-        `, [
-          taskId,
-          active ? 'running' : 'pending',
-          active ? 'Task activated' : 'Task deactivated'
-        ]);
+      if (active) {
+        // Get current completion statistics for activation
+        const completionStatsQuery = await client.query(`
+          SELECT 
+            COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = $1), 0) as completed_count,
+            COALESCE((SELECT COUNT(*) FROM vods v WHERE v.task_id = $1), 0) as total_count
+        `, [taskId]);
+        
+        const { completed_count, total_count } = completionStatsQuery.rows[0];
+        const completionPercentage = total_count > 0 ? Math.round((completed_count / total_count) * 100) : 0;
+        const statusMessage = total_count > 0 
+          ? `Downloaded: ${completed_count}/${total_count} VODs completed`
+          : 'Task activated - discovering VODs';
+
+        if (monitoringExists.rows.length > 0) {
+          await client.query(`
+            UPDATE task_monitoring
+            SET status = 'running',
+                status_message = $2,
+                progress_percentage = $3,
+                items_total = $4,
+                items_completed = $5,
+                updated_at = NOW()
+            WHERE task_id = $1
+          `, [taskId, statusMessage, completionPercentage, total_count, completed_count]);
+        } else {
+          await client.query(`
+            INSERT INTO task_monitoring (
+              task_id, status, status_message, progress_percentage,
+              items_total, items_completed, items_failed,
+              created_at, updated_at
+            ) VALUES ($1, 'running', $2, $3, $4, $5, 0, NOW(), NOW())
+          `, [taskId, statusMessage, completionPercentage, total_count, completed_count]);
+        }
       } else {
-        await client.query(`
-          INSERT INTO task_monitoring (
-            task_id, status, status_message, progress_percentage,
-            items_total, items_completed, items_failed,
-            created_at, updated_at
-          ) VALUES ($1, $2, $3, 0, 0, 0, 0, NOW(), NOW())
-        `, [
-          taskId,
-          active ? 'running' : 'pending',
-          active ? 'Task activated' : 'Task deactivated'
-        ]);
+        // Deactivating task
+        if (monitoringExists.rows.length > 0) {
+          await client.query(`
+            UPDATE task_monitoring
+            SET status = 'pending',
+                status_message = 'Task deactivated',
+                updated_at = NOW()
+            WHERE task_id = $1
+          `, [taskId]);
+        } else {
+          await client.query(`
+            INSERT INTO task_monitoring (
+              task_id, status, status_message, progress_percentage,
+              items_total, items_completed, items_failed,
+              created_at, updated_at
+            ) VALUES ($1, 'pending', 'Task deactivated', 0, 0, 0, 0, NOW(), NOW())
+          `, [taskId]);
+        }
       }
 
       await client.query('COMMIT');
@@ -451,19 +595,50 @@ export class TaskOperations {
                tm.items_completed,
                ts.total_vods,
                ts.successful_downloads,
+               -- Get actual completion statistics from completed_vods table
+               COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = t.id), 0) as actual_completed_vods,
+               COALESCE((SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id), 0) as total_discovered_vods,
+               CASE 
+                 WHEN (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id) > 0 THEN
+                   ROUND((COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = t.id), 0)::numeric / 
+                          (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id)::numeric) * 100, 2)
+                 ELSE 0
+               END as actual_completion_percentage,
                jsonb_build_object(
-                 'percentage', COALESCE(tm.progress_percentage, 0),
-                 'status_message', tm.status_message,
-                 'message', tm.status_message,
+                 'percentage', CASE 
+                   WHEN (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id) > 0 THEN
+                     ROUND((COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = t.id), 0)::numeric / 
+                            (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id)::numeric) * 100, 2)
+                   ELSE COALESCE(tm.progress_percentage, 0)
+                 END,
+                 'status_message', CASE
+                   WHEN (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id) > 0 THEN
+                     CONCAT('Downloaded: ', 
+                            COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = t.id), 0), 
+                            '/', 
+                            (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id), 
+                            ' VODs completed')
+                   ELSE COALESCE(tm.status_message, 'No VODs discovered yet')
+                 END,
+                 'message', CASE
+                   WHEN (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id) > 0 THEN
+                     CONCAT('Downloaded: ', 
+                            COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = t.id), 0), 
+                            '/', 
+                            (SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id), 
+                            ' VODs completed')
+                   ELSE COALESCE(tm.status_message, 'No VODs discovered yet')
+                 END,
                  'current_progress', jsonb_build_object(
-                   'completed', COALESCE(tm.items_completed, 0),
-                   'total', COALESCE(tm.items_total, 0)
+                   'completed', COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = t.id), 0),
+                   'total', COALESCE((SELECT COUNT(*) FROM vods v WHERE v.task_id = t.id), 0)
                  )
                ) as progress
         FROM tasks t
         LEFT JOIN task_monitoring tm ON t.id = tm.task_id
         LEFT JOIN task_statistics ts ON t.id = ts.task_id
         WHERE t.user_id = $1
+        ORDER BY t.updated_at DESC
       `, [userId]);
 
       return result.rows;

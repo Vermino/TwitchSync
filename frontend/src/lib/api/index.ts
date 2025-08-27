@@ -8,6 +8,7 @@ import { DiscoveryClient } from './discoveryClient';
 import { SettingsClient } from './settingsClient';
 import { VodClient } from './vodClient';
 import { TaskMonitoringClient } from './taskMonitoringClient';
+import { QueueClient } from './queueClient';
 
 class ApiClient {
   private static instance: ApiClient;
@@ -20,6 +21,7 @@ class ApiClient {
   public settings: SettingsClient;
   public vods: VodClient;
   public taskMonitoring: TaskMonitoringClient;
+  public queue: QueueClient;
 
   private constructor() {
     this.auth = new AuthClient();
@@ -30,6 +32,7 @@ class ApiClient {
     this.settings = new SettingsClient();
     this.vods = new VodClient();
     this.taskMonitoring = new TaskMonitoringClient();
+    this.queue = new QueueClient();
   }
 
   public static getInstance(): ApiClient {
@@ -48,3 +51,15 @@ export default api;
 export type { TaskStats, PerformanceMetric, TaskAlert } from './taskMonitoringClient';
 export type { VodData } from './vodClient';
 export * from './types';
+
+// Re-export queue types
+export type { 
+  QueueItem, 
+  QueueStats, 
+  DownloadHistoryItem, 
+  BulkAction, 
+  QueueFilters, 
+  QueueSortOptions,
+  QueueStatus,
+  QueuePriority
+} from '../types/queue';

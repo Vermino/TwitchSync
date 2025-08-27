@@ -15,6 +15,7 @@ import pool from './config/database';
 // Import utilities and services
 import { logger } from './utils/logger';
 import DownloadManager from './services/downloadManager/index';
+import { createReliabilityManager } from './services/reliabilityManager';
 
 // Import middleware
 import { loggingMiddleware } from './middleware/logging';
@@ -38,6 +39,29 @@ const downloadManager = DownloadManager.getInstance(pool, {
   retryAttempts: parseInt(process.env.DOWNLOAD_RETRY_ATTEMPTS || '3'),
   retryDelay: parseInt(process.env.DOWNLOAD_RETRY_DELAY || '5000'),
   cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600')
+});
+
+// Create reliability manager instance
+const reliabilityManager = createReliabilityManager(pool, downloadManager, {
+  healthMonitoring: {
+    enabled: process.env.HEALTH_MONITORING_ENABLED !== 'false',
+    intervalMs: parseInt(process.env.HEALTH_CHECK_INTERVAL || '30000')
+  },
+  cleanup: {
+    enabled: process.env.CLEANUP_ENABLED !== 'false',
+    intervalMs: parseInt(process.env.CLEANUP_INTERVAL || '3600000'),
+    tempFileMaxAge: parseInt(process.env.TEMP_FILE_MAX_AGE || '86400000'),
+    logFileMaxAge: parseInt(process.env.LOG_FILE_MAX_AGE || '604800000'),
+    emergencyCleanup: process.env.EMERGENCY_CLEANUP_ENABLED !== 'false',
+    diskSpaceThresholdGB: parseInt(process.env.DISK_SPACE_THRESHOLD_GB || '5')
+  },
+  recovery: {
+    performStartupRecovery: process.env.STARTUP_RECOVERY_ENABLED !== 'false',
+    retryConfigs: {
+      maxRetries: parseInt(process.env.MAX_RETRIES || '3'),
+      baseDelayMs: parseInt(process.env.BASE_DELAY_MS || '1000')
+    }
+  }
 });
 
 // Initialize express app
@@ -127,6 +151,10 @@ const startServer = async () => {
     await setupDatabase();
     logger.info('Database setup completed');
 
+    // Initialize reliability manager (includes startup recovery)
+    await reliabilityManager.start();
+    logger.info('Reliability manager started');
+
     // Initialize download manager queue processing
     await downloadManager.startProcessing();
     logger.info('Download manager started');
@@ -148,6 +176,10 @@ const shutdownHandler = async (signal: string) => {
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
 
   try {
+    // Stop reliability manager first
+    await reliabilityManager.stop();
+    logger.info('Reliability manager stopped');
+
     await downloadManager.stopProcessing();
     logger.info('Download manager stopped');
 

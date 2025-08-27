@@ -11,8 +11,10 @@ import { setupSettingsRoutes } from './settings';
 import { setupTaskRoutes } from './tasks';
 import { setupTwitchSearchRoutes } from './twitch/search';
 import { setupVodRoutes } from './vods';
+import { setupQueueRoutes } from './queue';
 import createDiscoveryRouter from './discovery';
 import createDownloadsRouter from './downloads';
+import { createHealthRoutes } from './health';
 import { authenticate } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import DownloadManager from '../services/downloadManager';
@@ -26,8 +28,9 @@ export function setupRoutes(pool: Pool): Router {
     next();
   });
 
-  // Public routes
+  // Public routes (no authentication required)
   router.use('/auth', setupAuthRoutes(pool));
+  router.use('/health', createHealthRoutes(pool));
 
   // Get download manager instance for downloads routes
   const downloadManager = DownloadManager.getInstance(pool, {
@@ -48,6 +51,7 @@ export function setupRoutes(pool: Pool): Router {
     { path: '/tasks', handler: setupTaskRoutes },
     { path: '/twitch', handler: setupTwitchSearchRoutes },
     { path: '/vods', handler: setupVodRoutes },
+    { path: '/queue', handler: setupQueueRoutes },
     { path: '/discovery', handler: () => createDiscoveryRouter },
     { path: '/downloads', handler: (poolArg: Pool) => createDownloadsRouter(poolArg, downloadManager) }
   ];
@@ -77,5 +81,6 @@ export {
   setupTaskRoutes,
   setupTwitchSearchRoutes,
   setupVodRoutes,
+  setupQueueRoutes,
   createDiscoveryRouter as setupDiscoveryRoutes
 };

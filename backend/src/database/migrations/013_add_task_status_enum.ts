@@ -18,7 +18,8 @@ export async function up(pool: Pool): Promise<void> {
           'completed_with_errors',
           'failed',
           'success',
-          'cancelled'
+          'cancelled',
+          'paused'
         );
       EXCEPTION
         WHEN duplicate_object THEN null;

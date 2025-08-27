@@ -9,7 +9,7 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
-  password: process.env.DB_PASS
+  password: process.env.DB_PASSWORD
 });
 
 async function queryTask() {
@@ -56,13 +56,13 @@ async function queryTask() {
       console.log('================');
       
       const channelResult = await client.query(`
-        SELECT id, display_name, login 
+        SELECT id, display_name, username 
         FROM channels 
         WHERE id = ANY($1)
       `, [task.channel_ids]);
       
       channelResult.rows.forEach(channel => {
-        console.log(`Channel ID ${channel.id}: ${channel.display_name} (${channel.login})`);
+        console.log(`Channel ID ${channel.id}: ${channel.display_name} (${channel.username})`);
       });
     }
     

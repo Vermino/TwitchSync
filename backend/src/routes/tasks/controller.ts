@@ -13,6 +13,8 @@ export class TasksController {
     this.createTask = this.createTask.bind(this);
     this.updateTask = this.updateTask.bind(this);
     this.pauseTask = this.pauseTask.bind(this);
+    this.resumeTask = this.resumeTask.bind(this);
+    this.activateTask = this.activateTask.bind(this);
     this.deleteTask = this.deleteTask.bind(this);
     this.getTaskHistory = this.getTaskHistory.bind(this);
     this.getTaskDetails = this.getTaskDetails.bind(this);
@@ -155,6 +157,74 @@ export class TasksController {
       logger.error('Error pausing task:', err);
       res.status(500).json({
         error: 'Failed to pause task',
+        details: err instanceof Error ? err.message : 'Unknown error'
+      });
+    }
+  }
+
+  async resumeTask(req: Request, res: Response) {
+    try {
+      const userId = req.user?.id;
+      const taskId = parseInt(req.params.id);
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      try {
+        const task = await this.operations.resumeTask(taskId, Number(userId));
+        res.json(task);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === 'Task not found or access denied') {
+            return res.status(404).json({ error: 'Task not found' });
+          }
+          if (error.message === 'Only paused tasks can be resumed') {
+            return res.status(400).json({ error: error.message });
+          }
+        }
+        throw error;
+      }
+    } catch (err) {
+      logger.error('Error resuming task:', err);
+      res.status(500).json({
+        error: 'Failed to resume task',
+        details: err instanceof Error ? err.message : 'Unknown error'
+      });
+    }
+  }
+
+  async activateTask(req: Request, res: Response) {
+    try {
+      const userId = req.user?.id;
+      const taskId = parseInt(req.params.id);
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      if (isNaN(taskId)) {
+        return res.status(400).json({ error: 'Invalid task ID' });
+      }
+
+      try {
+        const task = await this.operations.activateTask(taskId, Number(userId));
+        res.json(task);
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          if (error.message === 'Task not found or access denied') {
+            return res.status(404).json({ error: error.message });
+          }
+          if (error.message === 'Task is already active') {
+            return res.status(400).json({ error: error.message });
+          }
+        }
+        throw error;
+      }
+    } catch (err) {
+      logger.error('Error activating task:', err);
+      res.status(500).json({
+        error: 'Failed to activate task',
         details: err instanceof Error ? err.message : 'Unknown error'
       });
     }

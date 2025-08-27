@@ -1,6 +1,6 @@
 // Filepath: backend/src/services/downloadManager/utils/resourceMonitor.ts
 
-import os from 'os';
+import * as os from 'os';
 import { EventEmitter } from 'events';
 import { promises as fs } from 'fs';
 import { logger } from '../../../utils/logger';

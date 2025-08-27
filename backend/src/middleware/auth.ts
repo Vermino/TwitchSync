@@ -2,7 +2,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { Pool, QueryResult } from 'pg';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
 
 // Define database user interface

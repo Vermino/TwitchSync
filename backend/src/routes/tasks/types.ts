@@ -1,6 +1,6 @@
 // Filepath: backend/src/routes/tasks/types.ts
 
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
 export type TaskPriority = 'low' | 'medium' | 'high';
 
 export interface Task {
@@ -21,6 +21,8 @@ export interface Task {
   priority: TaskPriority;
   created_at: Date;
   updated_at: Date;
+  last_paused_at?: Date;
+  last_resumed_at?: Date;
   monitoring_status?: string;
   monitoring_enabled?: boolean;
 }

@@ -1,6 +1,6 @@
 // Filepath: backend/src/services/downloadManager/utils/checksums.ts
 
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import { createReadStream } from 'fs';
 import { logger } from '../../../utils/logger';
 

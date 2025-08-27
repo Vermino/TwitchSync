@@ -47,3 +47,21 @@ frontend/build/
 # Docker volumes
 pgdata/
 backend/temp/
+
+# Claude Code files
+.claude/settings.local.json
+
+# Debug and test files (temporary)
+backend/check-*.js
+backend/debug-*.js
+backend/test-*.js
+backend/*test*.js
+*.py
+test-*.json
+invalid-*.json
+minimal-*.json
+TCK-*
+TICKET-*
+
+# Windows artifacts
+nul

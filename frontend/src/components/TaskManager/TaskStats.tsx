@@ -33,15 +33,24 @@ export default function TaskStats({ task, channels = [], games = [], channelsLoa
   const { data: vods = [] } = useQuery({
     queryKey: ['vods'],
     queryFn: async () => {
-      const response = await fetch('/api/vods', {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+      try {
+        const response = await fetch('/api/vods', {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+          }
+        });
+        if (!response.ok) {
+          throw new Error('Failed to fetch VODs');
         }
-      });
-      const data = await response.json();
-      return data;
-    }
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Error fetching VODs:', error);
+        return [];
+      }
+    },
+    refetchInterval: 5000 // Refresh every 5 seconds for real-time updates
   });
 
   const getTaskVods = (taskId: number) => {
@@ -58,8 +67,11 @@ export default function TaskStats({ task, channels = [], games = [], channelsLoa
     return games.filter(game => gameIds.includes(game.id));
   };
 
-  const completedVods = getTaskVods(task.id).filter(vod => vod.status === 'completed').length;
-  const totalVods = getTaskVods(task.id).length;
+  const taskVods = getTaskVods(task.id);
+  const completedVods = taskVods.filter(vod => vod.status === 'completed').length;
+  const downloadingVods = taskVods.filter(vod => vod.status === 'downloading').length;
+  const failedVods = taskVods.filter(vod => vod.status === 'failed').length;
+  const totalVods = taskVods.length;
 
   const taskChannels = getTaskChannels(task.channel_ids);
   const taskGames = getTaskGames(task.game_ids);
@@ -118,14 +130,31 @@ export default function TaskStats({ task, channels = [], games = [], channelsLoa
         </div>
       </div>
 
-      {/* Stats section */}
+      {/* Enhanced Downloads section */}
       <div className="space-y-2">
         <div className="text-sm font-medium flex items-center gap-2">
           <Download className="h-4 w-4" />
           Downloads
         </div>
-        <div className="text-sm text-muted-foreground">
-          {completedVods} / {totalVods} VODs completed
+        <div className="space-y-1">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{completedVods}</span> / {totalVods} VODs completed
+          </div>
+          {downloadingVods > 0 && (
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium text-blue-600">{downloadingVods}</span> downloading
+            </div>
+          )}
+          {failedVods > 0 && (
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium text-red-600">{failedVods}</span> failed
+            </div>
+          )}
+          {totalVods > 0 && (
+            <div className="text-xs text-muted-foreground">
+              {((completedVods / totalVods) * 100).toFixed(0)}% complete
+            </div>
+          )}
         </div>
       </div>
 

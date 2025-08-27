@@ -39,7 +39,7 @@ describe('Tasks API Integration Tests', () => {
 
     // Setup base mock request
     mockRequest = {
-      user: { id: 1 },
+      user: { id: '1' },
       params: {},
       body: {},
       query: {}
@@ -195,7 +195,7 @@ describe('Tasks API Integration Tests', () => {
         user_id: 1
       };
 
-      mockOperations.toggleTaskState.mockResolvedValue(undefined);
+      mockOperations.toggleTaskState.mockResolvedValue({} as any);
       mockOperations.updateTask.mockResolvedValue(activatedTask as any);
       mockRequest.params = { id: '1' };
       mockRequest.body = updateData;
@@ -239,7 +239,7 @@ describe('Tasks API Integration Tests', () => {
         user_id: 1
       };
 
-      mockOperations.toggleTaskState.mockResolvedValue(undefined);
+      mockOperations.toggleTaskState.mockResolvedValue({} as any);
       mockOperations.updateTask.mockResolvedValue(runningTask as any);
       mockRequest.params = { id: '1' };
 

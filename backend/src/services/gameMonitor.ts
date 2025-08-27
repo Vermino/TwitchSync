@@ -1,17 +1,17 @@
 // backend/src/services/gameMonitor.ts
 
 import { Pool } from 'pg';
-import TwitchAPIService from './twitch';
+import { TwitchService } from './twitch/service';
 import { logger } from '../utils/logger';
 
 class GameMonitorService {
   private pool: Pool;
-  private twitchAPI: TwitchAPIService;
+  private twitchAPI: TwitchService;
   private static instance: GameMonitorService;
 
   private constructor(pool: Pool) {
     this.pool = pool;
-    this.twitchAPI = TwitchAPIService.getInstance();
+    this.twitchAPI = TwitchService.getInstance();
   }
 
   public static getInstance(pool: Pool): GameMonitorService {
@@ -183,7 +183,7 @@ class GameMonitorService {
       for (const game of gamesResult.rows) {
         try {
           // Get updated game info from Twitch
-          const gameInfo = await this.twitchAPI.getGame(game.twitch_game_id);
+          const gameInfo = await this.twitchAPI.getGameById(game.twitch_game_id);
 
           if (gameInfo && gameInfo.name !== game.name) {
             // Update game name if it has changed

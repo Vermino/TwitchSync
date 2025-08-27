@@ -1,6 +1,7 @@
 // backend/src/middleware/taskOwnership.ts
 
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
+import { RequestWithUser } from '../types/auth';
 import { Pool } from 'pg';
 import { logger } from '../utils/logger';
 
@@ -14,7 +15,7 @@ export class ResourceNotFoundError extends Error {
 }
 
 export const verifyTaskOwnership = (pool: Pool) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: RequestWithUser, res: Response, next: NextFunction) => {
     try {
       const taskId = req.params.id;
       const userId = req.userId;

@@ -212,6 +212,74 @@ export interface ChatMessage {
   created_at: Date;
 }
 
+// Completed VOD tracking for preventing re-downloads
+export interface CompletedVOD {
+  id: number;
+  vod_id: number;
+  task_id: number;
+  twitch_id: string;
+  file_path: string;
+  file_name: string;
+  file_size_bytes: number;
+  download_duration_seconds: number | null;
+  download_speed_mbps: number | null;
+  completed_at: Date;
+  checksum_md5: string | null;
+  metadata: Record<string, any>;
+  created_at: Date;
+}
+
+export interface CompletedVODRequest {
+  vod_id: number;
+  task_id: number;
+  twitch_id: string;
+  file_path: string;
+  file_name: string;
+  file_size_bytes: number;
+  download_duration_seconds?: number;
+  download_speed_mbps?: number;
+  checksum_md5?: string;
+  metadata?: Record<string, any>;
+}
+
+// Task completion statistics
+export interface TaskCompletionStats {
+  total_vods: number;
+  completed_vods: number;
+  completion_percentage: number;
+  total_size_bytes: number;
+  avg_download_speed_mbps: number | null;
+  avg_download_duration_seconds: number | null;
+}
+
+// Download related types
+export interface Download {
+  id: number;
+  vod_id: number;
+  download_path: string;
+  metadata_path?: string;
+  download_status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled';
+  started_at?: Date;
+  completed_at?: Date;
+  file_size?: number;
+  error_message?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface DownloadQueue {
+  id: number;
+  vod_id: number;
+  priority: number;
+  scheduled_for?: Date;
+  attempts: number;
+  max_attempts: number;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  error_message?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
 // Task related types
 export type TaskType = 'channel' | 'game' | 'combined';
 export type TaskScheduleType = 'interval' | 'cron' | 'manual';

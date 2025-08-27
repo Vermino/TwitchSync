@@ -576,6 +576,46 @@ class ApiClient {
     }
   }
 
+  async activateTask(taskId: number): Promise<Task> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/tasks/${taskId}/activate`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error activating task:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async pauseTask(taskId: number): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/tasks/${taskId}/status/pause`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error pausing task:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async resumeTask(taskId: number): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/tasks/${taskId}/status/resume`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error resuming task:', error);
+      throw this.handleError(error);
+    }
+  }
+
   // Discovery Methods
   async getDiscoveryFeed(): Promise<DiscoveryFeedResponse> {
     try {

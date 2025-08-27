@@ -5,7 +5,7 @@ import { z } from 'zod';
 // Enums that match database values
 export const TaskTypeEnum = z.enum(['channel', 'game', 'combined']);
 export const TaskScheduleTypeEnum = z.enum(['interval', 'cron', 'manual']);
-export const TaskStatusEnum = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled']);
+export const TaskStatusEnum = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'paused']);
 export const TaskPriorityEnum = z.enum(['low', 'medium', 'high']);
 
 // Sub-schemas

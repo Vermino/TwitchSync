@@ -1,16 +1,36 @@
+import { useState } from 'react';
 import { Task, Channel, Game } from '@/types/task';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Settings, Trash, Power } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  Settings, 
+  Trash, 
+  Power, 
+  Play, 
+  Pause, 
+  RotateCcw,
+  Download,
+  History
+} from 'lucide-react';
 import TaskStats from './TaskStats';
 import TaskProgress from './TaskProgress';
 import VodList from './VodList';
+import DownloadHistory from './DownloadHistory';
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { api } from '@/lib/api';
+import { useToast } from '@/components/ui/use-toast';
 
 interface TaskCardProps {
   task: Task;
@@ -34,13 +54,49 @@ export default function TaskCard({
   vodsLoading,
   onStatusChange,
   onDelete,
-  onEdit
+  onEdit,
+  onRefresh
 }: TaskCardProps) {
-  // Use the actual progress percentage from backend (which tracks segment download progress)
-  // Don't override it with VOD completion percentage
-  
-  // Determine if task is active
+  const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  // Determine if task is active or paused
   const isActive = task.status === 'running';
+  const isPaused = task.status === 'paused';
+  const canResume = isPaused || task.status === 'failed';
+
+  const handleTaskAction = async (action: string, apiCall: () => Promise<any>) => {
+    setIsActionLoading(action);
+    try {
+      await apiCall();
+      await onRefresh();
+      toast({
+        title: "Success",
+        description: `Task ${action} completed successfully`,
+      });
+    } catch (error) {
+      console.error(`Error ${action} task:`, error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : `Failed to ${action} task`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsActionLoading(null);
+    }
+  };
+
+  const handlePause = () => {
+    handleTaskAction('pause', () => api.pauseTask(task.id));
+  };
+
+  const handleResume = () => {
+    handleTaskAction('resume', () => api.resumeTask(task.id));
+  };
+
+  const handleActivate = () => {
+    handleTaskAction('activate', () => api.activateTask(task.id));
+  };
 
   return (
     <Accordion type="single" collapsible className="border rounded-lg">
@@ -55,7 +111,9 @@ export default function TaskCard({
                     variant={
                       task.status === 'failed' ? 'destructive' :
                       task.status === 'running' ? 'default' :
-                      'secondary'
+                      task.status === 'paused' ? 'secondary' :
+                      task.status === 'completed' ? 'default' :
+                      'outline'
                     }
                   >
                     {task.status}
@@ -66,29 +124,110 @@ export default function TaskCard({
                 </div>
               </div>
 
+              {/* Enhanced Task Controls */}
               <div className="flex items-center gap-2">
-                <Button
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => onStatusChange(task.status)}
-                >
-                  <Power className={`h-4 w-4 ${isActive ? 'text-green-500' : ''}`} />
-                  <span className="ml-2">{isActive ? 'Active' : 'Activate'}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onEdit}
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onDelete}
-                >
-                  <Trash className="h-4 w-4" />
-                </Button>
+                {/* Resume Button for Paused Tasks */}
+                {canResume && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={handleResume}
+                          disabled={isActionLoading === 'resume'}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          <Play className="h-4 w-4" />
+                          <span className="ml-1">Resume</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Resume {isPaused ? 'paused' : 'failed'} task</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+
+                {/* Pause Button for Active Tasks */}
+                {isActive && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handlePause}
+                          disabled={isActionLoading === 'pause'}
+                        >
+                          <Pause className="h-4 w-4" />
+                          <span className="ml-1">Pause</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Pause active task</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+
+                {/* Activate Button for Inactive Tasks */}
+                {!isActive && !isPaused && task.status !== 'completed' && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleActivate}
+                          disabled={isActionLoading === 'activate'}
+                        >
+                          <Power className="h-4 w-4" />
+                          <span className="ml-1">Activate</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Activate task to start processing</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+
+                {/* Settings Button */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onEdit}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Edit task settings</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                {/* Delete Button */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onDelete}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Delete task</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </div>
@@ -106,11 +245,30 @@ export default function TaskCard({
         </div>
 
         <AccordionTrigger className="px-4 py-2 hover:no-underline">
-          <span className="text-sm font-medium">View VODs</span>
+          <span className="text-sm font-medium">View Downloads & History</span>
         </AccordionTrigger>
 
         <AccordionContent className="px-4 pb-4">
-          <VodList taskId={task.id} loading={vodsLoading} />
+          <Tabs defaultValue="vods" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="vods" className="flex items-center gap-2">
+                <Download className="h-4 w-4" />
+                View VODs
+              </TabsTrigger>
+              <TabsTrigger value="history" className="flex items-center gap-2">
+                <History className="h-4 w-4" />
+                Download History
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="vods" className="mt-4">
+              <VodList taskId={task.id} loading={vodsLoading} />
+            </TabsContent>
+            
+            <TabsContent value="history" className="mt-4">
+              <DownloadHistory taskId={task.id} />
+            </TabsContent>
+          </Tabs>
         </AccordionContent>
       </AccordionItem>
     </Accordion>

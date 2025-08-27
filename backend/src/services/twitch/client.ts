@@ -1,12 +1,12 @@
-import { TwitchAPI } from './api';
+import { TwitchAPIClient } from './api-client';
 import { logger } from '../../utils/logger';
 
 class TwitchClient {
-  private api: TwitchAPI;
+  private api: TwitchAPIClient;
   private static instance: TwitchClient;
 
   private constructor() {
-    this.api = TwitchAPI.getInstance();
+    this.api = TwitchAPIClient.getInstance();
   }
 
   public static getInstance(): TwitchClient {
@@ -19,7 +19,7 @@ class TwitchClient {
   async getChannelVODs(userId: string, first: number = 100) {
     try {
       const response = await this.api.getVODs(userId, first);
-      return response.data.data;
+      return response;
     } catch (error) {
       logger.error('Failed to fetch channel VODs:', error);
       throw new Error('Failed to fetch channel VODs');
@@ -29,7 +29,7 @@ class TwitchClient {
   async getGame(gameId: string) {
     try {
       const response = await this.api.getGame(gameId);
-      return response.data.data[0] || null;
+      return response;
     } catch (error) {
       logger.error('Failed to fetch game info:', error);
       throw new Error('Failed to fetch game info');
@@ -39,7 +39,7 @@ class TwitchClient {
   async searchGames(query: string) {
     try {
       const response = await this.api.searchGames(query);
-      return response.data.data;
+      return response;
     } catch (error) {
       logger.error('Failed to search games:', error);
       throw new Error('Failed to search games');
@@ -49,7 +49,7 @@ class TwitchClient {
   async getChannelInfo(username: string) {
     try {
       const response = await this.api.getUser(username);
-      return response.data.data[0] || null;
+      return response;
     } catch (error) {
       logger.error('Failed to fetch channel info:', error);
       throw new Error('Failed to fetch channel info');
@@ -59,7 +59,7 @@ class TwitchClient {
   async getCurrentGame(userId: string) {
     try {
       const response = await this.api.getChannel(userId);
-      return response.data.data[0]?.game_id || null;
+      return response?.game_id || null;
     } catch (error) {
       logger.error('Failed to fetch current game:', error);
       throw new Error('Failed to fetch current game');

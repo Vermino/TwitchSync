@@ -320,6 +320,10 @@ export class DownloadManager extends EventEmitter {
     return { ...this.metrics };
   }
 
+  public getActiveDownloads(): Map<number, DownloadState> {
+    return this.downloadHandler.getActiveDownloads();
+  }
+
   private updateMetrics(update: Partial<DownloadMetrics>): void {
     Object.assign(this.metrics, update);
     this.emit('metrics:update', this.metrics);

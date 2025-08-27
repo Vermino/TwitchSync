@@ -90,16 +90,40 @@ export default function VodList({ taskId, loading }: VodListProps) {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-right min-w-[100px]">
-              {vod.download_progress < 100 && vod.status !== 'failed' && (
-                <div className="mb-1">
-                  <Progress value={vod.download_progress} className="h-1 w-24" />
+            <div className="text-right min-w-[120px]">
+              {vod.status === 'downloading' && (
+                <div className="mb-2 space-y-1">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Progress</span>
+                    <span>{vod.download_progress?.toFixed(1) || 0}%</span>
+                  </div>
+                  <Progress value={vod.download_progress || 0} className="h-1 w-24" />
+                  {/* Enhanced progress details */}
+                  {(vod as any).segments && (
+                    <div className="text-xs text-muted-foreground">
+                      {(vod as any).current_segment}/{(vod as any).total_segments} segments
+                    </div>
+                  )}
+                  {(vod as any).download_speed && (
+                    <div className="text-xs text-muted-foreground">
+                      {((vod as any).download_speed < 1 ? 
+                        `${((vod as any).download_speed * 1024).toFixed(0)} KB/s` : 
+                        `${(vod as any).download_speed.toFixed(1)} MB/s`)}
+                    </div>
+                  )}
+                  {(vod as any).eta && (
+                    <div className="text-xs text-muted-foreground">
+                      ETA: {Math.floor((vod as any).eta / 60)}:{String((vod as any).eta % 60).padStart(2, '0')}
+                    </div>
+                  )}
                 </div>
               )}
               <Badge variant={
                 vod.status === 'completed' ? 'default' :
                 vod.status === 'failed' ? 'destructive' :
-                'secondary'
+                vod.status === 'downloading' ? 'default' :
+                vod.status === 'paused' ? 'secondary' :
+                'outline'
               }>
                 {vod.status}
               </Badge>

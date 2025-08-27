@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { Download, DownloadQueue } from '../types';
+// @ts-ignore - Types will be resolved at runtime
+import { Download, DownloadQueue } from '../../types/database';
 
 export const downloadsQueries = {
   CREATE_TABLES: `

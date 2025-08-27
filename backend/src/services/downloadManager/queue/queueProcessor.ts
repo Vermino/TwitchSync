@@ -68,12 +68,20 @@ export class QueueProcessor extends EventEmitter {
       this.processingInterval = null;
     }
 
-    // Wait for current processing to complete
+    // Wait for current processing to complete (with timeout)
     if (this.isProcessing) {
       logger.info('Waiting for current queue processing to complete...');
       await new Promise<void>(resolve => {
+        let attempts = 0;
+        const maxAttempts = 10; // 10 second timeout
+        
         const checkInterval = setInterval(() => {
-          if (!this.isProcessing) {
+          attempts++;
+          if (!this.isProcessing || attempts >= maxAttempts) {
+            if (attempts >= maxAttempts && this.isProcessing) {
+              logger.warn('Forcing queue processor stop after timeout');
+              this.isProcessing = false; // Force reset the state
+            }
             clearInterval(checkInterval);
             resolve();
           }

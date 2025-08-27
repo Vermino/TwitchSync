@@ -77,6 +77,18 @@ export function setupTaskRoutes(pool: Pool) {
     controller.pauseTask
   );
 
+  // Add new resume endpoint
+  router.post('/:id/status/resume',
+    authenticate(pool),
+    controller.resumeTask
+  );
+
+  // Add activate endpoint
+  router.post('/:id/activate',
+    authenticate(pool),
+    controller.activateTask
+  );
+
   // Batch operations
   router.post('/batch',
     authenticate(pool),

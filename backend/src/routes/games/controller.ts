@@ -3,7 +3,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
-import { twitchService } from '@/services/twitch';
+import { TwitchService } from '../../services/twitch/service';
 import { withTransaction } from '../../middleware/withTransaction';
 import {
   GameError,
@@ -15,13 +15,17 @@ import {
 } from './validation';
 
 export class GamesController {
-  constructor(private pool: Pool) {}
+  private twitchService: TwitchService;
+  
+  constructor(private pool: Pool) {
+    this.twitchService = TwitchService.getInstance();
+  }
 
   searchGames = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { query } = req.query;
 
-      const games = await twitchService.searchGames(query as string);
+      const games = await this.twitchService.searchGames(query as string);
 
       // Cache results for 5 minutes
       res.set('Cache-Control', 'public, max-age=300');

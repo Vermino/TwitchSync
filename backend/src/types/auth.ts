@@ -18,10 +18,16 @@ export interface User {
 }
 
 export interface TwitchAccount {
+  id: number;
+  user_id: number;
   username: string;
   display_name?: string;
   profile_image_url?: string | null;
   email?: string;
+  access_token?: string;
+  refresh_token?: string;
+  token_expires_at?: Date;
+  scope?: string;
 }
 
 export interface Session {
@@ -63,9 +69,18 @@ export interface TwitchUserResponse {
   broadcaster_type: string;
 }
 
+// TwitchSync specific user type for requests
+export interface TwitchSyncUser {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+}
+
 // Extended Request interface with user
 export interface RequestWithUser extends Request {
-  user?: User;
+  user?: TwitchSyncUser;
+  userId?: number;  // Add userId property for middleware
 }
 
 // JWT Payload interface

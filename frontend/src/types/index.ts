@@ -51,3 +51,15 @@ export type {
   TrendingCategory,
   UpdatePreferencesResponse
 } from './discovery';
+
+// Re-export queue types
+export type {
+  QueueItem,
+  QueueStats,
+  DownloadHistoryItem,
+  BulkAction,
+  QueueFilters,
+  QueueSortOptions,
+  QueueStatus,
+  QueuePriority
+} from './queue';
