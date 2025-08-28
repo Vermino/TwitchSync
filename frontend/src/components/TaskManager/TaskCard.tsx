@@ -9,7 +9,6 @@ import {
   Power, 
   Play, 
   Pause, 
-  RotateCcw,
   Download,
   History
 } from 'lucide-react';
@@ -53,7 +52,6 @@ export default function TaskCard({
   channelsLoading,
   gamesLoading,
   vodsLoading,
-  onStatusChange,
   onDelete,
   onEdit,
   onRefresh
@@ -69,6 +67,12 @@ export default function TaskCard({
   const isDownloading = task.status === 'downloading';
   const canResume = isPaused || task.status === 'failed';
   const canActivate = isReady && !isActive && !isPaused && !isScanning && !isDownloading;
+  
+  // Enhanced logic for pause/resume buttons
+  const canPause = isActive || isScanning || isDownloading;
+  const showPauseButton = canPause;
+  const showResumeButton = canResume;
+  
 
   const handleTaskAction = async (action: string, apiCall: () => Promise<any>) => {
     setIsActionLoading(action);
@@ -148,8 +152,8 @@ export default function TaskCard({
 
               {/* Enhanced Task Controls */}
               <div className="flex items-center gap-2">
-                {/* Resume Button for Paused Tasks */}
-                {canResume && (
+                {/* Resume Button for Paused/Failed Tasks */}
+                {showResumeButton && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -158,10 +162,12 @@ export default function TaskCard({
                           size="sm"
                           onClick={handleResume}
                           disabled={isActionLoading === 'resume'}
-                          className="bg-green-600 hover:bg-green-700"
+                          className="bg-green-600 hover:bg-green-700 font-medium"
                         >
-                          <Play className="h-4 w-4" />
-                          <span className="ml-1">Resume</span>
+                          <Play className={`h-4 w-4 ${isActionLoading === 'resume' ? 'animate-spin' : ''}`} />
+                          <span className="ml-1">
+                            {isActionLoading === 'resume' ? 'Resuming...' : 'Resume'}
+                          </span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -171,8 +177,8 @@ export default function TaskCard({
                   </TooltipProvider>
                 )}
 
-                {/* Pause Button for Active Tasks */}
-                {isActive && (
+                {/* Pause Button for Active/Scanning/Downloading Tasks */}
+                {showPauseButton && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -181,13 +187,16 @@ export default function TaskCard({
                           size="sm"
                           onClick={handlePause}
                           disabled={isActionLoading === 'pause'}
+                          className="border-orange-300 text-orange-700 hover:bg-orange-50 hover:border-orange-400 font-medium"
                         >
-                          <Pause className="h-4 w-4" />
-                          <span className="ml-1">Pause</span>
+                          <Pause className={`h-4 w-4 ${isActionLoading === 'pause' ? 'animate-pulse' : ''}`} />
+                          <span className="ml-1">
+                            {isActionLoading === 'pause' ? 'Pausing...' : 'Pause'}
+                          </span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Pause active task</p>
+                        <p>Pause {isActive ? 'active' : isScanning ? 'scanning' : 'downloading'} task</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

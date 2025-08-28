@@ -74,6 +74,9 @@ const taskScheduler = createTaskScheduler(
   parseInt(process.env.TASK_SCHEDULER_INTERVAL_MS || '60000') // Default 1 minute
 );
 
+// Expose task scheduler globally for API access
+(global as any).taskScheduler = taskScheduler;
+
 // Initialize express app
 const app = express();
 const httpServer = createServer(app);

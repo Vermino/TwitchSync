@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Plus } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
 import TaskList from '@/components/TaskManager/TaskList';
@@ -102,6 +103,20 @@ export default function TaskManager() {
     refetchInterval: 5000,
   });
 
+  // Task scheduler status
+  const { data: schedulerStatus, isLoading: schedulerLoading } = useQuery({
+    queryKey: ['taskSchedulerStatus'],
+    queryFn: async () => {
+      try {
+        return await api.getTaskSchedulerStatus();
+      } catch (error) {
+        console.error('Error fetching scheduler status:', error);
+        return { enabled: false, intervalMs: 60000 };
+      }
+    },
+    refetchInterval: 10000, // Check every 10 seconds
+  });
+
   // Mutations
   const createTaskMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -158,6 +173,26 @@ export default function TaskManager() {
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to delete task",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const toggleSchedulerMutation = useMutation({
+    mutationFn: async () => {
+      return await api.toggleTaskScheduler();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(['taskSchedulerStatus']);
+      toast({
+        title: "Success",
+        description: data.message,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to toggle task scheduler",
         variant: "destructive",
       });
     }
@@ -262,7 +297,15 @@ export default function TaskManager() {
     ]);
   };
 
-  if (tasksLoading || channelsLoading || gamesLoading) {
+  const handleToggleScheduler = async () => {
+    try {
+      await toggleSchedulerMutation.mutateAsync();
+    } catch (error) {
+      console.error('Error toggling scheduler:', error);
+    }
+  };
+
+  if (tasksLoading || channelsLoading || gamesLoading || schedulerLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
@@ -281,6 +324,27 @@ export default function TaskManager() {
           <Plus className="w-4 h-4 mr-2"/>
           Create Task
         </Button>
+      </div>
+
+      {/* Task Manager Toggle */}
+      <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-medium">Task Manager</div>
+          <Switch
+            checked={schedulerStatus?.enabled || false}
+            onCheckedChange={handleToggleScheduler}
+            disabled={toggleSchedulerMutation.isPending}
+          />
+          <div className="text-xs text-muted-foreground">
+            {schedulerStatus?.enabled ? 'Enabled' : 'Disabled'}
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {schedulerStatus?.enabled 
+            ? 'Tasks will automatically scan for new VODs based on their schedules'
+            : 'Automatic task execution is disabled. Tasks must be run manually.'
+          }
+        </div>
       </div>
 
       {/* Task Summary */}

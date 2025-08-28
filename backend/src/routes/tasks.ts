@@ -797,6 +797,49 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
     }
   }));
 
+  // POST /scheduler/toggle - Toggle task scheduler on/off
+  router.post('/scheduler/toggle', authenticate(pool), handleAsync(async (req, res) => {
+    try {
+      // Get current scheduler status
+      const currentStatus = (global as any).taskScheduler?.getStatus();
+      const isCurrentlyRunning = currentStatus?.isRunning || false;
+
+      // Toggle scheduler
+      if (isCurrentlyRunning) {
+        (global as any).taskScheduler?.stop();
+        logger.info('Task scheduler stopped by user');
+        res.json({ 
+          enabled: false,
+          message: 'Task scheduler stopped successfully'
+        });
+      } else {
+        (global as any).taskScheduler?.start();
+        logger.info('Task scheduler started by user');
+        res.json({ 
+          enabled: true,
+          message: 'Task scheduler started successfully'
+        });
+      }
+    } catch (error) {
+      logger.error('Error toggling task scheduler:', error);
+      res.status(500).json({ error: 'Failed to toggle task scheduler' });
+    }
+  }));
+
+  // GET /scheduler/status - Get current scheduler status
+  router.get('/scheduler/status', authenticate(pool), handleAsync(async (req, res) => {
+    try {
+      const status = (global as any).taskScheduler?.getStatus() || { isRunning: false };
+      res.json({
+        enabled: status.isRunning || false,
+        intervalMs: status.intervalMs || 60000
+      });
+    } catch (error) {
+      logger.error('Error getting scheduler status:', error);
+      res.status(500).json({ error: 'Failed to get scheduler status' });
+    }
+  }));
+
   // GET /:taskId/status - Get task status with available actions
   router.get('/:taskId/status', authenticate(pool), handleAsync(async (req, res) => {
     const client = await pool.connect();

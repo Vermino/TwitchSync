@@ -616,6 +616,33 @@ class ApiClient {
     }
   }
 
+  async toggleTaskScheduler(): Promise<{ enabled: boolean; message: string }> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/tasks/scheduler/toggle`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error toggling task scheduler:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getTaskSchedulerStatus(): Promise<{ enabled: boolean; intervalMs: number }> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/scheduler/status`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error getting task scheduler status:', error);
+      throw this.handleError(error);
+    }
+  }
+
   // Discovery Methods
   async getDiscoveryFeed(): Promise<DiscoveryFeedResponse> {
     try {
