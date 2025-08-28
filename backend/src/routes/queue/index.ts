@@ -282,6 +282,68 @@ export function setupQueueRoutes(pool: Pool): Router {
     }
   });
 
+  // Get real-time queue status
+  router.get('/status', authenticate(pool), async (req: Request, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const client = await pool.connect();
+      try {
+        // Get current downloading VODs with progress
+        const downloadingVods = await client.query(`
+          SELECT 
+            v.id,
+            v.twitch_id,
+            v.title,
+            v.download_status,
+            v.download_progress,
+            v.current_segment,
+            v.total_segments,
+            v.download_speed,
+            v.eta_seconds,
+            v.task_id,
+            t.name as task_name,
+            c.username as channel_name
+          FROM vods v
+          JOIN tasks t ON v.task_id = t.id
+          LEFT JOIN channels c ON v.channel_id = c.id
+          WHERE t.user_id = $1 AND v.download_status = 'downloading'
+          ORDER BY v.started_at ASC
+        `, [userId]);
+
+        // Get queue counts by status
+        const statusCounts = await client.query(`
+          SELECT 
+            v.download_status,
+            COUNT(*) as count
+          FROM vods v
+          JOIN tasks t ON v.task_id = t.id
+          WHERE t.user_id = $1
+          GROUP BY v.download_status
+        `, [userId]);
+
+        const statusMap = statusCounts.rows.reduce((acc, row) => {
+          acc[row.download_status] = parseInt(row.count);
+          return acc;
+        }, {});
+
+        res.json({
+          downloading: downloadingVods.rows,
+          status_counts: statusMap,
+          timestamp: new Date().toISOString()
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      logger.error('Error fetching queue status:', error);
+      res.status(500).json({ error: 'Failed to fetch queue status' });
+    }
+  });
+
   return router;
 }
 

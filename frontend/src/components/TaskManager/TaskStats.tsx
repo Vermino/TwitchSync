@@ -68,9 +68,10 @@ export default function TaskStats({ task, channels = [], games = [], channelsLoa
   };
 
   const taskVods = getTaskVods(task.id);
-  const completedVods = taskVods.filter(vod => vod.status === 'completed').length;
-  const downloadingVods = taskVods.filter(vod => vod.status === 'downloading').length;
-  const failedVods = taskVods.filter(vod => vod.status === 'failed').length;
+  const completedVods = taskVods.filter(vod => vod.download_status === 'completed').length;
+  const downloadingVods = taskVods.filter(vod => vod.download_status === 'downloading').length;
+  const failedVods = taskVods.filter(vod => vod.download_status === 'failed').length;
+  const pendingVods = taskVods.filter(vod => vod.download_status === 'pending').length;
   const totalVods = taskVods.length;
 
   const taskChannels = getTaskChannels(task.channel_ids);
@@ -137,23 +138,41 @@ export default function TaskStats({ task, channels = [], games = [], channelsLoa
           Downloads
         </div>
         <div className="space-y-1">
-          <div className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{completedVods}</span> / {totalVods} VODs completed
-          </div>
-          {downloadingVods > 0 && (
-            <div className="text-sm text-muted-foreground">
-              <span className="font-medium text-blue-600">{downloadingVods}</span> downloading
+          {task.status === 'scanning' ? (
+            <div className="text-sm text-blue-600 font-medium">
+              Scanning for new VODs...
             </div>
-          )}
-          {failedVods > 0 && (
-            <div className="text-sm text-muted-foreground">
-              <span className="font-medium text-red-600">{failedVods}</span> failed
-            </div>
-          )}
-          {totalVods > 0 && (
-            <div className="text-xs text-muted-foreground">
-              {((completedVods / totalVods) * 100).toFixed(0)}% complete
-            </div>
+          ) : (
+            <>
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{completedVods}</span> / {totalVods} VODs completed
+              </div>
+              {downloadingVods > 0 && (
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium text-green-600">{downloadingVods}</span> downloading
+                </div>
+              )}
+              {pendingVods > 0 && task.status === 'downloading' && (
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium text-blue-600">{pendingVods}</span> pending
+                </div>
+              )}
+              {failedVods > 0 && (
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium text-red-600">{failedVods}</span> failed
+                </div>
+              )}
+              {totalVods > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  {((completedVods / totalVods) * 100).toFixed(0)}% complete
+                </div>
+              )}
+              {totalVods === 0 && task.status === 'ready' && (
+                <div className="text-sm text-blue-600 font-medium">
+                  Ready to activate - VODs found and queued
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

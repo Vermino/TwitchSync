@@ -7,6 +7,7 @@ import { Plus } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
 import TaskList from '@/components/TaskManager/TaskList';
 import BulkActions from '@/components/TaskManager/BulkActions';
+import TaskSummary from '@/components/TaskManager/TaskSummary';
 import type { Task, Channel, Game, TaskStatus } from '@/types/task';
 import type { QueueStats } from '@/types/queue';
 import { useToast } from '@/components/ui/use-toast';
@@ -21,7 +22,10 @@ const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   'completed': 'pending',
   'failed': 'pending',
   'cancelled': 'pending',
-  'inactive': 'running'
+  'inactive': 'running',
+  'scanning': 'pending', // Cannot interrupt scanning
+  'ready': 'pending',    // Ready tasks can be deactivated
+  'downloading': 'paused' // Downloading tasks can be paused
 } as const;
 
 const queueClient = new QueueClient();
@@ -278,6 +282,9 @@ export default function TaskManager() {
           Create Task
         </Button>
       </div>
+
+      {/* Task Summary */}
+      <TaskSummary tasks={tasks} />
 
       {/* Bulk Actions for Queue Management */}
       {queueStats && !queueStatsLoading && (

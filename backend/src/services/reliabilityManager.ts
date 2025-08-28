@@ -9,6 +9,7 @@ import { StartupRecoveryService } from './startupRecovery';
 import { HealthMonitorService } from './healthMonitor';
 import { CleanupService } from './cleanupService';
 import { ErrorRecoveryService } from './errorRecovery';
+import { ChannelPersistenceService } from './channelPersistenceService';
 import DownloadManager from './downloadManager';
 
 export interface ReliabilityConfig {
@@ -47,6 +48,7 @@ export class ReliabilityManager extends EventEmitter {
   private healthMonitor!: HealthMonitorService;
   private cleanupService!: CleanupService;
   private errorRecovery!: ErrorRecoveryService;
+  private channelPersistence!: ChannelPersistenceService;
 
   private isInitialized: boolean = false;
   private isRunning: boolean = false;
@@ -125,6 +127,9 @@ export class ReliabilityManager extends EventEmitter {
     // Initialize error recovery
     this.errorRecovery = new ErrorRecoveryService(this.pool);
 
+    // Initialize channel persistence service
+    this.channelPersistence = new ChannelPersistenceService(this.pool);
+
     // Set up cross-service event handling
     this.setupEventHandlers();
 
@@ -163,6 +168,21 @@ export class ReliabilityManager extends EventEmitter {
         tempFiles: `${stats.tempFiles.deleted}/${stats.tempFiles.scanned}`,
         spaceFreed: `${Math.round((stats.tempFiles.spaceFreed + stats.logFiles.spaceFreed) / 1024 / 1024)}MB`
       });
+    });
+
+    // Channel persistence events
+    this.channelPersistence.on('channel:loss_detected', (data) => {
+      logger.error('CRITICAL: Channel loss detected!', data);
+      this.emit('channel:loss_detected', data);
+    });
+
+    this.channelPersistence.on('recovery:completed', (stats) => {
+      logger.info('Channel recovery completed:', stats);
+      this.emit('channel:recovery_completed', stats);
+    });
+
+    this.channelPersistence.on('backup:completed', (data) => {
+      logger.debug('Channel backup completed:', data);
     });
 
     // Error recovery events
@@ -230,6 +250,10 @@ export class ReliabilityManager extends EventEmitter {
         logger.info('Cleanup service started');
       }
 
+      // Start channel persistence service
+      await this.channelPersistence.start();
+      logger.info('Channel persistence service started');
+
       this.isRunning = true;
       logger.info('Reliability manager started successfully');
       this.emit('reliability:started');
@@ -259,6 +283,11 @@ export class ReliabilityManager extends EventEmitter {
       // Stop cleanup service
       if (this.cleanupService) {
         this.cleanupService.stopCleanupService();
+      }
+
+      // Stop channel persistence service
+      if (this.channelPersistence) {
+        this.channelPersistence.stop();
       }
 
       this.isRunning = false;
@@ -327,17 +356,19 @@ export class ReliabilityManager extends EventEmitter {
   /**
    * Get reliability statistics
    */
-  public getReliabilityStats(): {
+  public async getReliabilityStats(): Promise<{
     health: any;
     cleanup: any;
     errors: any;
+    channelPersistence: any;
     isRunning: boolean;
     uptime: number;
-  } {
+  }> {
     return {
       health: this.healthMonitor.getCurrentHealth(),
       cleanup: this.cleanupService.getLastCleanupStats(),
       errors: this.errorRecovery.getErrorStats(),
+      channelPersistence: await this.channelPersistence.getStats(),
       isRunning: this.isRunning,
       uptime: process.uptime()
     };
@@ -359,6 +390,25 @@ export class ReliabilityManager extends EventEmitter {
     logger.info('Manual recovery process triggered');
     await this.startupRecovery.performStartupRecovery();
     this.emit('recovery:forced');
+  }
+
+  /**
+   * Force channel backup
+   */
+  public async forceChannelBackup(): Promise<void> {
+    logger.info('Manual channel backup triggered');
+    await this.channelPersistence.triggerBackup();
+    this.emit('channel:backup_forced');
+  }
+
+  /**
+   * Force channel recovery
+   */
+  public async forceChannelRecovery(): Promise<{ recovered: number; failed: number }> {
+    logger.info('Manual channel recovery triggered');
+    const result = await this.channelPersistence.triggerRecovery();
+    this.emit('channel:recovery_forced', result);
+    return result;
   }
 
   /**

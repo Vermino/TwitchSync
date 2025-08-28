@@ -302,6 +302,13 @@ export class StartupRecoveryService {
     try {
       await client.query('BEGIN');
 
+      // IMPORTANT: DO NOT DELETE CHANNELS - they should persist permanently
+      // Channels are user data and should only be deleted explicitly by user action
+      
+      // Log channel count for monitoring
+      const channelCount = await client.query('SELECT COUNT(*) as count FROM channels WHERE is_active = true');
+      logger.info(`Database consistency check: Found ${channelCount.rows[0].count} active channels`);
+
       // Fix VODs with inconsistent download states
       await client.query(`
         UPDATE vods 
@@ -321,7 +328,7 @@ export class StartupRecoveryService {
         AND updated_at < NOW() - INTERVAL '1 hour'
       `);
 
-      // Clean up orphaned monitoring entries
+      // Clean up orphaned monitoring entries (but preserve channel references)
       await client.query(`
         DELETE FROM task_monitoring
         WHERE task_id NOT IN (SELECT id FROM tasks)
@@ -335,6 +342,24 @@ export class StartupRecoveryService {
         AND schedule_type = 'interval'
         AND (next_run IS NULL OR next_run < NOW() - INTERVAL '1 day')
       `);
+
+      // Validate that channels referenced in tasks still exist
+      const orphanedTasksResult = await client.query(`
+        SELECT t.id, t.name, t.channel_ids
+        FROM tasks t
+        WHERE t.is_active = true
+        AND EXISTS (
+          SELECT 1 FROM unnest(t.channel_ids) AS cid
+          WHERE cid NOT IN (SELECT id FROM channels WHERE is_active = true)
+        )
+      `);
+      
+      if (orphanedTasksResult.rows.length > 0) {
+        logger.warn(`Found ${orphanedTasksResult.rows.length} tasks referencing non-existent channels`);
+        for (const task of orphanedTasksResult.rows) {
+          logger.warn(`Task ${task.id} (${task.name}) references missing channel IDs: ${task.channel_ids}`);
+        }
+      }
 
       await client.query('COMMIT');
       logger.info('Database consistency validation completed');

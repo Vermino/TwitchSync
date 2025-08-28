@@ -16,6 +16,7 @@ import {
   channelDeletionLimiter
 } from '../../middleware/channelRateLimiter';
 import { errorHandler } from '../../middleware/errorHandler';
+import { createChannelPersistenceRoutes } from './persistence';
 
 export function setupChannelRoutes(pool: Pool): Router {
   const router = Router();
@@ -58,6 +59,9 @@ export function setupChannelRoutes(pool: Pool): Router {
     validateParams(DeleteChannelSchema),
     controller.deleteChannel
   );
+
+  // Channel persistence routes
+  router.use('/persistence', createChannelPersistenceRoutes(pool));
 
   // Apply error handling middleware
   router.use(errorHandler);

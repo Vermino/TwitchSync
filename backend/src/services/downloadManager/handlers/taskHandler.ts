@@ -44,10 +44,13 @@ export class TaskHandler extends EventEmitter {
     }
   }
 
-  async executeTask(taskId: number): Promise<void> {
+  /**
+   * Execute task - either VOD discovery (scanning) or activation (downloading)
+   */
+  async executeTask(taskId: number, mode: 'scan' | 'activate' = 'scan'): Promise<void> {
     const client = await this.pool.connect();
     try {
-      logger.info(`TaskHandler: Starting execution for task ${taskId}`);
+      logger.info(`TaskHandler: Starting ${mode} for task ${taskId}`);
       
       // Verify task exists and is active
       const taskResult = await client.query(`
@@ -66,15 +69,65 @@ export class TaskHandler extends EventEmitter {
         throw new Error(`Task ${taskId} not found or is inactive`);
       }
 
+      const task = taskResult.rows[0];
+
+      if (mode === 'activate') {
+        await this.activateTask(task, client);
+      } else {
+        await this.scanForVODs(task, client);
+      }
+
+    } catch (error) {
+      logger.error(`Error executing task ${taskId} in mode ${mode}:`, error);
+      await this.updateTaskCompletion(taskId, 'failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, client);
+      this.emit('task:error', { taskId, error });
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Scan for VODs and queue them (discovery phase)
+   */
+  private async scanForVODs(task: any, client: any): Promise<void> {
+    const taskId = task.id;
+    
+    try {
+      // Update task status to scanning
+      await client.query(`
+        UPDATE tasks
+        SET status = 'running',
+            last_run = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+      `, [taskId]);
+
+      await this.updateTaskProgress(taskId, {
+        message: 'Scanning for VODs...',
+        total: 1,
+        completed: 0,
+        percentage: 0
+      }, client);
+
+      await client.query(`
+        UPDATE task_monitoring
+        SET status = 'scanning',
+            status_message = 'Scanning for new VODs...',
+            updated_at = NOW()
+        WHERE task_id = $1
+      `, [taskId]);
+
       logger.info(`TaskHandler: Found task ${taskId}`, {
-        name: taskResult.rows[0].name,
-        channel_twitch_ids: taskResult.rows[0].channel_twitch_ids,
-        channel_db_ids: taskResult.rows[0].channel_db_ids,
-        game_ids: taskResult.rows[0].game_ids,
-        has_game_filters: taskResult.rows[0].game_ids && taskResult.rows[0].game_ids.filter((id: any) => id != null).length > 0
+        name: task.name,
+        channel_twitch_ids: task.channel_twitch_ids,
+        channel_db_ids: task.channel_db_ids,
+        game_ids: task.game_ids,
+        has_game_filters: task.game_ids && task.game_ids.filter((id: any) => id != null).length > 0
       });
 
-      const task = taskResult.rows[0];
       let totalChannels = 0;
       let processedChannels = 0;
       let totalVods = 0;
@@ -166,56 +219,150 @@ export class TaskHandler extends EventEmitter {
         }
       }
 
-      // Update task monitoring to show discovery completed but task still running
+      // Update task status to ready if VODs were found, otherwise back to pending
+      const newStatus = processedVods > 0 ? 'ready' : 'pending';
       const hasGameFilters = task.game_ids && task.game_ids.filter((id: any) => id != null).length > 0;
-      const statusMessage = hasGameFilters 
-        ? `VOD discovery completed: ${processedVods} VODs queued (filtered by title matching)`
-        : `VOD discovery completed: ${processedVods} VODs queued for download`;
+      const statusMessage = processedVods > 0 
+        ? hasGameFilters 
+          ? `${processedVods} VODs found and queued (filtered by title matching) - Ready for activation`
+          : `${processedVods} VODs found and queued - Ready for activation`
+        : 'No new VODs found during scan';
 
       await client.query(`
         UPDATE task_monitoring
-        SET status_message = $2,
-            items_total = $3,
-            items_completed = $4,
-            progress_percentage = 100,
+        SET status = $2,
+            status_message = $3,
+            items_total = $4,
+            items_completed = 0,
+            progress_percentage = 0,
             updated_at = NOW()
         WHERE task_id = $1
       `, [
         taskId,
+        newStatus,
         statusMessage,
-        totalVods,
         processedVods
       ]);
 
-      // Mark task as completed since VOD discovery is done
+      // Update task status to ready or back to pending for next scheduled scan
       await client.query(`
         UPDATE tasks
-        SET status = 'completed',
+        SET status = CASE 
+                      WHEN $2 > 0 THEN 'ready'::task_status 
+                      ELSE 'pending'::task_status 
+                     END,
             last_run = NOW(),
+            updated_at = NOW(),
+            next_run = NOW() + INTERVAL '12 hours'
+        WHERE id = $1
+      `, [taskId, processedVods]);
+
+      logger.info(`Task ${taskId} VOD scanning completed - ${processedVods} VODs queued, ${skippedVods} skipped. Status: ${newStatus}`);
+
+      this.emit('task:scan_complete', {
+        taskId,
+        totalVods,
+        processedVods,
+        skipped_vods: skippedVods,
+        status: newStatus
+      });
+
+    } catch (error) {
+      logger.error(`Error in VOD scanning for task ${taskId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Activate task - start downloading queued VODs
+   */
+  private async activateTask(task: any, client: any): Promise<void> {
+    const taskId = task.id;
+
+    try {
+      // Check if there are queued VODs
+      const queuedVODsResult = await client.query(`
+        SELECT COUNT(*) as count
+        FROM vods 
+        WHERE task_id = $1 AND status = 'queued'
+      `, [taskId]);
+
+      const queuedCount = parseInt(queuedVODsResult.rows[0].count);
+      
+      if (queuedCount === 0) {
+        throw new Error('No queued VODs found to activate');
+      }
+
+      // Update task status to downloading
+      await client.query(`
+        UPDATE tasks
+        SET status = 'downloading',
             updated_at = NOW()
         WHERE id = $1
       `, [taskId]);
 
-      logger.info(`Task ${taskId} VOD discovery completed - ${processedVods} VODs queued for download, ${skippedVods} skipped. Task remains running.`);
+      await client.query(`
+        UPDATE task_monitoring
+        SET status = 'downloading',
+            status_message = 'Starting downloads...',
+            items_total = $2,
+            items_completed = 0,
+            progress_percentage = 0,
+            updated_at = NOW()
+        WHERE task_id = $1
+      `, [taskId, queuedCount]);
 
-      this.emit('task:complete', {
+      // Get VODs ordered from oldest to newest (published_at ASC)
+      const vodsToDownload = await client.query(`
+        SELECT id, twitch_id, title, published_at, download_priority
+        FROM vods 
+        WHERE task_id = $1 AND status = 'queued'
+        ORDER BY published_at ASC, download_priority DESC, id ASC
+      `, [taskId]);
+
+      logger.info(`Task ${taskId} activation: Starting downloads for ${queuedCount} VODs (oldest to newest)`);
+
+      // Update VODs status to downloading and start downloads via download handler
+      for (const vod of vodsToDownload.rows) {
+        try {
+          // Update VOD status to queued for download (let the download queue processor handle it)
+          await client.query(`
+            UPDATE vods 
+            SET status = 'queued',
+                download_status = 'queued',
+                updated_at = NOW()
+            WHERE id = $1
+          `, [vod.id]);
+
+          logger.info(`VOD ${vod.twitch_id} ready for download (${vod.title.substring(0, 50)}...)`);
+        } catch (vodError) {
+          logger.error(`Failed to start download for VOD ${vod.twitch_id}:`, vodError);
+          
+          // Mark this VOD as failed to activate
+          await client.query(`
+            UPDATE vods 
+            SET status = 'failed',
+                download_status = 'failed',
+                error_message = $2,
+                updated_at = NOW()
+            WHERE id = $1
+          `, [vod.id, `Activation failed: ${vodError instanceof Error ? vodError.message : String(vodError)}`]);
+        }
+      }
+
+      logger.info(`Task ${taskId} activation completed - ${queuedCount} downloads started`);
+
+      this.emit('task:activated', {
         taskId,
-        totalVods,
-        processedVods,
-        skipped_vods: skippedVods
+        queuedCount
       });
 
     } catch (error) {
-      logger.error(`Error executing task ${taskId}:`, error);
-      await this.updateTaskCompletion(taskId, 'failed', {
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }, client);
-      this.emit('task:error', { taskId, error });
+      logger.error(`Error in task activation for task ${taskId}:`, error);
       throw error;
-    } finally {
-      client.release();
     }
   }
+
 
   /**
    * Filters VODs by the specified game IDs using enhanced title-based matching.
@@ -320,8 +467,7 @@ export class TaskHandler extends EventEmitter {
   }
 
   /**
-   * Enhanced game matching with context-aware filtering to avoid false positives
-   * where games are mentioned but not being played
+   * Enhanced game matching with context-aware filtering and game-specific terminology recognition
    */
   private checkGameMatch(title: string, gameNames: string[]): { 
     matches: boolean; 
@@ -335,35 +481,196 @@ export class TaskHandler extends EventEmitter {
       const titleLower = title.toLowerCase();
       const titleWords = titleLower.split(/\s+/);
       
-      // First check if the game name appears at all in the title
+      // First check if the game name appears explicitly in the title
       const gameAppears = titleLower.includes(gameNameLower) || 
         gameWords.every(word => titleWords.some(titleWord => titleWord.includes(word)));
       
-      if (!gameAppears) {
-        continue; // Skip to next game if this one doesn't appear
-      }
-      
-      // Now check if it's likely being played vs just mentioned
-      const contextResult = this.analyzeGameContext(title, gameNameLower, gameName);
-      
-      if (contextResult.isActualGameplay) {
-        return {
-          matches: true,
-          matchType: contextResult.matchType,
-          matchedGame: gameName,
-          details: contextResult.reason
-        };
+      if (gameAppears) {
+        // Game name found explicitly - analyze context
+        const contextResult = this.analyzeGameContext(title, gameNameLower, gameName);
+        
+        if (contextResult.isActualGameplay) {
+          return {
+            matches: true,
+            matchType: contextResult.matchType,
+            matchedGame: gameName,
+            details: contextResult.reason
+          };
+        } else {
+          // Game appears but context suggests it's not being played
+          logger.info(`Game "${gameName}" appears in title but context suggests it's not being played: ${contextResult.reason}`);
+        }
       } else {
-        // Game appears but context suggests it's not being played
-        logger.info(`Game "${gameName}" appears in title but context suggests it's not being played: ${contextResult.reason}`);
+        // Game name not found explicitly - check for game-specific terminology
+        const terminologyMatch = this.checkGameSpecificTerminology(title, gameName);
+        
+        if (terminologyMatch.matches) {
+          return {
+            matches: true,
+            matchType: terminologyMatch.matchType,
+            matchedGame: gameName,
+            details: terminologyMatch.details
+          };
+        }
       }
     }
     
     return { 
       matches: false, 
       matchType: 'none', 
-      details: `Games found but context suggests they're not being played: ${gameNames.join(', ')}` 
+      details: `No game matches found (checked explicit names and game-specific terminology): ${gameNames.join(', ')}` 
     };
+  }
+
+  /**
+   * Checks for game-specific terminology when the exact game name doesn't appear
+   */
+  private checkGameSpecificTerminology(title: string, gameName: string): {
+    matches: boolean;
+    matchType: string;
+    details: string;
+  } {
+    const titleLower = title.toLowerCase();
+    
+    // RimWorld-specific terminology
+    if (gameName.toLowerCase() === 'rimworld') {
+      const rimworldTerms = {
+        // RimWorld DLCs and content
+        dlcs: ['odyssey', 'biotech', 'ideology', 'royalty'],
+        
+        // RimWorld-specific challenges and scenarios
+        scenarios: ['naked brutality', 'crashlanded', 'tribal', 'rich explorer', 'the rich explorer'],
+        
+        // RimWorld-specific gameplay terms
+        gameplay: [
+          'colony', 'colonist', 'pawn', 'randy', 'cassandra', 'phoebe', 'storyteller',
+          'manhunter', 'mechanoid', 'thrumbo', 'muffalos', 'boomalope',
+          'psychic drone', 'solar flare', 'toxic fallout', 'volcanic winter',
+          'ship launch', 'ship reactor', 'cryptosleep', 'rimworld',
+          'permadeath', 'commitment mode', 'reload anytime'
+        ],
+        
+        // RimWorld difficulty and percentage indicators (common in streaming titles)
+        difficulty: ['losing is fun', 'rough', 'strive to survive', 'builder', 'peaceful'],
+        
+        // RimWorld-specific references and memes
+        references: [
+          'the ship must grow', 'hat', 'human leather', 'organ harvest',
+          'war crimes', 'geneva convention', 'prisoner', 'recruitment'
+        ]
+      };
+      
+      // Check for DLC names (highest confidence)
+      for (const dlc of rimworldTerms.dlcs) {
+        if (titleLower.includes(dlc)) {
+          // Additional context check for DLCs - make sure it's not purely promotional
+          const isPromotional = this.hasPromotionalContext(titleLower, dlc);
+          if (!isPromotional) {
+            return {
+              matches: true,
+              matchType: 'dlc_terminology',
+              details: `RimWorld DLC "${dlc}" found without promotional context`
+            };
+          }
+        }
+      }
+      
+      // Check for specific scenarios (high confidence)
+      for (const scenario of rimworldTerms.scenarios) {
+        if (titleLower.includes(scenario)) {
+          return {
+            matches: true,
+            matchType: 'scenario_terminology',
+            details: `RimWorld scenario "${scenario}" found`
+          };
+        }
+      }
+      
+      // Check for gameplay terms (medium confidence)
+      let gameplayMatches = 0;
+      const foundTerms: string[] = [];
+      
+      for (const term of rimworldTerms.gameplay) {
+        if (titleLower.includes(term)) {
+          gameplayMatches++;
+          foundTerms.push(term);
+        }
+      }
+      
+      // Require multiple gameplay terms for confidence
+      if (gameplayMatches >= 2) {
+        return {
+          matches: true,
+          matchType: 'gameplay_terminology',
+          details: `Multiple RimWorld gameplay terms found: ${foundTerms.slice(0, 3).join(', ')}`
+        };
+      }
+      
+      // Check for references/memes (lower confidence, needs additional context)
+      for (const reference of rimworldTerms.references) {
+        if (titleLower.includes(reference)) {
+          // For reference terms, also check for gameplay context
+          const hasGameplayContext = rimworldTerms.gameplay.some(term => titleLower.includes(term));
+          if (hasGameplayContext) {
+            return {
+              matches: true,
+              matchType: 'reference_with_context',
+              details: `RimWorld reference "${reference}" with gameplay context`
+            };
+          }
+        }
+      }
+      
+      // Check for difficulty percentages (common RimWorld streaming pattern)
+      const percentageMatch = titleLower.match(/\[(\d+)%\]|\b(\d+)% difficulty|\b(\d+) percent/);
+      if (percentageMatch) {
+        const percentage = parseInt(percentageMatch[1] || percentageMatch[2] || percentageMatch[3]);
+        // RimWorld commonly uses percentages like 500%, 300%, etc.
+        if (percentage >= 200 && percentage <= 1000) {
+          // Check for additional RimWorld context
+          const hasRimWorldContext = rimworldTerms.gameplay.some(term => titleLower.includes(term)) ||
+                                   rimworldTerms.scenarios.some(term => titleLower.includes(term));
+          if (hasRimWorldContext) {
+            return {
+              matches: true,
+              matchType: 'difficulty_percentage_with_context',
+              details: `RimWorld-style difficulty percentage ${percentage}% with context`
+            };
+          }
+        }
+      }
+    }
+    
+    // Add other games' terminology here as needed
+    // Example structure for other games:
+    // if (gameName.toLowerCase() === 'factorio') {
+    //   // Factorio-specific terms
+    // }
+    
+    return {
+      matches: false,
+      matchType: 'no_terminology_match',
+      details: 'No game-specific terminology found'
+    };
+  }
+
+  /**
+   * Checks if a term appears in promotional context
+   */
+  private hasPromotionalContext(titleLower: string, term: string): boolean {
+    const termIndex = titleLower.indexOf(term);
+    if (termIndex === -1) return false;
+    
+    const surroundingText = this.extractSurroundingContext(titleLower, termIndex, term.length, 30);
+    
+    const promotionalIndicators = [
+      'coming soon', 'coming out', 'tomorrow', 'next week', 'next month',
+      'days until', 'weeks until', 'months until', 'countdown', 'waiting for',
+      'hyped for', 'excited for', 'can\'t wait', 'is coming', 'will be',
+      'public release in'  // Make "release" more specific to avoid false positives
+    ];
+    
+    return promotionalIndicators.some(indicator => surroundingText.includes(indicator));
   }
 
   /**

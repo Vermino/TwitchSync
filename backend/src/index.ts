@@ -7,6 +7,7 @@ import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import { EventEmitter } from 'events';
+import { createServer } from 'http';
 
 // Import configurations
 import { setupDatabase } from './config/database';
@@ -16,6 +17,8 @@ import pool from './config/database';
 import { logger } from './utils/logger';
 import DownloadManager from './services/downloadManager/index';
 import { createReliabilityManager } from './services/reliabilityManager';
+import { createTaskScheduler } from './services/taskScheduler';
+import { WebSocketService } from './services/websocketService';
 
 // Import middleware
 import { loggingMiddleware } from './middleware/logging';
@@ -64,9 +67,21 @@ const reliabilityManager = createReliabilityManager(pool, downloadManager, {
   }
 });
 
+// Create task scheduler instance
+const taskScheduler = createTaskScheduler(
+  pool, 
+  downloadManager, 
+  parseInt(process.env.TASK_SCHEDULER_INTERVAL_MS || '60000') // Default 1 minute
+);
+
 // Initialize express app
 const app = express();
+const httpServer = createServer(app);
 const port = process.env.PORT || 3001;
+
+// Initialize WebSocket service
+const webSocketService = WebSocketService.getInstance();
+webSocketService.initialize(httpServer);
 
 // Security middleware
 app.use(helmet({
@@ -159,9 +174,14 @@ const startServer = async () => {
     await downloadManager.startProcessing();
     logger.info('Download manager started');
 
+    // Start task scheduler for overdue task execution
+    taskScheduler.start();
+    logger.info('Task scheduler started');
+
     // Start server
-    app.listen(port, () => {
+    httpServer.listen(port, () => {
       logger.info(`Server is running at http://localhost:${port}`);
+      logger.info('WebSocket service initialized');
       logger.info('Environment:', process.env.NODE_ENV);
       logger.info('Server startup completed');
     });
@@ -176,7 +196,11 @@ const shutdownHandler = async (signal: string) => {
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
 
   try {
-    // Stop reliability manager first
+    // Stop task scheduler first
+    taskScheduler.stop();
+    logger.info('Task scheduler stopped');
+
+    // Stop reliability manager
     await reliabilityManager.stop();
     logger.info('Reliability manager stopped');
 

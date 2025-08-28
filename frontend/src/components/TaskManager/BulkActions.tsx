@@ -87,11 +87,14 @@ export default function BulkActions({
     <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
       <div className="flex items-center gap-6">
         {/* Queue Stats */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-1">
+          <div className="text-xs text-muted-foreground font-medium">VOD Queue</div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline">{stats.total_items} Total</Badge>
+            <Badge variant="outline">{stats.total_items} Total VODs</Badge>
             {stats.downloading > 0 && (
-              <Badge variant="default">{stats.downloading} Downloading</Badge>
+              <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                {stats.downloading} Downloading
+              </Badge>
             )}
             {stats.pending > 0 && (
               <Badge variant="secondary">{stats.pending} Pending</Badge>

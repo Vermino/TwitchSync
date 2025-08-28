@@ -16,7 +16,7 @@ const dbConfig = {
   port: 5432,
   database: 'twitchsync',
   user: 'postgres',
-  password: 'postgres',
+  password: 'password',
   ssl: false
 };
 

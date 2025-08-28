@@ -171,27 +171,31 @@ export class DownloadManager extends EventEmitter {
     }
   }
 
-  public async executeTask(taskId: number): Promise<void> {
-    logger.info(`Starting execution for task ${taskId}`);
+  public async executeTask(taskId: number, mode: 'scan' | 'activate' = 'scan'): Promise<void> {
+    logger.info(`Starting ${mode} execution for task ${taskId}`);
     
     // Start task execution in background to prevent HTTP timeouts
     setImmediate(() => {
-      this.taskHandler.executeTask(taskId)
+      this.taskHandler.executeTask(taskId, mode)
         .then(() => {
-          logger.info(`Task ${taskId} VODs queued, triggering immediate download processing`);
-          // Process the queue immediately instead of waiting for the interval
-          if (!this.isShuttingDown) {
-            this.queueProcessor.triggerImmediateProcessing();
+          if (mode === 'activate') {
+            logger.info(`Task ${taskId} downloads started, triggering immediate queue processing`);
+            // Process the queue immediately when activating downloads
+            if (!this.isShuttingDown) {
+              this.queueProcessor.triggerImmediateProcessing();
+            }
+            logger.info(`Task ${taskId} activation completed successfully`);
+          } else {
+            logger.info(`Task ${taskId} VOD scanning completed successfully`);
           }
-          logger.info(`Task ${taskId} execution completed successfully`);
         })
         .catch(error => {
-          logger.error(`Task ${taskId} execution failed:`, error);
+          logger.error(`Task ${taskId} ${mode} execution failed:`, error);
         });
     });
     
     // Return immediately to prevent HTTP timeout
-    logger.info(`Task ${taskId} execution started in background`);
+    logger.info(`Task ${taskId} ${mode} execution started in background`);
   }
 
   public async addToQueue(vodId: number, priority?: DownloadPriority): Promise<void> {

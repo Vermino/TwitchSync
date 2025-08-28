@@ -14,6 +14,7 @@ import { BandwidthThrottler } from '../utils/throttle';
 import { Checksums } from '../utils/checksums';
 import { TwitchService } from '../../twitch/service';
 import { CompletedVodService } from '../../completedVodService';
+import { WebSocketService } from '../../websocketService';
 import {
   DownloadState,
   SegmentInfo,
@@ -32,6 +33,7 @@ export class DownloadHandler extends EventEmitter {
   private fileSystem: FileSystemManager;
   private twitchService: TwitchService;
   private completedVodService: CompletedVodService;
+  private webSocketService: WebSocketService;
 
   constructor(
       private pool: Pool,
@@ -43,6 +45,7 @@ export class DownloadHandler extends EventEmitter {
     this.fileSystem = new FileSystemManager(tempDir);
     this.twitchService = TwitchService.getInstance();
     this.completedVodService = new CompletedVodService(pool);
+    this.webSocketService = WebSocketService.getInstance();
   }
 
   public getActiveDownloads(): Map<number, DownloadState> {
@@ -333,6 +336,9 @@ export class DownloadHandler extends EventEmitter {
         WHERE id = $1
       `, [vod.id]);
 
+      // Emit WebSocket update for status change
+      this.webSocketService.emitDownloadStatusChange(vod.id, vod.task_id, 'downloading', 0);
+
       // Update task progress
       await client.query(`
         UPDATE task_monitoring
@@ -455,6 +461,9 @@ export class DownloadHandler extends EventEmitter {
           WHERE id = $1
         `, [vod.id, finalVideoPath, fileSizeBytes, checksum]);
 
+        // Emit WebSocket update for completion
+        this.webSocketService.emitDownloadStatusChange(vod.id, vod.task_id, 'completed', 100);
+
         // Mark VOD as completed in completed_vods table for tracking
         await this.completedVodService.markVodCompleted({
           vod_id: vod.id,
@@ -479,25 +488,30 @@ export class DownloadHandler extends EventEmitter {
         // Get updated completion statistics for task progress
         const completionStats = await this.completedVodService.getTaskCompletionStats(vod.task_id);
         
+        // Ensure proper typing for PostgreSQL parameters
+        const completedVods = completionStats.completed_vods || 0;
+        const totalVods = completionStats.total_vods || 0;
+        const completionPercentage = Math.round(completionStats.completion_percentage || 0);
+        
         // Update task progress with actual completion data
         await client.query(`
           UPDATE task_monitoring
           SET status              = CASE 
-                                      WHEN $3 >= $4 THEN 'completed'
+                                      WHEN $3::int >= $4::int THEN 'completed'
                                       ELSE 'running'
                                     END,
-              status_message      = CONCAT('Downloaded: ', $3, '/', $4, ' VODs completed'),
-              progress_percentage = $5,
-              items_completed     = $3,
-              items_total         = $4,
+              status_message      = CONCAT('Downloaded: ', $3::int, '/', $4::int, ' VODs completed'),
+              progress_percentage = $5::int,
+              items_completed     = $3::int,
+              items_total         = $4::int,
               updated_at          = NOW()
           WHERE task_id = $1
         `, [
           vod.task_id,
           vod.id,
-          completionStats.completed_vods,
-          completionStats.total_vods,
-          Math.round(completionStats.completion_percentage)
+          completedVods,
+          totalVods,
+          completionPercentage
         ]);
         
         logger.info(`Successfully completed and tracked VOD download`, {
@@ -507,7 +521,7 @@ export class DownloadHandler extends EventEmitter {
           file_size: fileSizeBytes,
           download_duration: downloadDurationSeconds,
           download_speed: downloadSpeedMbps,
-          completion_percentage: completionStats.completion_percentage
+          completion_percentage: completionPercentage
         });
 
         // Note: user_settings update removed as completed_at column doesn't exist
@@ -519,31 +533,35 @@ export class DownloadHandler extends EventEmitter {
             errorMessage.includes('no longer available') ||
             errorMessage.includes('Invalid VOD');
 
+        const newStatus = isPermanentError ? 'failed' : 'pending';
         await client.query(`
           UPDATE vods
           SET download_status = $2::vod_status,
-            error_message = $3
-            , updated_at = NOW()
+            error_message = $3,
+            updated_at = NOW()
           WHERE id = $1
-        `, [
-          vod.id,
-          isPermanentError ? 'failed' : 'pending',
-          errorMessage
-        ]);
+        `, [vod.id, newStatus, errorMessage]);
+
+        // Emit WebSocket update for error status
+        this.webSocketService.emitDownloadStatusChange(vod.id, vod.task_id, newStatus, 0);
 
         // Update task monitoring with completion statistics
         try {
           const completionStats = await this.completedVodService.getTaskCompletionStats(vod.task_id);
+          const completedVods = completionStats.completed_vods || 0;
+          const totalVods = completionStats.total_vods || 0;
+          const completionPercentage = Math.round(completionStats.completion_percentage || 0);
+          
           await client.query(`
             UPDATE task_monitoring
             SET status         = 'running',
-                status_message = CONCAT('Error with VOD download - Downloaded: ', $3, '/', $4, ' VODs | Error: ', $2),
-                progress_percentage = $5,
-                items_completed = $3,
-                items_total = $4,
+                status_message = CONCAT('Error with VOD download - Downloaded: ', $3::int, '/', $4::int, ' VODs | Error: ', $2),
+                progress_percentage = $5::int,
+                items_completed = $3::int,
+                items_total = $4::int,
                 updated_at     = NOW()
             WHERE task_id = $1
-          `, [vod.task_id, errorMessage, completionStats.completed_vods, completionStats.total_vods, Math.round(completionStats.completion_percentage)]);
+          `, [vod.task_id, errorMessage, completedVods, totalVods, completionPercentage]);
         } catch (statsError) {
           // Fallback to simple error message if stats retrieval fails
           await client.query(`
@@ -854,42 +872,68 @@ export class DownloadHandler extends EventEmitter {
     try {
       const client = await this.pool.connect();
       try {
-        // Update VOD progress
+        // Update VOD progress with segment information
         await client.query(`
           UPDATE vods
           SET download_progress = $2,
+              current_segment = $3,
+              total_segments = $4,
+              download_speed = $5,
+              eta_seconds = $6,
               updated_at = NOW()
           WHERE id = $1
-        `, [vodId, progressPercentage]);
+        `, [vodId, progressPercentage, completedSegments, totalSegments, Math.round(state.progress.speed || 0), Math.round(state.progress.eta) || 0]);
+
+        // Get task ID for WebSocket emission
+        const taskResult = await client.query(`SELECT task_id FROM vods WHERE id = $1`, [vodId]);
+        const taskId = taskResult.rows[0]?.task_id;
+
+        if (taskId) {
+          // Emit real-time progress via WebSocket
+          this.webSocketService.emitDownloadProgress({
+            vodId,
+            taskId,
+            status: 'downloading',
+            progress: progressPercentage,
+            currentSegment: completedSegments,
+            totalSegments: totalSegments,
+            speed: state.progress.speed,
+            eta: state.progress.eta
+          });
+        }
 
         // Get task completion statistics for accurate task progress
-        const taskId = await client.query(`SELECT task_id FROM vods WHERE id = $1`, [vodId]);
-        if (taskId.rows.length > 0) {
-          const completionStats = await this.completedVodService.getTaskCompletionStats(taskId.rows[0].task_id);
+        if (taskId) {
+          const completionStats = await this.completedVodService.getTaskCompletionStats(taskId);
           
           // Update task progress with actual completion data and current segment progress
+          // Ensure all values are properly typed for PostgreSQL
+          const totalVods = completionStats.total_vods || 0;
+          const completedVods = completionStats.completed_vods || 0;
+          const completionPercentage = completionStats.completion_percentage || 0;
+          
           await client.query(`
             UPDATE task_monitoring
             SET status_message = CASE 
-                                   WHEN $4 > 0 THEN CONCAT('Downloading VOD - Segments: ', $2, '/', $3, ' | Downloaded: ', $5, '/', $6, ' VODs')
-                                   ELSE CONCAT('Downloading segments: ', $2, '/', $3)
+                                   WHEN $4::int > 0 THEN CONCAT('Downloading VOD - Segments: ', $2::int, '/', $3::int, ' | Downloaded: ', $5::int, '/', $6::int, ' VODs')
+                                   ELSE CONCAT('Downloading segments: ', $2::int, '/', $3::int)
                                  END,
                 progress_percentage = CASE 
-                                        WHEN $6 > 0 THEN GREATEST($7::numeric, $8::numeric)
+                                        WHEN $6::int > 0 THEN GREATEST($7::numeric, $8::numeric)
                                         ELSE $8::numeric
                                       END,
-                items_completed = $5,
-                items_total = $6,
+                items_completed = $5::int,
+                items_total = $6::int,
                 updated_at = NOW()
             WHERE task_id = $1
           `, [
-            taskId.rows[0].task_id, 
+            taskId, 
             completedSegments, 
             totalSegments, 
-            completionStats.total_vods,
-            completionStats.completed_vods,
-            completionStats.total_vods,
-            completionStats.completion_percentage,
+            totalVods,
+            completedVods,
+            totalVods,
+            completionPercentage,
             progressPercentage
           ]);
         }

@@ -15,7 +15,7 @@ import {
 } from './types';
 import axios from "axios";
 
-const MAX_VODS = 10; // Add constant for VOD limit
+const MAX_VODS = 50; // Increased to fetch more VOD history for better game matching
 
 export class TwitchAPIClient extends TwitchBaseClient {
   private static instance: TwitchAPIClient;

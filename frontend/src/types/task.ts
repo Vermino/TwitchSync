@@ -8,7 +8,10 @@ export type TaskStatus =
   | 'running'
   | 'inactive'
   | 'cancelled'
-  | 'paused';
+  | 'paused'
+  | 'scanning'
+  | 'ready'
+  | 'downloading';
 
 export type TaskType = 'channel' | 'game' | 'combined';
 

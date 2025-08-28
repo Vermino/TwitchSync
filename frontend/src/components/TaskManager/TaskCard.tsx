@@ -13,6 +13,7 @@ import {
   Download,
   History
 } from 'lucide-react';
+import ScanningIndicator, { ScanningBadge } from './ScanningIndicator';
 import TaskStats from './TaskStats';
 import TaskProgress from './TaskProgress';
 import VodList from './VodList';
@@ -60,10 +61,14 @@ export default function TaskCard({
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Determine if task is active or paused
+  // Determine task state
   const isActive = task.status === 'running';
   const isPaused = task.status === 'paused';
+  const isScanning = task.status === 'scanning';
+  const isReady = task.status === 'ready';
+  const isDownloading = task.status === 'downloading';
   const canResume = isPaused || task.status === 'failed';
+  const canActivate = isReady && !isActive && !isPaused && !isScanning && !isDownloading;
 
   const handleTaskAction = async (action: string, apiCall: () => Promise<any>) => {
     setIsActionLoading(action);
@@ -107,20 +112,37 @@ export default function TaskCard({
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{task.name}</span>
-                  <Badge
-                    variant={
-                      task.status === 'failed' ? 'destructive' :
-                      task.status === 'running' ? 'default' :
-                      task.status === 'paused' ? 'secondary' :
-                      task.status === 'completed' ? 'default' :
-                      'outline'
-                    }
-                  >
-                    {task.status}
-                  </Badge>
+                  {isScanning ? (
+                    <ScanningBadge />
+                  ) : (
+                    <Badge
+                      variant={
+                        task.status === 'failed' ? 'destructive' :
+                        task.status === 'running' ? 'default' :
+                        task.status === 'paused' ? 'secondary' :
+                        task.status === 'completed' ? 'default' :
+                        task.status === 'downloading' ? 'default' :
+                        task.status === 'ready' ? 'default' :
+                        'outline'
+                      }
+                      className={
+                        task.status === 'downloading' ? 'bg-green-100 text-green-800 border-green-300' :
+                        task.status === 'ready' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                        ''
+                      }
+                    >
+                      {task.status === 'ready' ? 'Ready to Activate' : 
+                       task.status === 'downloading' ? 'Downloading' :
+                       task.status}
+                    </Badge>
+                  )}
                 </div>
                 <div className="text-sm text-muted-foreground mt-1">
-                  {task.description || 'No description'}
+                  {isScanning ? (
+                    <ScanningIndicator size="sm" variant="with-search" />
+                  ) : (
+                    task.description || 'No description'
+                  )}
                 </div>
               </div>
 
@@ -171,23 +193,40 @@ export default function TaskCard({
                   </TooltipProvider>
                 )}
 
-                {/* Activate Button for Inactive Tasks */}
-                {!isActive && !isPaused && task.status !== 'completed' && (
+                {/* Activate Button for Ready Tasks */}
+                {canActivate && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
-                          variant="outline"
+                          variant="default"
                           size="sm"
                           onClick={handleActivate}
                           disabled={isActionLoading === 'activate'}
+                          className="bg-blue-600 hover:bg-blue-700"
                         >
                           <Power className="h-4 w-4" />
                           <span className="ml-1">Activate</span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Activate task to start processing</p>
+                        <p>Activate task to start downloading VODs</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+
+                {/* Scanning State Indicator */}
+                {isScanning && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-md">
+                          <ScanningIndicator size="sm" showText={false} variant="minimal" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Task is scanning for new VODs...</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

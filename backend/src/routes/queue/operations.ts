@@ -84,10 +84,14 @@ export async function getQueueHistory(
 ): Promise<QueueResponse> {
   return withTransaction(pool, async (client) => {
     const baseWhere = taskId 
-      ? 'WHERE t.user_id = $1 AND v.download_status = ANY($2) AND t.id = $5'
+      ? 'WHERE t.user_id = $1 AND v.download_status = ANY($2) AND t.id = $3'
       : 'WHERE t.user_id = $1 AND v.download_status = ANY($2)';
     
-    const params = taskId 
+    const countParams = taskId 
+      ? [userId, statusFilter, taskId]
+      : [userId, statusFilter];
+    
+    const historyParams = taskId 
       ? [userId, statusFilter, limit, offset, taskId]
       : [userId, statusFilter, limit, offset];
 
@@ -99,11 +103,11 @@ export async function getQueueHistory(
       ${baseWhere}
     `;
     
-    const countResult = await client.query(countQuery, params.slice(0, taskId ? 3 : 2));
+    const countResult = await client.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].total);
 
-    // Get history items with completion info
-    const historyResult = await client.query<QueueItem>(`
+    // Build proper query for history items
+    let historyQuery = `
       SELECT 
         v.*,
         t.name as task_name,
@@ -116,13 +120,29 @@ export async function getQueueHistory(
       FROM vods v
       JOIN tasks t ON v.task_id = t.id
       LEFT JOIN channels c ON v.channel_id = c.id
-      LEFT JOIN games g ON v.game_id = g.id::TEXT
+      LEFT JOIN games g ON v.game_id = g.id
       LEFT JOIN completed_vods cv ON v.id = cv.vod_id
-      ${baseWhere}
+      WHERE t.user_id = $1 AND v.download_status = ANY($2)
+    `;
+    
+    let historyQueryParams: any[] = [userId, statusFilter];
+    let paramIndex = 3;
+    
+    if (taskId) {
+      historyQuery += ` AND t.id = $${paramIndex}`;
+      historyQueryParams.push(taskId);
+      paramIndex++;
+    }
+    
+    historyQuery += `
       ORDER BY 
         CASE WHEN v.download_status = 'completed' THEN cv.completed_at ELSE v.updated_at END DESC
-      LIMIT $3 OFFSET $4
-    `, params);
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+    
+    historyQueryParams.push(limit, offset);
+    
+    const historyResult = await client.query<QueueItem>(historyQuery, historyQueryParams);
 
     return {
       items: historyResult.rows,
