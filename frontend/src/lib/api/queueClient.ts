@@ -231,4 +231,50 @@ export class QueueClient extends BaseApiClient {
       throw this.handleError(error);
     }
   }
+
+  // Download Manager Control - These actually control the download processing engine
+  async pauseDownloadManager(): Promise<void> {
+    try {
+      await this.axios.post(
+        `${this.baseURL}/downloads/manager/pause`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error pausing download manager:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async resumeDownloadManager(): Promise<void> {
+    try {
+      await this.axios.post(
+        `${this.baseURL}/downloads/manager/resume`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error resuming download manager:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getDownloadManagerStatus(): Promise<{
+    active_downloads: number;
+    queue_status: any;
+    system_resources: any;
+    metrics: any;
+    timestamp: string;
+  }> {
+    try {
+      const response = await this.axios.get(
+        `${this.baseURL}/downloads/manager/status`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error getting download manager status:', error);
+      throw this.handleError(error);
+    }
+  }
 }

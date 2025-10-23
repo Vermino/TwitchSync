@@ -6,38 +6,39 @@ import { logger } from '../../utils/logger';
 export const up = async (pool: Pool): Promise<void> => {
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    // STEP 1: Add enum values outside of a transaction (they auto-commit)
     logger.info('Starting resume functionality migration');
 
     // Check and add 'paused' to task_status enum if not exists
     const taskStatusEnum = await client.query(`
-      SELECT enumlabel 
-      FROM pg_enum 
-      JOIN pg_type ON pg_enum.enumtypid = pg_type.oid 
-      WHERE pg_type.typname = 'task_status' 
+      SELECT enumlabel
+      FROM pg_enum
+      JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
+      WHERE pg_type.typname = 'task_status'
       AND enumlabel = 'paused';
     `);
-    
+
     if (taskStatusEnum.rows.length === 0) {
       await client.query(`ALTER TYPE task_status ADD VALUE 'paused';`);
       logger.info('Added paused value to task_status enum');
     }
 
-    // Check and add 'paused' to vod_status enum if not exists  
+    // Check and add 'paused' to vod_status enum if not exists
     const vodStatusEnum = await client.query(`
-      SELECT enumlabel 
-      FROM pg_enum 
-      JOIN pg_type ON pg_enum.enumtypid = pg_type.oid 
-      WHERE pg_type.typname = 'vod_status' 
+      SELECT enumlabel
+      FROM pg_enum
+      JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
+      WHERE pg_type.typname = 'vod_status'
       AND enumlabel = 'paused';
     `);
-    
+
     if (vodStatusEnum.rows.length === 0) {
       await client.query(`ALTER TYPE vod_status ADD VALUE 'paused';`);
       logger.info('Added paused value to vod_status enum');
     }
 
-    // Add columns and other changes
+    // STEP 2: Now that enums are committed, start a transaction for the rest
+    await client.query('BEGIN');
     logger.info('Adding columns and indexes');
 
     // Add last_resumed_at column to tasks table
@@ -64,7 +65,7 @@ export const up = async (pool: Pool): Promise<void> => {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_vods_resume_segment 
       ON vods(task_id, resume_segment_index) 
-      WHERE download_status = 'paused';
+      WHERE status = 'paused';
     `);
 
     // Create function to get resumable tasks
@@ -83,8 +84,8 @@ export const up = async (pool: Pool): Promise<void> => {
           t.id as task_id,
           t.name as task_name,
           t.last_paused_at as paused_at,
-          COUNT(CASE WHEN v.download_status = 'pending' THEN 1 END)::INTEGER as pending_vod_count,
-          COUNT(CASE WHEN v.download_status = 'paused' THEN 1 END)::INTEGER as paused_vod_count
+          COUNT(CASE WHEN v.status = 'pending' THEN 1 END)::INTEGER as pending_vod_count,
+          COUNT(CASE WHEN v.status = 'paused' THEN 1 END)::INTEGER as paused_vod_count
         FROM tasks t
         LEFT JOIN vods v ON t.id = v.task_id
         WHERE t.user_id = user_id_param
@@ -106,11 +107,11 @@ export const up = async (pool: Pool): Promise<void> => {
       BEGIN
         -- Reset paused VODs to pending status with resume position
         UPDATE vods 
-        SET download_status = 'pending',
+        SET status = 'pending',
             paused_at = NULL,
             updated_at = NOW()
         WHERE task_id = task_id_param 
-        AND download_status = 'paused';
+        AND status = 'paused';
 
         -- Return VODs that need to be resumed with their positions
         RETURN QUERY
@@ -120,7 +121,7 @@ export const up = async (pool: Pool): Promise<void> => {
           0 as total_segments
         FROM vods v
         WHERE v.task_id = task_id_param 
-        AND v.download_status IN ('pending', 'queued')
+        AND v.status IN ('pending', 'queued')
         AND v.resume_segment_index > 0
         ORDER BY v.download_priority DESC, v.created_at ASC;
       END;

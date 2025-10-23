@@ -301,6 +301,82 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: IDownloadMana
     }
   }));
 
+  // Pause all download manager processing
+  router.post('/manager/pause', authenticate(pool), handleAsync(async (req, res) => {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    try {
+      // Stop the download manager's queue processing
+      await downloadManager.stopProcessing();
+      
+      logger.info(`Download manager paused by user ${userId}`);
+      res.json({ 
+        message: 'Download manager paused successfully',
+        status: 'paused' 
+      });
+    } catch (error) {
+      logger.error('Error pausing download manager:', error);
+      res.status(500).json({ error: 'Failed to pause download manager' });
+    }
+  }));
+
+  // Resume all download manager processing
+  router.post('/manager/resume', authenticate(pool), handleAsync(async (req, res) => {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    try {
+      // Start the download manager's queue processing
+      await downloadManager.startProcessing();
+      
+      logger.info(`Download manager resumed by user ${userId}`);
+      res.json({ 
+        message: 'Download manager resumed successfully',
+        status: 'running' 
+      });
+    } catch (error) {
+      logger.error('Error resuming download manager:', error);
+      res.status(500).json({ error: 'Failed to resume download manager' });
+    }
+  }));
+
+  // Get download manager status
+  router.get('/manager/status', authenticate(pool), handleAsync(async (req, res) => {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    try {
+      // Check if the download manager is currently processing
+      const queueStatus = await downloadManager.getQueueStatus();
+      const systemResources = await downloadManager.getSystemResources();
+      const metrics = downloadManager.getMetrics();
+      const activeDownloads = downloadManager.getActiveDownloads();
+      
+      // The download manager doesn't expose its processing state directly,
+      // so we can infer it from the queue processor state or other indicators
+      res.json({
+        active_downloads: activeDownloads.size,
+        queue_status: queueStatus,
+        system_resources: systemResources,
+        metrics: metrics,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      logger.error('Error getting download manager status:', error);
+      res.status(500).json({ error: 'Failed to get download manager status' });
+    }
+  }));
+
   return router;
 };
 

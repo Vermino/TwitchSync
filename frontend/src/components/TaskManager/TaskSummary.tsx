@@ -4,9 +4,10 @@ import { ScanningBadge } from './ScanningIndicator';
 
 interface TaskSummaryProps {
   tasks: Task[];
+  schedulerEnabled?: boolean;
 }
 
-export default function TaskSummary({ tasks }: TaskSummaryProps) {
+export default function TaskSummary({ tasks, schedulerEnabled = true }: TaskSummaryProps) {
   const taskStats = tasks.reduce((acc, task) => {
     acc[task.status] = (acc[task.status] || 0) + 1;
     return acc;
@@ -43,8 +44,11 @@ export default function TaskSummary({ tasks }: TaskSummaryProps) {
         )}
         
         {taskStats.downloading > 0 && (
-          <Badge variant="default" className="bg-green-600 hover:bg-green-700">
-            {taskStats.downloading} Downloading
+          <Badge 
+            variant="default" 
+            className={schedulerEnabled ? "bg-green-600 hover:bg-green-700" : "bg-orange-500 hover:bg-orange-600"}
+          >
+            {taskStats.downloading} {schedulerEnabled ? 'Downloading' : 'Queued'}
           </Badge>
         )}
         

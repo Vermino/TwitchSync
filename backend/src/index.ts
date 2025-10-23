@@ -18,6 +18,7 @@ import { logger } from './utils/logger';
 import DownloadManager from './services/downloadManager/index';
 import { createReliabilityManager } from './services/reliabilityManager';
 import { createTaskScheduler } from './services/taskScheduler';
+// import { createLifecycleManager } from './services/lifecycleManager';
 import { WebSocketService } from './services/websocketService';
 
 // Import middleware
@@ -73,6 +74,9 @@ const taskScheduler = createTaskScheduler(
   downloadManager, 
   parseInt(process.env.TASK_SCHEDULER_INTERVAL_MS || '60000') // Default 1 minute
 );
+
+// Lifecycle manager disabled until full migration is complete
+// const lifecycleManager = createLifecycleManager(pool, { ... });
 
 // Expose task scheduler globally for API access
 (global as any).taskScheduler = taskScheduler;
@@ -165,9 +169,35 @@ app.use((req: Request, res: Response) => {
 // Server startup function
 const startServer = async () => {
   try {
-    // Initialize database
+    // Initialize database (includes all migrations)
     await setupDatabase();
-    logger.info('Database setup completed');
+    logger.info('Database setup completed with lifecycle management');
+
+    // Clean up any orphaned records that might cause foreign key issues
+    try {
+      const cleanupResult = await pool.query('SELECT * FROM safe_cleanup_orphaned_vods()');
+      if (cleanupResult.rows.length > 0) {
+        const stats = cleanupResult.rows[0];
+        logger.info('Database cleanup completed:', {
+          cleaned_vod_states: stats.cleaned_vod_states,
+          cleaned_completed_vods: stats.cleaned_completed_vods,
+          cleaned_retention_tracking: stats.cleaned_retention_tracking
+        });
+      }
+    } catch (cleanupError) {
+      logger.warn('Database cleanup failed (non-critical):', cleanupError);
+    }
+
+    // Clean up any expired locks from previous runs
+    try {
+      const expiredLocksResult = await pool.query('SELECT cleanup_expired_vod_locks() as cleaned_count');
+      const cleanedCount = expiredLocksResult.rows[0]?.cleaned_count || 0;
+      if (cleanedCount > 0) {
+        logger.info(`Cleaned up ${cleanedCount} expired VOD processing locks`);
+      }
+    } catch (lockCleanupError) {
+      logger.warn('Lock cleanup failed (non-critical):', lockCleanupError);
+    }
 
     // Initialize reliability manager (includes startup recovery)
     await reliabilityManager.start();
@@ -175,11 +205,14 @@ const startServer = async () => {
 
     // Initialize download manager queue processing
     await downloadManager.startProcessing();
-    logger.info('Download manager started');
+    logger.info('Download manager started with concurrency safety');
 
     // Start task scheduler for overdue task execution
     taskScheduler.start();
     logger.info('Task scheduler started');
+
+    // Lifecycle manager disabled until full migration is complete
+    logger.info('Lifecycle manager disabled - using existing concurrency safety');
 
     // Start server
     httpServer.listen(port, () => {
@@ -202,6 +235,10 @@ const shutdownHandler = async (signal: string) => {
     // Stop task scheduler first
     taskScheduler.stop();
     logger.info('Task scheduler stopped');
+
+    // Lifecycle manager disabled
+    // lifecycleManager.stop();
+    logger.info('Lifecycle manager was disabled');
 
     // Stop reliability manager
     await reliabilityManager.stop();

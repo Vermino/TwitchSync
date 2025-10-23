@@ -938,6 +938,9 @@ export class TaskHandler extends EventEmitter {
     }
   }
 
+  /**
+   * Queue VOD for download using safe concurrency functions
+   */
   private async queueVODDownload(
     vod: TwitchVOD,
     priority: string,
@@ -948,105 +951,140 @@ export class TaskHandler extends EventEmitter {
     try {
       await client.query('BEGIN');
 
-      // Check if VOD exists
-      const vodExists = await client.query(`
-        SELECT id 
-        FROM vods 
-        WHERE twitch_id = $1::bigint
-      `, [vod.id]);
+      // Use safe advisory locking to prevent race conditions
+      const lockAcquired = await client.query(`
+        SELECT acquire_vod_lock($1::bigint, $2) as acquired
+      `, [vod.id, taskId]);
 
-      if (vodExists.rows.length === 0) {
-        // Create new VOD entry with game_id populated
-        await client.query(`
-          INSERT INTO vods (
-            twitch_id,
-            task_id,
-            channel_id,
-            game_id,
-            title,
-            description,
-            duration,
-            content_type,
-            language,
-            view_count,
-            status,
-            download_status,
-            download_priority,
-            retry_count,
-            max_retries,
-            preferred_quality,
-            download_chat,
-            download_markers,
-            thumbnail_url,
-            published_at,
-            processing_options,
-            created_at,
-            updated_at
-          ) VALUES (
-            $1::bigint, $2, $3, 
-            (SELECT id FROM games WHERE twitch_game_id = $14 LIMIT 1),
-            $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, 'source',
-            true, true, $11, $12, $13, NOW(), NOW()
-          )
-        `, [
-          vod.id,
-          taskId,
-          channelId,
-          vod.title,
-          vod.description,
-          vod.duration,
-          vod.type === 'highlight' ? 'highlight' : 'stream', // Map Twitch type to our content_type
-          vod.language,
-          vod.view_count,
-          priority,
-          vod.thumbnail_url,
-          vod.published_at,
-          { transcode: false, extract_chat: true },
-          vod.game_id || null // Add the game_id parameter
-        ]);
-      } else {
-        // Update existing VOD with game_id
-        await client.query(`
-          UPDATE vods 
-          SET status = 'queued',
-              download_status = 'queued',
-              task_id = $2,
-              channel_id = $3,
-              game_id = (SELECT id FROM games WHERE twitch_game_id = $14 LIMIT 1),
-              title = $4,
-              description = $5,
-              duration = $6,
-              content_type = $7,
-              language = $8,
-              view_count = $9,
-              download_priority = $10,
-              thumbnail_url = $11,
-              published_at = $12,
-              processing_options = $13,
-              retry_count = 0,
-              updated_at = NOW()
-          WHERE twitch_id = $1::bigint
-        `, [
-          vod.id,
-          taskId,
-          channelId,
-          vod.title,
-          vod.description,
-          vod.duration,
-          vod.type === 'highlight' ? 'highlight' : 'stream',
-          vod.language,
-          vod.view_count,
-          priority,
-          vod.thumbnail_url,
-          vod.published_at,
-          { transcode: false, extract_chat: true },
-          vod.game_id || null // Add the game_id parameter
-        ]);
+      if (!lockAcquired.rows[0].acquired) {
+        logger.warn(`Could not acquire lock for VOD ${vod.id} in task ${taskId} - already being processed`);
+        await client.query('COMMIT');
+        return;
       }
 
-      await client.query('COMMIT');
+      try {
+        // Check if VOD exists using BIGINT type
+        const vodExists = await client.query(`
+          SELECT id 
+          FROM vods 
+          WHERE twitch_id = $1::bigint
+        `, [vod.id]);
+
+        if (vodExists.rows.length === 0) {
+          // Create new VOD entry with proper parameter alignment
+          await client.query(`
+            INSERT INTO vods (
+              twitch_id,
+              task_id,
+              channel_id,
+              game_id,
+              title,
+              description,
+              duration,
+              content_type,
+              language,
+              view_count,
+              status,
+              download_status,
+              download_priority,
+              retry_count,
+              max_retries,
+              preferred_quality,
+              download_chat,
+              download_markers,
+              thumbnail_url,
+              published_at,
+              processing_options,
+              created_at,
+              updated_at
+            ) VALUES (
+              $1::bigint, $2, $3, 
+              (SELECT id FROM games WHERE twitch_game_id = $15 LIMIT 1),
+              $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, 'source',
+              true, true, $11, $12, $13, NOW(), NOW()
+            )
+          `, [
+            vod.id,               // $1
+            taskId,               // $2
+            channelId,            // $3
+            vod.title,            // $4
+            vod.description,      // $5
+            vod.duration,         // $6
+            vod.type === 'highlight' ? 'highlight' : 'stream', // $7
+            vod.language,         // $8
+            vod.view_count,       // $9
+            priority,             // $10
+            vod.thumbnail_url,    // $11
+            vod.published_at,     // $12
+            { transcode: false, extract_chat: true }, // $13
+            vod.game_id || null   // $15 - Fixed parameter mismatch
+          ]);
+        } else {
+          // Update existing VOD with proper parameter alignment
+          await client.query(`
+            UPDATE vods 
+            SET status = 'queued',
+                download_status = 'queued',
+                task_id = $2,
+                channel_id = $3,
+                game_id = (SELECT id FROM games WHERE twitch_game_id = $15 LIMIT 1),
+                title = $4,
+                description = $5,
+                duration = $6,
+                content_type = $7,
+                language = $8,
+                view_count = $9,
+                download_priority = $10,
+                thumbnail_url = $11,
+                published_at = $12,
+                processing_options = $13,
+                retry_count = 0,
+                updated_at = NOW()
+            WHERE twitch_id = $1::bigint
+          `, [
+            vod.id,               // $1
+            taskId,               // $2
+            channelId,            // $3
+            vod.title,            // $4
+            vod.description,      // $5
+            vod.duration,         // $6
+            vod.type === 'highlight' ? 'highlight' : 'stream', // $7
+            vod.language,         // $8
+            vod.view_count,       // $9
+            priority,             // $10
+            vod.thumbnail_url,    // $11
+            vod.published_at,     // $12
+            { transcode: false, extract_chat: true }, // $13
+            vod.game_id || null   // $15 - Fixed parameter mismatch
+          ]);
+        }
+
+        // Initialize VOD file state tracking for lifecycle management
+        const vodResult = await client.query(`
+          SELECT id FROM vods WHERE twitch_id = $1::bigint
+        `, [vod.id]);
+        
+        if (vodResult.rows.length > 0) {
+          const vodDbId = vodResult.rows[0].id;
+          
+          // Use safe queue function for concurrency safety
+          await client.query(`
+            SELECT safe_queue_vod_for_processing($1, $2, $3::bigint, $4)
+          `, [vodDbId, taskId, vod.id, 'task_handler']);
+        }
+
+        await client.query('COMMIT');
+        
+        logger.info(`Successfully queued VOD ${vod.id} for download with concurrency safety`);
+      } finally {
+        // Always release the advisory lock
+        await client.query(`
+          SELECT release_vod_lock($1::bigint, $2) as released
+        `, [vod.id, taskId]);
+      }
     } catch (error) {
       await client.query('ROLLBACK');
+      logger.error(`Error queueing VOD ${vod.id} for download:`, error);
       throw error;
     }
   }

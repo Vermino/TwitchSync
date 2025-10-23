@@ -63,3 +63,25 @@ export type {
   QueueStatus,
   QueuePriority
 } from './queue';
+
+// Re-export storage types
+export type {
+  StorageAnalytics,
+  ChannelStorageBreakdown,
+  GameStorageBreakdown,
+  StorageTimelineEntry,
+  VerificationStats,
+  FileItem,
+  CleanupAnalysis,
+  CleanupResult,
+  VerificationResult,
+  BulkVerificationResult,
+  FileState,
+  StorageConfig,
+  CleanupHistory,
+  VerificationHistory,
+  BulkProtectRequest,
+  BulkProtectResponse,
+  RedownloadRequest,
+  RedownloadResponse
+} from './storage';

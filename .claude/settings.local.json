@@ -50,7 +50,13 @@
       "Bash(npm install:*)",
       "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -U postgres -d twitchsync -h localhost -c \"SELECT v.id, v.title, v.status, v.progress_percentage, v.current_segment, v.total_segments FROM vods v WHERE v.status = ''downloading'' ORDER BY v.updated_at DESC LIMIT 5;\")",
       "Bash(PORT=3002 npm run dev)",
-      "Bash(PORT=3004 npm run dev)"
+      "Bash(PORT=3004 npm run dev)",
+      "Bash(git reset:*)",
+      "Bash(bash_output bash_13)",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -U postgres -d twitchsync -h localhost -c \"\\d vods\")",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -U postgres -d twitchsync -c \"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ''vods'' ORDER BY ordinal_position;\" --connect-timeout=10)",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -U postgres -d twitchsync -c \"\\i ''C:\\Users\\jesse\\WebstormProjects\\TwitchSync\\backend\\simple-fix.sql''\")",
+      "Bash(\"taskkill\" \"/F\" \"/IM\" \"node.exe\")"
     ],
     "deny": [],
     "ask": [],

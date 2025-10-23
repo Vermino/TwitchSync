@@ -837,6 +837,152 @@ class ApiClient {
     }
   }
 
+  // Lifecycle Management Methods
+  async getStorageAnalytics() {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/storage/analytics`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching storage analytics:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getVerificationStats() {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/verification/stats`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching verification stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async bulkVerifyFiles() {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/verification/bulk-verify`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error starting bulk verification:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async executeStorageCleanup() {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/storage/cleanup`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error executing storage cleanup:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async protectVod(vodId: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/vods/${vodId}/protect`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error protecting VOD:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async unprotectVod(vodId: string) {
+    try {
+      const response = await axios.delete(
+        `${this.baseURL}/lifecycle/vods/${vodId}/protect`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error unprotecting VOD:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getVodFileState(vodId: string) {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/lifecycle/vods/${vodId}/file-state`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching VOD file state:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async verifyVodFile(vodId: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/vods/${vodId}/verify`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error verifying VOD file:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async redownloadVod(vodId: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/vods/${vodId}/redownload`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error redownloading VOD:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getLargestFiles(limit = 50) {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/files/largest`, {
+        params: { limit },
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching largest files:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getCleanupAnalysis() {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/storage/cleanup-analysis`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching cleanup analysis:', error);
+      throw this.handleError(error);
+    }
+  }
+
   // Utility Methods
   private getHeaders() {
     const token = localStorage.getItem('auth_token');

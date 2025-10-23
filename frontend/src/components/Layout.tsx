@@ -10,7 +10,8 @@ import {
   LayoutDashboard,
   Settings,
   Menu,
-  X
+  X,
+  HardDrive
 } from 'lucide-react';
 import UserMenu from './UserMenu';
 
@@ -27,7 +28,8 @@ const Layout = () => {
     { path: '/discovery', label: 'Content Discovery', icon: Video },
     { path: '/channels', label: 'Channels', icon: Users },
     { path: '/games', label: 'Games', icon: Gamepad },
-    { path: '/tasks', label: 'Task Manager', icon: CalendarClock }
+    { path: '/tasks', label: 'Task Manager', icon: CalendarClock },
+    { path: '/storage', label: 'Storage Management', icon: HardDrive }
   ];
 
   return (

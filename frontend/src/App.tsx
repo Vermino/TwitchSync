@@ -18,6 +18,8 @@ import ContentDiscovery from './pages/ContentDiscovery';
 import Settings from './pages/settings';
 import TaskManager from './pages/TaskManager';
 import TaskMonitoring from './pages/TaskMonitoring';
+import StorageManagementDashboard from './components/storage/StorageManagementDashboard';
+
 
 // Configure React Query client
 const queryClient = new QueryClient({
@@ -60,6 +62,7 @@ function App() {
                 <Route path="/discovery" element={<ContentDiscovery />} />
                 <Route path="/tasks" element={<TaskManager />} />
                 <Route path="/tasks/:taskId/monitoring" element={<TaskMonitoring />} />
+                <Route path="/storage" element={<StorageManagementDashboard />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
 

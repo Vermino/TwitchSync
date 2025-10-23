@@ -11,15 +11,15 @@ export class CompletedVodService {
    * Mark a VOD as completed by inserting into completed_vods table
    * This automatically updates the main vods table via trigger
    */
+  /**
+   * Mark a VOD as completed using safe upsert function (handles concurrency)
+   */
   async markVodCompleted(request: CompletedVODRequest): Promise<CompletedVOD> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(`
-        INSERT INTO completed_vods (
-          vod_id, task_id, twitch_id, file_path, file_name, file_size_bytes,
-          download_duration_seconds, download_speed_mbps, checksum_md5, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING *
+      // Use safe upsert function to handle duplicate key constraint violations
+      await client.query(`
+        SELECT upsert_completed_vod($1, $2, $3::bigint, $4, $5, $6, $7, $8, $9, $10)
       `, [
         request.vod_id,
         request.task_id,
@@ -33,7 +33,17 @@ export class CompletedVodService {
         JSON.stringify(request.metadata || {})
       ]);
 
-      logger.info(`Marked VOD as completed: ${request.twitch_id}`, {
+      // Return the completed VOD record
+      const result = await client.query(`
+        SELECT * FROM completed_vods 
+        WHERE twitch_id = $1::bigint AND task_id = $2
+      `, [request.twitch_id, request.task_id]);
+
+      if (result.rows.length === 0) {
+        throw new Error(`Failed to retrieve completed VOD record for ${request.twitch_id}`);
+      }
+
+      logger.info(`Safely marked VOD as completed: ${request.twitch_id}`, {
         vod_id: request.vod_id,
         task_id: request.task_id,
         file_size: request.file_size_bytes
@@ -51,17 +61,25 @@ export class CompletedVodService {
   /**
    * Check if a VOD is already completed for a specific task
    */
+  /**
+   * Check if a VOD is completed using direct database query
+   * This bypasses the problematic stored function and uses a simple query
+   */
   async isVodCompleted(twitchId: string, taskId: number): Promise<boolean> {
     const client = await this.pool.connect();
     try {
+      // Direct query to check if VOD is completed - simpler and more reliable
       const result = await client.query(
-        'SELECT is_vod_completed($1, $2) as completed',
+        'SELECT EXISTS(SELECT 1 FROM completed_vods WHERE twitch_id = $1::bigint AND task_id = $2) as completed',
         [twitchId, taskId]
       );
       return result.rows[0].completed;
     } catch (error) {
       logger.error('Error checking VOD completion status:', error);
-      throw error;
+      
+      // If even the direct query fails, assume not completed to allow retry
+      logger.warn(`Assuming VOD ${twitchId} is not completed due to database error`);
+      return false;
     } finally {
       client.release();
     }

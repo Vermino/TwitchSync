@@ -464,26 +464,41 @@ export class DownloadHandler extends EventEmitter {
         // Emit WebSocket update for completion
         this.webSocketService.emitDownloadStatusChange(vod.id, vod.task_id, 'completed', 100);
 
-        // Mark VOD as completed in completed_vods table for tracking
-        await this.completedVodService.markVodCompleted({
-          vod_id: vod.id,
-          task_id: vod.task_id,
-          twitch_id: vod.twitch_id,
-          file_path: finalVideoPath,
-          file_name: fileName,
-          file_size_bytes: fileSizeBytes,
-          download_duration_seconds: downloadDurationSeconds,
-          download_speed_mbps: downloadSpeedMbps ?? undefined,
-          checksum_md5: checksum,
-          metadata: {
+        // Use safe upsert function to mark VOD as completed (handles concurrency)
+        await client.query(`
+          SELECT upsert_completed_vod($1, $2, $3::bigint, $4, $5, $6, $7, $8, $9, $10)
+        `, [
+          vod.id,
+          vod.task_id,
+          vod.twitch_id,
+          finalVideoPath,
+          fileName,
+          fileSizeBytes,
+          downloadDurationSeconds,
+          downloadSpeedMbps ?? null,
+          checksum,
+          JSON.stringify({
             quality: vod.preferred_quality || 'source',
             format: 'ts',
             duration: vod.duration,
             title: vod.title,
             channel_name: vod.channel_name || 'unknown',
             completed_timestamp: downloadEndTime.toISOString()
-          }
-        });
+          })
+        ]);
+
+        // Update VOD file state using safe release function
+        await client.query(`
+          SELECT safe_release_vod_lock($1::bigint, $2, $3, $4, $5, $6, $7)
+        `, [
+          vod.twitch_id,
+          vod.task_id,
+          'download_handler',
+          'completed',
+          'present',
+          finalVideoPath,
+          fileSizeBytes
+        ]);
 
         // Get updated completion statistics for task progress
         const completionStats = await this.completedVodService.getTaskCompletionStats(vod.task_id);
@@ -541,6 +556,22 @@ export class DownloadHandler extends EventEmitter {
             updated_at = NOW()
           WHERE id = $1
         `, [vod.id, newStatus, errorMessage]);
+
+        // Use safe release function to unlock VOD and record error
+        try {
+          await client.query(`
+            SELECT safe_release_vod_lock($1::bigint, $2, $3, $4, $5, NULL, NULL, $6)
+          `, [
+            vod.twitch_id,
+            vod.task_id,
+            'download_handler',
+            isPermanentError ? 'failed' : 'failed',
+            isPermanentError ? 'missing' : 'partial',
+            JSON.stringify({ error: errorMessage, timestamp: new Date().toISOString() })
+          ]);
+        } catch (releaseError) {
+          logger.warn(`Could not release VOD lock for ${vod.twitch_id}:`, releaseError);
+        }
 
         // Emit WebSocket update for error status
         this.webSocketService.emitDownloadStatusChange(vod.id, vod.task_id, newStatus, 0);

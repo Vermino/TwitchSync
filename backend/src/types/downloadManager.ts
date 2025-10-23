@@ -99,6 +99,15 @@ export interface QueueStatus {
   completed: number;
 }
 
+export interface DownloadMetrics {
+  totalBytesDownloaded: number;
+  totalDownloads: number;
+  failedDownloads: number;
+  averageSpeed: number;
+  peakMemoryUsage: number;
+  startTime: number;
+}
+
 export interface IDownloadManager {
   addToQueue(vodId: number, priority?: DownloadPriority): Promise<void>;
   getQueueStatus(): Promise<QueueStatus>;
@@ -108,6 +117,9 @@ export interface IDownloadManager {
   executeTask(taskId: number): Promise<void>;
   startProcessing(intervalSeconds?: number): Promise<void>;
   stopProcessing(timeoutMs?: number): Promise<void>;
+  getSystemResources(): Promise<SystemResources>;
+  getMetrics(): DownloadMetrics;
+  getActiveDownloads(): Map<number, DownloadState>;
 }
 
 // Re-export necessary types
