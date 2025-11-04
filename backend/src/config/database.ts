@@ -26,6 +26,13 @@ export const setupDatabase = async () => {
 
     logger.info('Database connection established successfully');
 
+    // Skip migrations in development if SKIP_MIGRATIONS is set
+    if (process.env.SKIP_MIGRATIONS === 'true') {
+      logger.info('Skipping migrations (SKIP_MIGRATIONS=true)');
+      logger.info('⚠️  Using schema.sql - run `node scripts/reset-database.js` to reset DB');
+      return true;
+    }
+
     // Run migrations
     await runMigrations(pool);
     logger.info('Database migrations completed successfully');

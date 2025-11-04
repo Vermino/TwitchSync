@@ -63,5 +63,8 @@
     "additionalDirectories": [
       "C:\\c\\Users\\jesse\\WebstormProjects\\TwitchSync"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "viktor"
+  ]
 }
