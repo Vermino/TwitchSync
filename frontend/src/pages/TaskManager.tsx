@@ -1,9 +1,10 @@
 // Filepath: frontend/src/pages/TaskManager.tsx
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { Plus } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
 import TaskList from '@/components/TaskManager/TaskList';
@@ -77,6 +78,54 @@ export default function TaskManager() {
     },
     refetchInterval: 5000 // Updated to refresh every 5 seconds for real-time updates
   });
+
+  const { joinTask } = useWebSocket({
+    onDownloadProgress: (data) => {
+      queryClient.setQueryData(['vods'], (oldVods: any) => {
+        if (!oldVods) return oldVods;
+        let found = false;
+        const newVods = oldVods.map((vod: any) => {
+          if (vod.id === data.vodId) {
+            found = true;
+            return {
+              ...vod,
+              status: data.status,
+              download_progress: data.progress,
+              current_segment: data.currentSegment,
+              total_segments: data.totalSegments,
+              download_speed: data.speed,
+              eta: data.eta
+            };
+          }
+          return vod;
+        });
+        return found ? newVods : oldVods;
+      });
+    },
+    onDownloadStatusChange: (data) => {
+      queryClient.setQueryData(['vods'], (oldVods: any) => {
+        if (!oldVods) return oldVods;
+        let found = false;
+        const newVods = oldVods.map((vod: any) => {
+          if (vod.id === data.vodId) {
+            found = true;
+            return { ...vod, status: data.status, download_progress: data.progress };
+          }
+          return vod;
+        });
+        return found ? newVods : oldVods;
+      });
+    }
+  });
+
+  useEffect(() => {
+    if (!tasks || tasks.length === 0) return;
+    tasks.forEach((task: Task) => {
+      if (['running', 'downloading', 'scanning', 'active'].includes(task.status)) {
+        joinTask(task.id);
+      }
+    });
+  }, [tasks, joinTask]);
 
 
   // Task scheduler status
@@ -232,17 +281,17 @@ export default function TaskManager() {
   const handleToggleScheduler = async () => {
     try {
       const currentlyEnabled = schedulerStatus?.enabled || false;
-      
+
       if (currentlyEnabled) {
         // Disabling: First pause all downloads, then disable scheduler
         toast({
           title: "Stopping downloads...",
           description: "Pausing all active downloads and disabling task scheduler",
         });
-        
+
         await queueClient.pauseDownloadManager();
         await toggleSchedulerMutation.mutateAsync();
-        
+
         toast({
           title: "Task Manager Disabled",
           description: "All downloads paused and automatic task execution disabled",
@@ -253,23 +302,23 @@ export default function TaskManager() {
           title: "Starting Task Manager...",
           description: "Enabling task scheduler and resuming downloads",
         });
-        
+
         await toggleSchedulerMutation.mutateAsync();
         await queueClient.resumeDownloadManager();
-        
+
         toast({
-          title: "Task Manager Enabled", 
+          title: "Task Manager Enabled",
           description: "Task scheduler enabled and downloads resumed",
         });
       }
-      
+
       // Refresh data to show updated states
       await Promise.all([
         refetchTasks(),
         queryClient.invalidateQueries(['vods']),
         queryClient.invalidateQueries(['taskSchedulerStatus'])
       ]);
-      
+
     } catch (error) {
       console.error('Error toggling scheduler:', error);
       toast({
@@ -296,7 +345,7 @@ export default function TaskManager() {
           <p className="text-muted-foreground">Manage your download tasks</p>
         </div>
         <Button onClick={() => setIsModalOpen(true)} className="bg-purple-600 hover:bg-purple-700">
-          <Plus className="w-4 h-4 mr-2"/>
+          <Plus className="w-4 h-4 mr-2" />
           Create Task
         </Button>
       </div>
@@ -315,7 +364,7 @@ export default function TaskManager() {
           </div>
         </div>
         <div className="text-xs text-muted-foreground">
-          {schedulerStatus?.enabled 
+          {schedulerStatus?.enabled
             ? 'Tasks will automatically scan for new VODs based on their schedules'
             : 'Automatic task execution is disabled. Tasks must be run manually.'
           }
@@ -323,8 +372,8 @@ export default function TaskManager() {
       </div>
 
       {/* Task Summary */}
-      <TaskSummary 
-        tasks={tasks} 
+      <TaskSummary
+        tasks={tasks}
         schedulerEnabled={schedulerStatus?.enabled || false}
       />
 

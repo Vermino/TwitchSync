@@ -2,25 +2,21 @@
 
 import React, { useState, useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
-import { api } from '@/lib/api';
 import { discoveryService } from '@/services/discovery';
 import DiscoveryHeader from '../components/discovery/DiscoveryHeader';
 import FilterPanel from '../components/discovery/FilterPanel';
 import StatsCard from '../components/discovery/StatsCard';
 import RecommendationCard from '../components/discovery/RecommendationCard';
 import PremiereCard from '../components/discovery/PremiereCard';
-import RisingChannelCard from '../components/discovery/RisingChannelCard';
 import DiscoverySettings from '../components/discovery/DiscoverySettings';
-import { RefreshCw, Settings as SettingsIcon, Bell } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type {
   DiscoveryFeedResponse,
   FilterSettings,
   DiscoveryStats,
   ChannelRecommendation,
-  GameRecommendation,
-  StreamPremiereEvent,
-  RisingChannel
+  GameRecommendation
 } from '@/types/discovery';
 
 // Component state interfaces
@@ -76,7 +72,7 @@ const ContentDiscovery: React.FC = () => {
     scheduleMatch: true,
     confidenceThreshold: 0.7
   });
-  const [discoveryData, setDiscoveryData] = useState<DiscoveryFeedResponse>(defaultDiscoveryData);
+  const [discoveryData, _setDiscoveryData] = useState<DiscoveryFeedResponse>(defaultDiscoveryData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState({
@@ -197,6 +193,48 @@ const ContentDiscovery: React.FC = () => {
     }
   };
 
+  const handleIgnoreChannel = async (channelId: string) => {
+    try {
+      await discoveryService.ignoreChannel(channelId);
+      toast({
+        title: 'Channel ignored',
+        description: 'This channel will no longer appear in recommendations.',
+      });
+      setRecommendations(prev => ({
+        ...prev,
+        channels: prev.channels.filter(c => c.id !== channelId)
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast({
+        title: 'Error',
+        description: `Failed to ignore channel: ${errorMessage}`,
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleIgnoreGame = async (gameId: string) => {
+    try {
+      await discoveryService.ignoreGame(gameId);
+      toast({
+        title: 'Game ignored',
+        description: 'This game will no longer appear in recommendations.',
+      });
+      setRecommendations(prev => ({
+        ...prev,
+        games: prev.games.filter(g => g.id !== gameId)
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast({
+        title: 'Error',
+        description: `Failed to ignore game: ${errorMessage}`,
+        variant: 'destructive'
+      });
+    }
+  };
+
   const renderRecommendations = () => {
     if (recommendations.loading) {
       return (
@@ -250,6 +288,7 @@ const ContentDiscovery: React.FC = () => {
                   item={channel}
                   type="channel"
                   onAction={(id) => handleTrackChannel(id)}
+                  onIgnore={(id) => handleIgnoreChannel(id)}
                 />
               ))}
             </div>
@@ -272,6 +311,7 @@ const ContentDiscovery: React.FC = () => {
                   item={game}
                   type="game"
                   onAction={(id) => handleTrackGame(id)}
+                  onIgnore={(id) => handleIgnoreGame(id)}
                 />
               ))}
             </div>
@@ -345,7 +385,7 @@ const ContentDiscovery: React.FC = () => {
                     key={`premiere-${premiere.id}`}
                     premiere={premiere}
                     onTrack={handleTrackChannel}
-                    onIgnore={async () => {/* TODO: Implement ignore */}}
+                    onIgnore={async (id) => await handleIgnoreChannel(id)}
                   />
                 ))}
               </div>

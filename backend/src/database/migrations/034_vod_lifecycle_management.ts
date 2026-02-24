@@ -405,9 +405,8 @@ export const up = async (pool: Pool): Promise<void> => {
           checksum_md5 = COALESCE(EXCLUDED.checksum_md5, completed_vods.checksum_md5),
           metadata = EXCLUDED.metadata,
           completed_at = NOW()
-        RETURNING id;
+        RETURNING id INTO completed_vod_id;
         
-        GET DIAGNOSTICS completed_vod_id = RESULT_COUNT;
         RETURN completed_vod_id;
       END;
       $$ LANGUAGE plpgsql;
@@ -745,6 +744,7 @@ export const up = async (pool: Pool): Promise<void> => {
       CREATE TRIGGER cleanup_expired_locks_trigger
         AFTER UPDATE ON vod_file_states
         FOR EACH STATEMENT
+        WHEN (pg_trigger_depth() = 0)
         EXECUTE FUNCTION trigger_cleanup_expired_locks();
     `);
 

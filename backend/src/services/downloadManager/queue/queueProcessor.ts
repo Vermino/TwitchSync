@@ -49,8 +49,10 @@ export class QueueProcessor extends EventEmitter {
     // Initial resource check
     await this.resourceMonitor.getSystemResources();
 
-    // Initial queue processing
-    await this.processQueue();
+    // Initial queue processing (spawned asynchronously so it doesn't block server startup)
+    this.processQueue().catch(error => {
+      logger.error('Error in initial queue processing:', error);
+    });
 
     // Set up interval for continuous processing
     this.processingInterval = setInterval(() => {
@@ -74,7 +76,7 @@ export class QueueProcessor extends EventEmitter {
       await new Promise<void>(resolve => {
         let attempts = 0;
         const maxAttempts = 10; // 10 second timeout
-        
+
         const checkInterval = setInterval(() => {
           attempts++;
           if (!this.isProcessing || attempts >= maxAttempts) {
@@ -240,7 +242,7 @@ export class QueueProcessor extends EventEmitter {
     if (this.isShuttingDown) {
       return;
     }
-    
+
     logger.info('Triggering immediate queue processing');
     setImmediate(() => {
       this.processQueue().catch(error => {

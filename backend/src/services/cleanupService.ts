@@ -2,10 +2,14 @@
 
 import { Pool } from 'pg';
 import { promises as fs } from 'fs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 import path from 'path';
+
+const execAsync = promisify(exec);
 
 export interface CleanupStats {
   tempFiles: {
@@ -31,14 +35,14 @@ export interface CleanupConfig {
   tempFileMaxAge: number;
   logFileMaxAge: number;
   downloadRetentionDays: number;
-  
+
   // Database cleanup settings
   eventRetentionDays: number;
-  
+
   // Disk space management
   diskSpaceThresholdGB: number;
   emergencyCleanupEnabled: boolean;
-  
+
   // Cleanup intervals
   regularCleanupInterval: number;
   emergencyCleanupInterval: number;
@@ -54,7 +58,7 @@ export class CleanupService extends EventEmitter {
   constructor(pool: Pool, cleanupConfig?: Partial<CleanupConfig>) {
     super();
     this.pool = pool;
-    
+
     // Default cleanup configuration
     this.config = {
       tempFileMaxAge: 24 * 60 * 60 * 1000, // 24 hours
@@ -190,13 +194,13 @@ export class CleanupService extends EventEmitter {
     try {
       // Ensure temp directory exists
       await fs.mkdir(tempDir, { recursive: true });
-      
+
       const items = await fs.readdir(tempDir);
       stats.scanned = items.length;
 
       for (const item of items) {
         const itemPath = path.join(tempDir, item);
-        
+
         try {
           const fileStat = await fs.stat(itemPath);
           const ageMs = Date.now() - fileStat.mtime.getTime();
@@ -204,13 +208,13 @@ export class CleanupService extends EventEmitter {
           // Delete if older than threshold
           if (ageMs > this.config.tempFileMaxAge) {
             const sizeBefore = fileStat.size;
-            
+
             if (fileStat.isDirectory()) {
               await this.removeDirectoryRecursive(itemPath);
             } else {
               await fs.unlink(itemPath);
             }
-            
+
             stats.deleted++;
             stats.spaceFreed += sizeBefore;
             logger.debug(`Cleaned up temp item: ${item} (${sizeBefore} bytes)`);
@@ -243,7 +247,7 @@ export class CleanupService extends EventEmitter {
           if (!item.endsWith('.log') && !item.endsWith('.txt')) continue;
 
           const itemPath = path.join(logDir, item);
-          
+
           try {
             const fileStat = await fs.stat(itemPath);
             const ageMs = Date.now() - fileStat.mtime.getTime();
@@ -251,7 +255,7 @@ export class CleanupService extends EventEmitter {
             if (ageMs > this.config.logFileMaxAge) {
               const sizeBefore = fileStat.size;
               await fs.unlink(itemPath);
-              
+
               stats.deleted++;
               stats.spaceFreed += sizeBefore;
               logger.debug(`Cleaned up log file: ${item} (${sizeBefore} bytes)`);
@@ -322,7 +326,7 @@ export class CleanupService extends EventEmitter {
       stats.orphanedRecords += taskHistoryResult.rowCount || 0;
 
       await client.query('COMMIT');
-      
+
       logger.debug(`Database cleanup: ${stats.oldEvents} old events, ${stats.orphanedRecords} orphaned records`);
       return stats;
     } catch (error) {
@@ -339,7 +343,7 @@ export class CleanupService extends EventEmitter {
    */
   private async cleanupAbandonedDownloads(): Promise<void> {
     const client = await this.pool.connect();
-    
+
     try {
       // Find downloads that have been stuck for a long time
       const abandonedResult = await client.query(`
@@ -405,16 +409,16 @@ export class CleanupService extends EventEmitter {
    */
   private async performEmergencyCleanup(): Promise<void> {
     logger.warn('Performing emergency cleanup due to low disk space...');
-    
+
     const client = await this.pool.connect();
-    
+
     try {
       // More aggressive temp file cleanup (reduce age threshold)
       const originalTempAge = this.config.tempFileMaxAge;
       this.config.tempFileMaxAge = 60 * 60 * 1000; // 1 hour instead of 24
-      
+
       await this.cleanupTempFiles();
-      
+
       // Restore original threshold
       this.config.tempFileMaxAge = originalTempAge;
 
@@ -464,25 +468,32 @@ export class CleanupService extends EventEmitter {
   }
 
   /**
-   * Fallback disk space calculation for Windows/systems without statfs
+   * Fallback disk space calculation using wmic on Windows
    */
-  private async getFallbackDiskSpace(path: string): Promise<{ total: number; free: number }> {
+  private async getFallbackDiskSpace(checkPath: string): Promise<{ total: number; free: number }> {
     try {
-      // For Windows, we can use a simple approximation
-      // This is a basic fallback - in production you might want a more robust solution
-      const stats = await fs.stat(path);
-      
-      // Return placeholder values - in a real implementation you'd use platform-specific APIs
-      return {
-        total: 1024 * 1024 * 1024 * 100, // 100GB placeholder
-        free: 1024 * 1024 * 1024 * 50    // 50GB placeholder
-      };
+      if (process.platform === 'win32') {
+        const driveLetter = path.resolve(checkPath).split(':')[0] + ':';
+        const { stdout } = await execAsync(
+          `wmic logicaldisk where "DeviceID='${driveLetter}'" get Size,FreeSpace /Format:csv`
+        );
+        const lines = stdout.trim().split('\n').filter(l => l.trim() && !l.startsWith('Node'));
+        if (lines.length > 0) {
+          const parts = lines[0].trim().split(',');
+          if (parts.length >= 3) {
+            const free = parseInt(parts[1], 10);
+            const total = parseInt(parts[2], 10);
+            if (!isNaN(total) && !isNaN(free)) {
+              return { total, free };
+            }
+          }
+        }
+      }
+      logger.warn('Could not determine real disk space via fallback');
+      return { total: 0, free: 0 };
     } catch (error) {
       logger.debug('Fallback disk space check failed:', error);
-      return {
-        total: 1024 * 1024 * 1024 * 100, // 100GB placeholder
-        free: 1024 * 1024 * 1024 * 50    // 50GB placeholder
-      };
+      return { total: 0, free: 0 };
     }
   }
 

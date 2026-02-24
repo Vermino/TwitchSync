@@ -309,18 +309,41 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: IDownloadMana
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
+
+      const activeDownloads = downloadManager.getActiveDownloads();
+      for (const [vodId, downloadState] of Array.from(activeDownloads.entries())) {
+        await client.query(`
+           UPDATE vods 
+           SET resume_segment_index = $1, download_status = 'paused', pause_reason = 'task_paused', paused_at = NOW(), updated_at = NOW()
+           WHERE id = $2
+         `, [downloadState.progress?.segmentIndex || 0, vodId]);
+      }
+
+      await client.query(`
+        UPDATE vods 
+        SET download_status = 'paused', pause_reason = 'task_paused', paused_at = NOW(), updated_at = NOW()
+        WHERE download_status IN ('downloading', 'queued')
+      `);
+
+      await client.query('COMMIT');
+
       // Stop the download manager's queue processing
       await downloadManager.stopProcessing();
-      
+
       logger.info(`Download manager paused by user ${userId}`);
-      res.json({ 
+      res.json({
         message: 'Download manager paused successfully',
-        status: 'paused' 
+        status: 'paused'
       });
     } catch (error) {
+      await client.query('ROLLBACK');
       logger.error('Error pausing download manager:', error);
       res.status(500).json({ error: 'Failed to pause download manager' });
+    } finally {
+      client.release();
     }
   }));
 
@@ -332,18 +355,37 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: IDownloadMana
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
+
+      // Resume VODs only if their parent task is actively running
+      await client.query(`
+        UPDATE vods v
+        SET download_status = 'queued', pause_reason = NULL, paused_at = NULL, updated_at = NOW()
+        FROM tasks t
+        WHERE v.task_id = t.id 
+          AND v.download_status = 'paused' 
+          AND v.pause_reason = 'task_paused'
+          AND t.status IN ('running', 'downloading')
+      `);
+
+      await client.query('COMMIT');
+
       // Start the download manager's queue processing
       await downloadManager.startProcessing();
-      
+
       logger.info(`Download manager resumed by user ${userId}`);
-      res.json({ 
+      res.json({
         message: 'Download manager resumed successfully',
-        status: 'running' 
+        status: 'running'
       });
     } catch (error) {
+      await client.query('ROLLBACK');
       logger.error('Error resuming download manager:', error);
       res.status(500).json({ error: 'Failed to resume download manager' });
+    } finally {
+      client.release();
     }
   }));
 
@@ -361,7 +403,7 @@ export const createDownloadsRouter = (pool: Pool, downloadManager: IDownloadMana
       const systemResources = await downloadManager.getSystemResources();
       const metrics = downloadManager.getMetrics();
       const activeDownloads = downloadManager.getActiveDownloads();
-      
+
       // The download manager doesn't expose its processing state directly,
       // so we can infer it from the queue processor state or other indicators
       res.json({

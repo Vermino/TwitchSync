@@ -111,8 +111,8 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
 
       // Validate required fields
       if (!name || !task_type || !schedule_type || !schedule_value) {
-        return res.status(400).json({ 
-          error: 'Missing required fields: name, task_type, schedule_type, schedule_value' 
+        return res.status(400).json({
+          error: 'Missing required fields: name, task_type, schedule_type, schedule_value'
         });
       }
 
@@ -121,8 +121,8 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
       const gameIdsArray = Array.isArray(game_ids) ? game_ids : [];
 
       if (channelIdsArray.length === 0 && gameIdsArray.length === 0) {
-        return res.status(400).json({ 
-          error: 'At least one channel or game must be specified' 
+        return res.status(400).json({
+          error: 'At least one channel or game must be specified'
         });
       }
 
@@ -153,10 +153,10 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
       await client.query(`
         INSERT INTO task_events (task_id, event_type, details)
         VALUES ($1, 'task_created', $2)
-      `, [task.id, JSON.stringify({ 
-        task_name: name, 
+      `, [task.id, JSON.stringify({
+        task_name: name,
         created_by: 'user',
-        initial_scan_scheduled: true 
+        initial_scan_scheduled: true
       })]);
 
       logger.info(`Created new task ${task.id} "${name}" - first scan scheduled for 5 seconds`);
@@ -360,7 +360,7 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
       await client.query('DELETE FROM task_monitoring WHERE task_id = $1', [taskId]);
       await client.query('DELETE FROM task_events WHERE task_id = $1', [taskId]);
       await client.query('DELETE FROM task_skipped_vods WHERE task_id = $1', [taskId]);
-      
+
       // Update VODs to remove task association rather than deleting them
       await client.query(`
         UPDATE vods SET task_id = NULL WHERE task_id = $1
@@ -404,10 +404,10 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
       }
 
       const task = taskCheck.rows[0];
-      
+
       // Only allow activation for tasks in 'ready' state
       if (task.status !== 'ready') {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: `Task cannot be activated. Current status: ${task.status}. Task must be in 'ready' state.`,
           current_status: task.status
         });
@@ -420,7 +420,7 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
 
       const queuedCount = parseInt(queuedVODsResult.rows[0].count);
       if (queuedCount === 0) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'No queued VODs found to download. Run a scan first.',
           queued_vods: 0
         });
@@ -473,7 +473,7 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
         }
       }
 
-      res.json({ 
+      res.json({
         message: 'Task activated successfully',
         task_id: taskId,
         status: 'downloading',
@@ -509,10 +509,10 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
       }
 
       const task = taskCheck.rows[0];
-      
+
       // Don't allow scanning if task is currently downloading
       if (task.status === 'downloading') {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: `Task cannot be scanned while downloading. Current status: ${task.status}`,
           current_status: task.status
         });
@@ -562,11 +562,160 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
         }
       }
 
-      res.json({ 
+      res.json({
         message: 'VOD scan started successfully',
         task_id: taskId,
         status: 'scanning'
       });
+    } finally {
+      client.release();
+    }
+  }));
+
+  // POST /:id/status/pause - Pause a task
+  router.post('/:id/status/pause', authenticate(pool), handleAsync(async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const taskId = parseInt(req.params.id);
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      if (isNaN(taskId)) {
+        return res.status(400).json({ error: 'Invalid task ID' });
+      }
+
+      await client.query('BEGIN');
+
+      const taskResult = await client.query(`
+        SELECT id, status FROM tasks WHERE id = $1 AND user_id = $2
+      `, [taskId, parseInt(userId)]);
+
+      if (taskResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      const task = taskResult.rows[0];
+
+      await client.query(`
+        UPDATE tasks 
+        SET status = 'paused'::task_status, is_active = false, last_paused_at = NOW(), updated_at = NOW() 
+        WHERE id = $1
+      `, [taskId]);
+
+      await client.query(`
+        UPDATE task_monitoring 
+        SET status = 'paused', status_message = 'Task paused by user', updated_at = NOW() 
+        WHERE task_id = $1
+      `, [taskId]);
+
+      await client.query(`
+        INSERT INTO task_events (task_id, event_type, details, created_at) 
+        VALUES ($1, 'status_change', $2, NOW())
+      `, [taskId, JSON.stringify({ previous_status: task.status, new_status: 'paused', reason: 'user_pause' })]);
+
+      // Pause queued/downloading VODs in the database
+      if (downloadManager) {
+        const activeDownloads = downloadManager.getActiveDownloads();
+        for (const [vodId, downloadState] of Array.from(activeDownloads.entries())) {
+          await client.query(`
+             UPDATE vods 
+             SET resume_segment_index = $1, download_status = 'paused', pause_reason = 'task_paused', paused_at = NOW(), updated_at = NOW()
+             WHERE id = $2 AND task_id = $3
+           `, [downloadState.progress?.segmentIndex || 0, vodId, taskId]);
+        }
+      }
+
+      await client.query(`
+        UPDATE vods 
+        SET download_status = 'paused', pause_reason = 'task_paused', paused_at = NOW(), updated_at = NOW()
+        WHERE task_id = $1 AND download_status IN ('downloading', 'queued')
+      `, [taskId]);
+
+      await client.query('COMMIT');
+
+      // Stop download processing for this task
+      if (downloadManager) {
+        // downloadManager.stopProcessing stops ALL downloads. To pause a single task effectively, 
+        // the QueueProcessor will naturally skip it on next tick since status is 'paused'.
+        // For currently active segments, they will finish, but the next segment will see status 'paused' and abort.
+      }
+
+      res.json({ message: 'Task paused successfully' });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error pausing task:', error);
+      res.status(500).json({ error: 'Failed to pause task' });
+    } finally {
+      client.release();
+    }
+  }));
+
+  // POST /:id/status/resume - Resume a task
+  router.post('/:id/status/resume', authenticate(pool), handleAsync(async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const taskId = parseInt(req.params.id);
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      if (isNaN(taskId)) {
+        return res.status(400).json({ error: 'Invalid task ID' });
+      }
+
+      await client.query('BEGIN');
+
+      const taskResult = await client.query(`
+        SELECT id FROM tasks WHERE id = $1 AND user_id = $2
+      `, [taskId, parseInt(userId)]);
+
+      if (taskResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      await client.query(`
+        UPDATE tasks 
+        SET status = 'running'::task_status, is_active = true, last_resumed_at = NOW(), updated_at = NOW() 
+        WHERE id = $1
+      `, [taskId]);
+
+      await client.query(`SELECT resume_task_downloads($1)`, [taskId]);
+
+      await client.query(`
+        UPDATE task_monitoring 
+        SET status = 'running', status_message = 'Task resumed by user', updated_at = NOW() 
+        WHERE task_id = $1
+      `, [taskId]);
+
+      await client.query(`
+        INSERT INTO task_events (task_id, event_type, details, created_at) 
+        VALUES ($1, 'status_change', $2, NOW())
+      `, [taskId, JSON.stringify({ previous_status: 'paused', new_status: 'running', reason: 'user_resume' })]);
+
+      await client.query('COMMIT');
+
+      if (downloadManager) {
+        setImmediate(() => {
+          downloadManager.executeTask(taskId, 'activate').catch(err => {
+            logger.error(`Error resuming task downloads:`, err);
+          });
+        });
+      }
+
+      res.json({ message: 'Task resumed successfully' });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error resuming task:', error);
+      res.status(500).json({ error: 'Failed to resume task' });
     } finally {
       client.release();
     }
@@ -808,14 +957,14 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
       if (isCurrentlyRunning) {
         (global as any).taskScheduler?.stop();
         logger.info('Task scheduler stopped by user');
-        res.json({ 
+        res.json({
           enabled: false,
           message: 'Task scheduler stopped successfully'
         });
       } else {
         (global as any).taskScheduler?.start();
         logger.info('Task scheduler started by user');
-        res.json({ 
+        res.json({
           enabled: true,
           message: 'Task scheduler started successfully'
         });

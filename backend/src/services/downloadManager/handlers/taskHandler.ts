@@ -51,7 +51,7 @@ export class TaskHandler extends EventEmitter {
     const client = await this.pool.connect();
     try {
       logger.info(`TaskHandler: Starting ${mode} for task ${taskId}`);
-      
+
       // Verify task exists and is active
       const taskResult = await client.query(`
         SELECT t.*, 
@@ -94,7 +94,7 @@ export class TaskHandler extends EventEmitter {
    */
   private async scanForVODs(task: any, client: any): Promise<void> {
     const taskId = task.id;
-    
+
     try {
       // Update task status to scanning
       await client.query(`
@@ -144,7 +144,7 @@ export class TaskHandler extends EventEmitter {
           const channelDbId = task.channel_db_ids[i];
           try {
             logger.info(`TaskHandler: Processing channel ${channelTwitchId} (${processedChannels + 1}/${totalChannels})`);
-            
+
             await this.updateTaskProgress(taskId, {
               message: `Processing channel ${channelTwitchId}`,
               total: totalChannels,
@@ -155,11 +155,11 @@ export class TaskHandler extends EventEmitter {
             logger.info(`TaskHandler: Fetching VODs for channel ${channelTwitchId}...`);
             const allVods = await this.twitchService.getChannelVODs(channelTwitchId.toString());
             logger.info(`TaskHandler: Found ${allVods.length} total VODs for channel ${channelTwitchId}`);
-            
+
             // Filter VODs by game if game filters are specified
             const filteredVods = await this.filterVODsByGames(allVods, task.game_ids, taskId);
             logger.info(`TaskHandler: After game filtering: ${filteredVods.length} VODs match task criteria for channel ${channelTwitchId}`);
-            
+
             totalVods += filteredVods.length;
 
             for (const vod of filteredVods) {
@@ -172,7 +172,7 @@ export class TaskHandler extends EventEmitter {
                 // Map task priority to valid download priority
                 const downloadPriority = this.mapTaskPriorityToDownloadPriority(task.priority);
                 logger.info(`Task ${taskId}: mapping priority "${task.priority}" -> "${downloadPriority}"`);
-                
+
                 // Ensure the game exists in our database before queuing
                 await this.ensureGameExists(vodInfo, client);
                 await this.queueVODDownload(vodInfo, downloadPriority, taskId, channelDbId, client);
@@ -222,8 +222,8 @@ export class TaskHandler extends EventEmitter {
       // Update task status to ready if VODs were found, otherwise back to pending
       const newStatus = processedVods > 0 ? 'ready' : 'pending';
       const hasGameFilters = task.game_ids && task.game_ids.filter((id: any) => id != null).length > 0;
-      const statusMessage = processedVods > 0 
-        ? hasGameFilters 
+      const statusMessage = processedVods > 0
+        ? hasGameFilters
           ? `${processedVods} VODs found and queued (filtered by title matching) - Ready for activation`
           : `${processedVods} VODs found and queued - Ready for activation`
         : 'No new VODs found during scan';
@@ -288,7 +288,7 @@ export class TaskHandler extends EventEmitter {
       `, [taskId]);
 
       const queuedCount = parseInt(queuedVODsResult.rows[0].count);
-      
+
       if (queuedCount === 0) {
         throw new Error('No queued VODs found to activate');
       }
@@ -337,7 +337,7 @@ export class TaskHandler extends EventEmitter {
           logger.info(`VOD ${vod.twitch_id} ready for download (${vod.title.substring(0, 50)}...)`);
         } catch (vodError) {
           logger.error(`Failed to start download for VOD ${vod.twitch_id}:`, vodError);
-          
+
           // Mark this VOD as failed to activate
           await client.query(`
             UPDATE vods 
@@ -374,9 +374,9 @@ export class TaskHandler extends EventEmitter {
   private async filterVODsByGames(vods: any[], gameIds: string[] | null, taskId?: number): Promise<any[]> {
     // Clean up the game IDs array (remove nulls)
     const validGameIds = gameIds?.filter(id => id != null && id !== '') || [];
-    
+
     logger.info(`filterVODsByGames called with gameIds: ${JSON.stringify(gameIds)}, validGameIds: ${JSON.stringify(validGameIds)}`);
-    
+
     // If no game filters specified, return all VODs
     if (validGameIds.length === 0) {
       logger.info('No game filters specified, returning all VODs');
@@ -386,16 +386,16 @@ export class TaskHandler extends EventEmitter {
     // Get game names from database for title-based filtering
     const client = await this.pool.connect();
     let gameNames: string[] = [];
-    
+
     try {
       logger.info(`Querying games table with IDs: ${JSON.stringify(validGameIds)}`);
-      
+
       const gameResult = await client.query(`
         SELECT id, name FROM games WHERE twitch_game_id = ANY($1)
       `, [validGameIds]);
-      
+
       logger.info(`Database query returned ${gameResult.rows.length} games:`, gameResult.rows);
-      
+
       gameNames = gameResult.rows.map(row => row.name);
       logger.info(`Title-based filtering: Looking for games: ${gameNames.join(', ')}`);
     } catch (error) {
@@ -422,10 +422,10 @@ export class TaskHandler extends EventEmitter {
         checkedCount++;
         const title = vod.title?.toLowerCase() || '';
         const originalTitle = vod.title || '';
-        
+
         // Check if any game name appears in the VOD title using enhanced matching
         const gameMatchResult = this.checkGameMatch(title, gameNames);
-        
+
         if (gameMatchResult.matches) {
           filteredVods.push(vod);
           matchedCount++;
@@ -433,8 +433,8 @@ export class TaskHandler extends EventEmitter {
         } else {
           // Determine specific skip reason based on match result
           let skipReason = 'GAME_FILTER';
-          if (gameMatchResult.details?.includes('promotional') || gameMatchResult.details?.includes('coming') || 
-              gameMatchResult.details?.includes('dlc') || gameMatchResult.details?.includes('until')) {
+          if (gameMatchResult.details?.includes('promotional') || gameMatchResult.details?.includes('coming') ||
+            gameMatchResult.details?.includes('dlc') || gameMatchResult.details?.includes('until')) {
             skipReason = 'GAME_FILTER_PROMOTIONAL';
           } else if (gameMatchResult.details?.includes('context') || gameMatchResult.details?.includes('position')) {
             skipReason = 'GAME_FILTER_CONTEXT';
@@ -469,10 +469,10 @@ export class TaskHandler extends EventEmitter {
   /**
    * Enhanced game matching with context-aware filtering and game-specific terminology recognition
    */
-  private checkGameMatch(title: string, gameNames: string[]): { 
-    matches: boolean; 
-    matchType: string; 
-    matchedGame?: string; 
+  private checkGameMatch(title: string, gameNames: string[]): {
+    matches: boolean;
+    matchType: string;
+    matchedGame?: string;
     details: string;
   } {
     for (const gameName of gameNames) {
@@ -480,15 +480,15 @@ export class TaskHandler extends EventEmitter {
       const gameWords = gameNameLower.split(/\s+/);
       const titleLower = title.toLowerCase();
       const titleWords = titleLower.split(/\s+/);
-      
+
       // First check if the game name appears explicitly in the title
-      const gameAppears = titleLower.includes(gameNameLower) || 
+      const gameAppears = titleLower.includes(gameNameLower) ||
         gameWords.every(word => titleWords.some(titleWord => titleWord.includes(word)));
-      
+
       if (gameAppears) {
         // Game name found explicitly - analyze context
         const contextResult = this.analyzeGameContext(title, gameNameLower, gameName);
-        
+
         if (contextResult.isActualGameplay) {
           return {
             matches: true,
@@ -503,7 +503,7 @@ export class TaskHandler extends EventEmitter {
       } else {
         // Game name not found explicitly - check for game-specific terminology
         const terminologyMatch = this.checkGameSpecificTerminology(title, gameName);
-        
+
         if (terminologyMatch.matches) {
           return {
             matches: true,
@@ -514,11 +514,11 @@ export class TaskHandler extends EventEmitter {
         }
       }
     }
-    
-    return { 
-      matches: false, 
-      matchType: 'none', 
-      details: `No game matches found (checked explicit names and game-specific terminology): ${gameNames.join(', ')}` 
+
+    return {
+      matches: false,
+      matchType: 'none',
+      details: `No game matches found (checked explicit names and game-specific terminology): ${gameNames.join(', ')}`
     };
   }
 
@@ -531,16 +531,16 @@ export class TaskHandler extends EventEmitter {
     details: string;
   } {
     const titleLower = title.toLowerCase();
-    
+
     // RimWorld-specific terminology
     if (gameName.toLowerCase() === 'rimworld') {
       const rimworldTerms = {
         // RimWorld DLCs and content
         dlcs: ['odyssey', 'biotech', 'ideology', 'royalty'],
-        
+
         // RimWorld-specific challenges and scenarios
         scenarios: ['naked brutality', 'crashlanded', 'tribal', 'rich explorer', 'the rich explorer'],
-        
+
         // RimWorld-specific gameplay terms
         gameplay: [
           'colony', 'colonist', 'pawn', 'randy', 'cassandra', 'phoebe', 'storyteller',
@@ -549,17 +549,17 @@ export class TaskHandler extends EventEmitter {
           'ship launch', 'ship reactor', 'cryptosleep', 'rimworld',
           'permadeath', 'commitment mode', 'reload anytime'
         ],
-        
+
         // RimWorld difficulty and percentage indicators (common in streaming titles)
         difficulty: ['losing is fun', 'rough', 'strive to survive', 'builder', 'peaceful'],
-        
+
         // RimWorld-specific references and memes
         references: [
           'the ship must grow', 'hat', 'human leather', 'organ harvest',
           'war crimes', 'geneva convention', 'prisoner', 'recruitment'
         ]
       };
-      
+
       // Check for DLC names (highest confidence)
       for (const dlc of rimworldTerms.dlcs) {
         if (titleLower.includes(dlc)) {
@@ -574,7 +574,7 @@ export class TaskHandler extends EventEmitter {
           }
         }
       }
-      
+
       // Check for specific scenarios (high confidence)
       for (const scenario of rimworldTerms.scenarios) {
         if (titleLower.includes(scenario)) {
@@ -585,18 +585,18 @@ export class TaskHandler extends EventEmitter {
           };
         }
       }
-      
+
       // Check for gameplay terms (medium confidence)
       let gameplayMatches = 0;
       const foundTerms: string[] = [];
-      
+
       for (const term of rimworldTerms.gameplay) {
         if (titleLower.includes(term)) {
           gameplayMatches++;
           foundTerms.push(term);
         }
       }
-      
+
       // Require multiple gameplay terms for confidence
       if (gameplayMatches >= 2) {
         return {
@@ -605,7 +605,7 @@ export class TaskHandler extends EventEmitter {
           details: `Multiple RimWorld gameplay terms found: ${foundTerms.slice(0, 3).join(', ')}`
         };
       }
-      
+
       // Check for references/memes (lower confidence, needs additional context)
       for (const reference of rimworldTerms.references) {
         if (titleLower.includes(reference)) {
@@ -620,7 +620,7 @@ export class TaskHandler extends EventEmitter {
           }
         }
       }
-      
+
       // Check for difficulty percentages (common RimWorld streaming pattern)
       const percentageMatch = titleLower.match(/\[(\d+)%\]|\b(\d+)% difficulty|\b(\d+) percent/);
       if (percentageMatch) {
@@ -629,7 +629,7 @@ export class TaskHandler extends EventEmitter {
         if (percentage >= 200 && percentage <= 1000) {
           // Check for additional RimWorld context
           const hasRimWorldContext = rimworldTerms.gameplay.some(term => titleLower.includes(term)) ||
-                                   rimworldTerms.scenarios.some(term => titleLower.includes(term));
+            rimworldTerms.scenarios.some(term => titleLower.includes(term));
           if (hasRimWorldContext) {
             return {
               matches: true,
@@ -640,13 +640,13 @@ export class TaskHandler extends EventEmitter {
         }
       }
     }
-    
+
     // Add other games' terminology here as needed
     // Example structure for other games:
     // if (gameName.toLowerCase() === 'factorio') {
     //   // Factorio-specific terms
     // }
-    
+
     return {
       matches: false,
       matchType: 'no_terminology_match',
@@ -660,16 +660,16 @@ export class TaskHandler extends EventEmitter {
   private hasPromotionalContext(titleLower: string, term: string): boolean {
     const termIndex = titleLower.indexOf(term);
     if (termIndex === -1) return false;
-    
+
     const surroundingText = this.extractSurroundingContext(titleLower, termIndex, term.length, 30);
-    
+
     const promotionalIndicators = [
       'coming soon', 'coming out', 'tomorrow', 'next week', 'next month',
       'days until', 'weeks until', 'months until', 'countdown', 'waiting for',
       'hyped for', 'excited for', 'can\'t wait', 'is coming', 'will be',
       'public release in'  // Make "release" more specific to avoid false positives
     ];
-    
+
     return promotionalIndicators.some(indicator => surroundingText.includes(indicator));
   }
 
@@ -684,14 +684,14 @@ export class TaskHandler extends EventEmitter {
   } {
     const titleLower = title.toLowerCase();
     const words = titleLower.split(/\s+/);
-    
+
     // Find the position/index where the game name appears
     const gameIndex = titleLower.indexOf(gameNameLower);
     const gameWordCount = gameNameLower.split(/\s+/).length;
-    
+
     // Calculate relative position in title (0 = start, 1 = end)
     const relativePosition = gameIndex / Math.max(1, titleLower.length - gameNameLower.length);
-    
+
     // Context indicators that suggest it's NOT actual gameplay
     const promotionalIndicators = [
       'coming soon', 'tomorrow', 'next week', 'next month', 'later', 'afterwards', 'after',
@@ -701,7 +701,7 @@ export class TaskHandler extends EventEmitter {
       'preview', 'teaser', 'leak', 'rumors', 'speculation',
       'it is coming', 'is coming', 'will be', 'gonna be', 'going to be'
     ];
-    
+
     // Context indicators that suggest it IS actual gameplay
     const gameplayIndicators = [
       'playing', 'stream', 'gaming', 'run', 'playthrough', 'let\'s play',
@@ -711,10 +711,10 @@ export class TaskHandler extends EventEmitter {
       'first time', 'blind', 'reaction', 'tutorial', 'guide',
       'speedrun', 'race', 'competition'
     ];
-    
+
     // Negative context words that appear near the game name
     const surroundingText = this.extractSurroundingContext(titleLower, gameIndex, gameNameLower.length, 50);
-    
+
     // Check for promotional language
     for (const indicator of promotionalIndicators) {
       if (surroundingText.includes(indicator)) {
@@ -725,7 +725,7 @@ export class TaskHandler extends EventEmitter {
         };
       }
     }
-    
+
     // If game appears very late in title (last 25%), it's often promotional
     if (relativePosition > 0.75) {
       return {
@@ -734,11 +734,11 @@ export class TaskHandler extends EventEmitter {
         reason: `Game appears late in title (${Math.round(relativePosition * 100)}% through), likely promotional`
       };
     }
-    
+
     // Check for gameplay indicators, but be careful about context
     let gameplayScore = 0;
     const foundGameplayIndicators: string[] = [];
-    
+
     for (const indicator of gameplayIndicators) {
       if (titleLower.includes(indicator)) {
         // Special case: "world" indicator should only count if it's part of the game name or in gameplay context
@@ -746,25 +746,25 @@ export class TaskHandler extends EventEmitter {
           // Don't count "world" if it appears in listing/comparison context
           const listingContext = ['like', 'such as', 'including', 'games', 'exist', 'and', 'or', 'great'];
           const hasListingContext = listingContext.some(ctx => titleLower.includes(ctx));
-          
+
           if (hasListingContext) {
             continue; // Skip this "world" as it's likely just part of game name in listing context
           }
-          
+
           // Only count "world" if it's close to actual gameplay words
           const gameplayContext = ['playing', 'new', 'build', 'create', 'start', 'explore', 'my', 'starting'];
           const hasGameplayContext = gameplayContext.some(ctx => titleLower.includes(ctx));
-          
+
           if (!hasGameplayContext) {
             continue; // Skip this "world" as it's likely just part of game name in non-gameplay context
           }
         }
-        
+
         gameplayScore++;
         foundGameplayIndicators.push(indicator);
       }
     }
-    
+
     // If game appears early in title (first 50%) and has gameplay context, likely playing
     if (relativePosition <= 0.5 && gameplayScore > 0) {
       return {
@@ -773,7 +773,7 @@ export class TaskHandler extends EventEmitter {
         reason: `Game appears early in title with gameplay indicators: ${foundGameplayIndicators.join(', ')}`
       };
     }
-    
+
     // If game appears at the very beginning (first 20%), likely being played
     if (relativePosition <= 0.2) {
       return {
@@ -782,14 +782,14 @@ export class TaskHandler extends EventEmitter {
         reason: `Game appears at beginning of title (${Math.round(relativePosition * 100)}% position)`
       };
     }
-    
+
     // Check for exact word boundaries (not partial matches in compound words)
     const exactWordMatch = this.hasExactWordBoundaryMatch(titleLower, gameNameLower);
     if (exactWordMatch && relativePosition <= 0.6) {
       // Even with exact word boundary, check for listing/comparison context
       const listingContext = ['like', 'such as', 'including', 'games', 'exist', 'similar to', 'compared to', 'versus', 'vs'];
       const hasListingContext = listingContext.some(ctx => titleLower.includes(ctx));
-      
+
       if (hasListingContext) {
         return {
           isActualGameplay: false,
@@ -797,14 +797,14 @@ export class TaskHandler extends EventEmitter {
           reason: `Game appears in listing/comparison context despite exact word match`
         };
       }
-      
+
       return {
         isActualGameplay: true,
         matchType: 'exact_word_boundary',
         reason: `Exact word boundary match in reasonable position`
       };
     }
-    
+
     // For partial word matches, be more strict
     if (!exactWordMatch) {
       // Check if it's just a partial match within a different word
@@ -818,7 +818,7 @@ export class TaskHandler extends EventEmitter {
         };
       }
     }
-    
+
     // Default: if no strong promotional indicators and reasonable position, assume gameplay
     if (relativePosition <= 0.6) {
       return {
@@ -827,7 +827,7 @@ export class TaskHandler extends EventEmitter {
         reason: `Game appears in reasonable position without promotional context`
       };
     }
-    
+
     // Late position without clear context - be conservative
     return {
       isActualGameplay: false,
@@ -872,8 +872,8 @@ export class TaskHandler extends EventEmitter {
             error_message = EXCLUDED.error_message,
             created_at = EXCLUDED.created_at
         `, [
-          taskId, 
-          filtered.vodId, 
+          taskId,
+          filtered.vodId,
           JSON.stringify({
             title: filtered.title,
             reason: filtered.reason,
@@ -907,10 +907,10 @@ export class TaskHandler extends EventEmitter {
 
       if (gameCheck.rows.length === 0) {
         logger.info(`Game ${vodInfo.game_id} not in database, fetching from Twitch...`);
-        
+
         // Fetch game info from Twitch
         const gameInfo = await this.twitchService.getGameById(vodInfo.game_id);
-        
+
         if (gameInfo) {
           // Create the game in our database
           await client.query(`
@@ -926,7 +926,7 @@ export class TaskHandler extends EventEmitter {
             gameInfo.box_art_url,
             gameInfo.category || 'general'
           ]);
-          
+
           logger.info(`Created game in database: ${gameInfo.name} (${gameInfo.id})`);
         } else {
           logger.warn(`Could not fetch game info for ${vodInfo.game_id}`);
@@ -999,7 +999,7 @@ export class TaskHandler extends EventEmitter {
               updated_at
             ) VALUES (
               $1::bigint, $2, $3, 
-              (SELECT id FROM games WHERE twitch_game_id = $15 LIMIT 1),
+              (SELECT id FROM games WHERE twitch_game_id = $14 LIMIT 1),
               $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, 'source',
               true, true, $11, $12, $13, NOW(), NOW()
             )
@@ -1017,7 +1017,7 @@ export class TaskHandler extends EventEmitter {
             vod.thumbnail_url,    // $11
             vod.published_at,     // $12
             { transcode: false, extract_chat: true }, // $13
-            vod.game_id || null   // $15 - Fixed parameter mismatch
+            vod.game_id || null   // $14 - Fixed parameter mismatch
           ]);
         } else {
           // Update existing VOD with proper parameter alignment
@@ -1027,7 +1027,7 @@ export class TaskHandler extends EventEmitter {
                 download_status = 'queued',
                 task_id = $2,
                 channel_id = $3,
-                game_id = (SELECT id FROM games WHERE twitch_game_id = $15 LIMIT 1),
+                game_id = (SELECT id FROM games WHERE twitch_game_id = $14 LIMIT 1),
                 title = $4,
                 description = $5,
                 duration = $6,
@@ -1055,7 +1055,7 @@ export class TaskHandler extends EventEmitter {
             vod.thumbnail_url,    // $11
             vod.published_at,     // $12
             { transcode: false, extract_chat: true }, // $13
-            vod.game_id || null   // $15 - Fixed parameter mismatch
+            vod.game_id || null   // $14 - Fixed parameter mismatch
           ]);
         }
 
@@ -1063,10 +1063,10 @@ export class TaskHandler extends EventEmitter {
         const vodResult = await client.query(`
           SELECT id FROM vods WHERE twitch_id = $1::bigint
         `, [vod.id]);
-        
+
         if (vodResult.rows.length > 0) {
           const vodDbId = vodResult.rows[0].id;
-          
+
           // Use safe queue function for concurrency safety
           await client.query(`
             SELECT safe_queue_vod_for_processing($1, $2, $3::bigint, $4)
@@ -1074,13 +1074,20 @@ export class TaskHandler extends EventEmitter {
         }
 
         await client.query('COMMIT');
-        
+
         logger.info(`Successfully queued VOD ${vod.id} for download with concurrency safety`);
+      } catch (innerError) {
+        logger.error(`Real error before transaction abort for VOD ${vod.id}:`, innerError);
+        throw innerError;
       } finally {
-        // Always release the advisory lock
-        await client.query(`
-          SELECT release_vod_lock($1::bigint, $2) as released
-        `, [vod.id, taskId]);
+        try {
+          // Always release the advisory lock
+          await client.query(`
+            SELECT release_vod_lock($1::bigint, $2) as released
+          `, [vod.id, taskId]);
+        } catch (releaseErr) {
+          logger.error(`Failed to release lock for ${vod.id} (transaction likely aborted):`, releaseErr);
+        }
       }
     } catch (error) {
       await client.query('ROLLBACK');

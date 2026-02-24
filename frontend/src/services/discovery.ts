@@ -1,5 +1,6 @@
 // frontend/src/services/discovery.ts
 
+import axios from 'axios';
 import type {
   ChannelRecommendation,
   GameRecommendation,
@@ -153,10 +154,10 @@ class DiscoveryService {
       // For development, simulate success
       // In production, this would create actual tasks via API
       console.log('Tracking channel:', channelName, options);
-      
+
       // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       return { success: true, taskId: `channel-${Date.now()}` };
     } catch (error) {
       console.error('Error tracking channel:', error);
@@ -172,13 +173,41 @@ class DiscoveryService {
       // For development, simulate success
       // In production, this would create actual tasks via API
       console.log('Tracking game:', gameName, options);
-      
+
       // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       return { success: true, taskId: `game-${Date.now()}` };
     } catch (error) {
       console.error('Error tracking game:', error);
+      throw error;
+    }
+  }
+
+  async ignoreChannel(channelId: string): Promise<void> {
+    try {
+      const token = localStorage.getItem('auth_token');
+      await axios.post(
+        '/api/discovery/channels/ignore',
+        { channel_id: channelId },
+        { headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' } }
+      );
+    } catch (error) {
+      console.error('Error ignoring channel:', error);
+      throw error;
+    }
+  }
+
+  async ignoreGame(gameId: string): Promise<void> {
+    try {
+      const token = localStorage.getItem('auth_token');
+      await axios.post(
+        '/api/discovery/games/ignore',
+        { game_id: gameId },
+        { headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' } }
+      );
+    } catch (error) {
+      console.error('Error ignoring game:', error);
       throw error;
     }
   }

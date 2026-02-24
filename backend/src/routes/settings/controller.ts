@@ -4,8 +4,13 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
 import fs from 'fs/promises';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
 import os from 'os';
+import { CleanupService } from '../../services/cleanupService';
+
+const execAsync = promisify(exec);
 
 export class SettingsController {
   constructor(private pool: Pool) {
@@ -180,20 +185,19 @@ export class SettingsController {
 
   async runStorageCleanup(req: Request, res: Response) {
     try {
-      const client = await this.pool.connect();
-      try {
-        const result = await client.query(`
-          SELECT value::integer as retention_days
-          FROM system_settings 
-          WHERE category = 'storage' AND key = 'retention_days'
-        `);
-
-        const retentionDays = result.rows[0]?.retention_days || 30;
-        // TODO: Implement actual cleanup logic
-        res.json({ message: 'Storage cleanup initiated' });
-      } finally {
-        client.release();
-      }
+      const cleanupService = new CleanupService(this.pool);
+      const stats = await cleanupService.forceCleanup();
+      res.json({
+        message: 'Storage cleanup completed',
+        stats: {
+          tempFilesDeleted: stats.tempFiles.deleted,
+          logFilesDeleted: stats.logFiles.deleted,
+          spaceFreedMB: Math.round((stats.tempFiles.spaceFreed + stats.logFiles.spaceFreed) / 1024 / 1024),
+          databaseEventsDeleted: stats.database.oldEvents,
+          orphanedRecordsDeleted: stats.database.orphanedRecords,
+          durationMs: stats.duration
+        }
+      });
     } catch (error) {
       logger.error('Error running storage cleanup:', error);
       res.status(500).json({ error: 'Failed to run storage cleanup' });
@@ -202,20 +206,50 @@ export class SettingsController {
 
   private async getDiskSpace(pathToCheck: string): Promise<{ totalSpace: number; usedSpace: number; freeSpace: number }> {
     try {
-      await fs.access(pathToCheck);
-      // For now, return dummy data as actual disk space checking requires additional system-level access
-      return {
-        totalSpace: 500 * 1024 * 1024 * 1024, // 500 GB
-        usedSpace: 200 * 1024 * 1024 * 1024,  // 200 GB
-        freeSpace: 300 * 1024 * 1024 * 1024   // 300 GB
-      };
+      await fs.mkdir(pathToCheck, { recursive: true });
+
+      // Try fs.statfs first (Node.js 18.15+, works on Linux/macOS)
+      if ((fs as any).statfs) {
+        try {
+          const stats = await (fs as any).statfs(pathToCheck);
+          const totalSpace = stats.blocks * stats.bsize;
+          const freeSpace = stats.bavail * stats.bsize;
+          const usedSpace = totalSpace - freeSpace;
+          return { totalSpace, usedSpace, freeSpace };
+        } catch (statfsErr) {
+          logger.debug('statfs failed, falling back to platform check:', statfsErr);
+        }
+      }
+
+      // Windows fallback: use wmic
+      if (process.platform === 'win32') {
+        try {
+          const driveLetter = path.resolve(pathToCheck).split(':')[0] + ':';
+          const { stdout } = await execAsync(
+            `wmic logicaldisk where "DeviceID='${driveLetter}'" get Size,FreeSpace /Format:csv`
+          );
+          const lines = stdout.trim().split('\n').filter(l => l.trim() && !l.startsWith('Node'));
+          if (lines.length > 0) {
+            const parts = lines[0].trim().split(',');
+            if (parts.length >= 3) {
+              const freeSpace = parseInt(parts[1], 10);
+              const totalSpace = parseInt(parts[2], 10);
+              const usedSpace = totalSpace - freeSpace;
+              if (!isNaN(totalSpace) && !isNaN(freeSpace)) {
+                return { totalSpace, usedSpace, freeSpace };
+              }
+            }
+          }
+        } catch (wmicErr) {
+          logger.debug('wmic disk space check failed:', wmicErr);
+        }
+      }
+
+      logger.warn('Could not determine real disk space; returning zeros.');
+      return { totalSpace: 0, usedSpace: 0, freeSpace: 0 };
     } catch (error) {
       logger.error('Error checking disk space:', error);
-      return {
-        totalSpace: 0,
-        usedSpace: 0,
-        freeSpace: 0
-      };
+      return { totalSpace: 0, usedSpace: 0, freeSpace: 0 };
     }
   }
 }

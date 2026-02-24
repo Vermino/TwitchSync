@@ -25,7 +25,7 @@ export class TaskOperations {
   constructor(
     private pool: Pool,
     private downloadManager: DownloadManager
-  ) {}
+  ) { }
 
   async createTask(userId: number, data: CreateTaskRequest): Promise<Task> {
     const client = await this.pool.connect();
@@ -48,9 +48,10 @@ export class TaskOperations {
           auto_delete,
           is_active,
           priority,
+          next_run,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW(), NOW())
         RETURNING id`,
         [
           userId,
@@ -64,7 +65,7 @@ export class TaskOperations {
           data.storage_limit_gb,
           data.retention_days,
           data.auto_delete || false,
-          data.is_active || true,
+          data.is_active !== undefined ? data.is_active : true,
           data.priority || 'low'
         ]
       );
@@ -257,7 +258,7 @@ export class TaskOperations {
       if (task.status === 'running') {
         // Get current download states to preserve segment positions
         const activeDownloads = this.downloadManager.getActiveDownloads();
-        
+
         // Store segment positions for active downloads
         for (const [vodId, downloadState] of Array.from(activeDownloads.entries())) {
           await client.query(`
@@ -355,7 +356,7 @@ export class TaskOperations {
           new_status: 'running',
           reason: 'user_resume',
           timestamp: new Date().toISOString(),
-          paused_duration_seconds: task.last_paused_at ? 
+          paused_duration_seconds: task.last_paused_at ?
             Math.floor((Date.now() - new Date(task.last_paused_at).getTime()) / 1000) : 0
         })
       ]);
@@ -379,7 +380,7 @@ export class TaskOperations {
     }
   }
 
-    async activateTask(taskId: number, userId: number): Promise<Task> {
+  async activateTask(taskId: number, userId: number): Promise<Task> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -411,10 +412,10 @@ export class TaskOperations {
           COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = $1), 0) as completed_count,
           COALESCE((SELECT COUNT(*) FROM vods v WHERE v.task_id = $1), 0) as total_count
       `, [taskId]);
-      
+
       const { completed_count, total_count } = completionStatsQuery.rows[0];
       const completionPercentage = total_count > 0 ? Math.round((completed_count / total_count) * 100) : 0;
-      const statusMessage = total_count > 0 
+      const statusMessage = total_count > 0
         ? `Downloaded: ${completed_count}/${total_count} VODs completed`
         : 'Task started - discovering VODs';
 
@@ -511,10 +512,10 @@ export class TaskOperations {
             COALESCE((SELECT COUNT(*) FROM completed_vods cv WHERE cv.task_id = $1), 0) as completed_count,
             COALESCE((SELECT COUNT(*) FROM vods v WHERE v.task_id = $1), 0) as total_count
         `, [taskId]);
-        
+
         const { completed_count, total_count } = completionStatsQuery.rows[0];
         const completionPercentage = total_count > 0 ? Math.round((completed_count / total_count) * 100) : 0;
-        const statusMessage = total_count > 0 
+        const statusMessage = total_count > 0
           ? `Downloaded: ${completed_count}/${total_count} VODs completed`
           : 'Task activated - discovering VODs';
 
@@ -575,7 +576,7 @@ export class TaskOperations {
       return result.rows[0];
 
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => {}); // Ignore rollback errors
+      await client.query('ROLLBACK').catch(() => { }); // Ignore rollback errors
       logger.error(`Error toggling task ${taskId} state:`, error);
       throw error;
     } finally {

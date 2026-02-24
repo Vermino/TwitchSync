@@ -2,6 +2,7 @@
 
 import { Router } from 'express';
 import { Pool } from 'pg';
+import { z } from 'zod';
 import DiscoveryController from './controller';
 import { validateRequest } from '../../middleware/validation';
 import { authenticate } from '../../middleware/auth';
@@ -53,6 +54,20 @@ export function createDiscoveryRouter(pool: Pool): Router {
     '/stats',
     discoveryFeedLimiter,
     controller.getDiscoveryStats
+  );
+
+  // Ignore a channel (remove from recommendations)
+  router.post(
+    '/channels/ignore',
+    validateRequest(z.object({ body: z.object({ channel_id: z.string().min(1) }) })),
+    controller.ignoreChannel
+  );
+
+  // Ignore a game (remove from recommendations)
+  router.post(
+    '/games/ignore',
+    validateRequest(z.object({ body: z.object({ game_id: z.string().min(1) }) })),
+    controller.ignoreGame
   );
 
   // Apply error handling middleware

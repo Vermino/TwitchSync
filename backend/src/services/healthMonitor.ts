@@ -2,11 +2,16 @@
 
 import { Pool } from 'pg';
 import { promises as fs } from 'fs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 import * as os from 'os';
 import { constants } from 'fs';
+import path from 'path';
+
+const execAsync = promisify(exec);
 
 export interface HealthStatus {
   status: 'healthy' | 'warning' | 'critical';
@@ -187,7 +192,7 @@ export class HealthMonitorService extends EventEmitter {
       return this.lastHealth;
     } catch (error) {
       logger.error('Health check error:', error);
-      
+
       this.lastHealth = {
         status: 'critical',
         checks: {
@@ -211,14 +216,14 @@ export class HealthMonitorService extends EventEmitter {
    */
   private async checkDatabase(): Promise<HealthCheck> {
     const startTime = Date.now();
-    
+
     try {
       const client = await this.pool.connect();
-      
+
       try {
         // Test basic connectivity
         await client.query('SELECT 1');
-        
+
         // Check connection pool status
         const poolStats = {
           totalCount: this.pool.totalCount,
@@ -271,7 +276,7 @@ export class HealthMonitorService extends EventEmitter {
     try {
       // Use statvfs for better cross-platform compatibility
       let freeBytes: number, totalBytes: number;
-      
+
       try {
         if (fs.statfs) {
           const stats = await fs.statfs(config.storage.storagePath) as any;
@@ -286,7 +291,7 @@ export class HealthMonitorService extends EventEmitter {
         freeBytes = fallback.free;
         totalBytes = fallback.total;
       }
-      
+
       const usedBytes = totalBytes - freeBytes;
       const usagePercent = (usedBytes / totalBytes) * 100;
 
@@ -386,7 +391,7 @@ export class HealthMonitorService extends EventEmitter {
   private async checkDownloadManager(): Promise<HealthCheck> {
     try {
       const client = await this.pool.connect();
-      
+
       try {
         // Check active downloads
         const activeResult = await client.query(`
@@ -462,7 +467,7 @@ export class HealthMonitorService extends EventEmitter {
   private async checkTaskQueue(): Promise<HealthCheck> {
     try {
       const client = await this.pool.connect();
-      
+
       try {
         // Check running tasks
         const runningResult = await client.query(`
@@ -558,7 +563,7 @@ export class HealthMonitorService extends EventEmitter {
     // Disk metrics
     try {
       let totalBytes: number, freeBytes: number;
-      
+
       try {
         if (fs.statfs) {
           const stats = await fs.statfs(config.storage.storagePath) as any;
@@ -572,7 +577,7 @@ export class HealthMonitorService extends EventEmitter {
         totalBytes = fallback.total;
         freeBytes = fallback.free;
       }
-      
+
       this.metrics.disk = {
         total: totalBytes,
         free: freeBytes,
@@ -604,7 +609,7 @@ export class HealthMonitorService extends EventEmitter {
    */
   private calculateOverallStatus(checks: HealthStatus['checks']): 'healthy' | 'warning' | 'critical' {
     const statuses = Object.values(checks).map(check => check.status);
-    
+
     if (statuses.includes('critical')) return 'critical';
     if (statuses.includes('warning')) return 'warning';
     return 'healthy';
@@ -641,25 +646,32 @@ export class HealthMonitorService extends EventEmitter {
   }
 
   /**
-   * Fallback disk space calculation for Windows/systems without statfs
+   * Fallback disk space calculation using wmic on Windows
    */
-  private async getFallbackDiskSpace(path: string): Promise<{ total: number; free: number }> {
+  private async getFallbackDiskSpace(checkPath: string): Promise<{ total: number; free: number }> {
     try {
-      // For Windows, we can use a simple approximation
-      // This is a basic fallback - in production you might want a more robust solution
-      const stats = await fs.stat(path);
-      
-      // Return placeholder values - in a real implementation you'd use platform-specific APIs
-      return {
-        total: 1024 * 1024 * 1024 * 100, // 100GB placeholder
-        free: 1024 * 1024 * 1024 * 50    // 50GB placeholder
-      };
+      if (process.platform === 'win32') {
+        const driveLetter = path.resolve(checkPath).split(':')[0] + ':';
+        const { stdout } = await execAsync(
+          `wmic logicaldisk where "DeviceID='${driveLetter}'" get Size,FreeSpace /Format:csv`
+        );
+        const lines = stdout.trim().split('\n').filter(l => l.trim() && !l.startsWith('Node'));
+        if (lines.length > 0) {
+          const parts = lines[0].trim().split(',');
+          if (parts.length >= 3) {
+            const free = parseInt(parts[1], 10);
+            const total = parseInt(parts[2], 10);
+            if (!isNaN(total) && !isNaN(free)) {
+              return { total, free };
+            }
+          }
+        }
+      }
+      logger.warn('Could not determine real disk space via fallback');
+      return { total: 0, free: 0 };
     } catch (error) {
       logger.debug('Fallback disk space check failed:', error);
-      return {
-        total: 1024 * 1024 * 1024 * 100, // 100GB placeholder
-        free: 1024 * 1024 * 1024 * 50    // 50GB placeholder
-      };
+      return { total: 0, free: 0 };
     }
   }
 }

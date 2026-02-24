@@ -14,19 +14,19 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3501',
         changeOrigin: true,
       },
       '/auth/twitch': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3501',
         changeOrigin: true,
       },
       '/auth/me': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3501',
         changeOrigin: true,
       },
       '/auth/logout': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3501',
         changeOrigin: true,
       }
     }

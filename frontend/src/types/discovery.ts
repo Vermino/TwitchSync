@@ -195,6 +195,7 @@ export interface RecommendationCardProps {
   item: Recommendation;
   type: 'channel' | 'game';
   onAction: (id: string) => Promise<void>;
+  onIgnore?: (id: string) => Promise<void>;
 }
 
 export interface FilterPanelProps {

@@ -14,7 +14,7 @@ import {
 import { withTransaction } from '../../middleware/withTransaction';
 
 export class DiscoveryController {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool) { }
 
   getDiscoveryFeed = async (req: Request, res: Response, next: NextFunction) => {
     const client = await this.pool.connect();
@@ -335,6 +335,54 @@ export class DiscoveryController {
         logger.error('Error tracking premiere:', error);
         next(new DiscoveryError('Failed to track premiere', 500));
       }
+    }
+  };
+
+  ignoreChannel = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) throw new DiscoveryError('User not authenticated', 401);
+
+      const { channel_id } = req.body;
+      if (!channel_id) throw new DiscoveryError('channel_id is required', 400);
+
+      await withTransaction(this.pool, async (client) => {
+        await client.query(`
+          INSERT INTO ignored_discovery_items (user_id, item_type, item_id, created_at)
+          VALUES ($1, 'channel', $2, CURRENT_TIMESTAMP)
+          ON CONFLICT (user_id, item_type, item_id) DO NOTHING
+        `, [userId, channel_id]);
+      });
+
+      logger.info(`User ${userId} ignored channel ${channel_id}`);
+      res.json({ message: 'Channel ignored successfully' });
+    } catch (error) {
+      if (error instanceof DiscoveryError) next(error);
+      else next(new DiscoveryError('Failed to ignore channel', 500));
+    }
+  };
+
+  ignoreGame = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) throw new DiscoveryError('User not authenticated', 401);
+
+      const { game_id } = req.body;
+      if (!game_id) throw new DiscoveryError('game_id is required', 400);
+
+      await withTransaction(this.pool, async (client) => {
+        await client.query(`
+          INSERT INTO ignored_discovery_items (user_id, item_type, item_id, created_at)
+          VALUES ($1, 'game', $2, CURRENT_TIMESTAMP)
+          ON CONFLICT (user_id, item_type, item_id) DO NOTHING
+        `, [userId, game_id]);
+      });
+
+      logger.info(`User ${userId} ignored game ${game_id}`);
+      res.json({ message: 'Game ignored successfully' });
+    } catch (error) {
+      if (error instanceof DiscoveryError) next(error);
+      else next(new DiscoveryError('Failed to ignore game', 500));
     }
   };
 

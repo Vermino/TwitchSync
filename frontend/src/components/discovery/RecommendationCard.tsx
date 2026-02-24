@@ -11,7 +11,7 @@ import type {
   GameRecommendation
 } from '@/types/discovery';
 
-const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onAction }) => {
+const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onAction, onIgnore }) => {
   const renderReasons = () => (
     <div className="space-y-2 mb-3">
       {item.reasons.map((reason, index) => (
@@ -69,12 +69,23 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
             </div>
           </div>
 
-          <button
-            onClick={() => onAction(channelRec.id)}
-            className="w-full px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
-          >
-            Follow Channel
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onAction(channelRec.id)}
+              className="flex-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+            >
+              Follow Channel
+            </button>
+            {onIgnore && (
+              <button
+                onClick={() => onIgnore(channelRec.id)}
+                className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-100 transition-colors"
+                title="Don't show this channel again"
+              >
+                Ignore
+              </button>
+            )}
+          </div>
         </CardContent>
       </Card>
     );
@@ -121,12 +132,23 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
           </div>
         </div>
 
-        <button
-          onClick={() => onAction(gameRec.id)}
-          className="w-full px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
-        >
-          Track Game
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onAction(gameRec.id)}
+            className="flex-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+          >
+            Track Game
+          </button>
+          {onIgnore && (
+            <button
+              onClick={() => onIgnore(gameRec.id)}
+              className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-100 transition-colors"
+              title="Don't show this game again"
+            >
+              Ignore
+            </button>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
