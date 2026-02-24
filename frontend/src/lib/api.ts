@@ -22,7 +22,7 @@ import {
   TaskStorage,
   UpdateTaskRequest
 } from "@/types";
-import {DashboardStats} from "../types";
+import { DashboardStats } from "../types";
 
 class ApiClient {
   private static instance: ApiClient;
@@ -32,37 +32,37 @@ class ApiClient {
   private constructor() {
     // Add request interceptor for auth token
     axios.interceptors.request.use(
-        (config) => {
-          const token = localStorage.getItem('auth_token');
-          if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-          }
-          return config;
-        },
-        (error) => {
-          return Promise.reject(error);
+      (config) => {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
         }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
     );
 
     // Add response interceptor for error handling
     axios.interceptors.response.use(
-        (response) => response,
-        (error) => {
-          if (error.response?.status === 401) {
-            localStorage.removeItem('auth_token');
-            window.location.href = '/login';
-          }
-          // Extract and throw the error message
-          if (error.response?.data?.error) {
-            throw new Error(error.response.data.error);
-          }
-          if (error.response?.data?.details) {
-            const details = error.response.data.details;
-            const messages = details.map((detail: any) => detail.message);
-            throw new Error(messages.join(', '));
-          }
-          throw error;
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/login';
         }
+        // Extract and throw the error message
+        if (error.response?.data?.error) {
+          throw new Error(error.response.data.error);
+        }
+        if (error.response?.data?.details) {
+          const details = error.response.data.details;
+          const messages = details.map((detail: any) => detail.message);
+          throw new Error(messages.join(', '));
+        }
+        throw error;
+      }
     );
   }
 
@@ -77,10 +77,22 @@ class ApiClient {
   async getTasks(): Promise<Task[]> {
     try {
       const response = await axios.get(
-          `${this.baseURL}/tasks`,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks`,
+        { headers: this.getHeaders() }
       );
-      return Array.isArray(response.data) ? response.data : [];
+      const tasks = Array.isArray(response.data) ? response.data : [];
+      // Map flat backend fields into nested TaskProgress structure
+      return tasks.map((task: any) => ({
+        ...task,
+        progress: {
+          percentage: Number(task.progress_percentage) || 0,
+          status_message: task.status_message || undefined,
+          current_progress: {
+            completed: Number(task.items_completed) || 0,
+            total: Number(task.items_total) || 0,
+          }
+        }
+      }));
     } catch (error) {
       console.error('Error fetching tasks:', error);
       throw this.handleError(error);
@@ -92,13 +104,13 @@ class ApiClient {
   async twitchCallback(code: string) {
     try {
       const response = await axios.post(
-          `${this.authURL}/twitch/callback`,
-          { code },
-          {
-            headers: {
-              'Content-Type': 'application/json'
-            }
+        `${this.authURL}/twitch/callback`,
+        { code },
+        {
+          headers: {
+            'Content-Type': 'application/json'
           }
+        }
       );
       return response.data;
     } catch (error) {
@@ -122,9 +134,9 @@ class ApiClient {
   async logout() {
     try {
       const response = await axios.post(
-          `${this.authURL}/logout`,
-          {},
-          { headers: this.getHeaders() }
+        `${this.authURL}/logout`,
+        {},
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -136,9 +148,9 @@ class ApiClient {
   async revokeTwitchAccess() {
     try {
       const response = await axios.post(
-          `${this.authURL}/twitch/revoke`,
-          {},
-          { headers: this.getHeaders() }
+        `${this.authURL}/twitch/revoke`,
+        {},
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -309,17 +321,17 @@ class ApiClient {
       }
 
       const response = await axios.post(
-          `${this.baseURL}/channels`,
-          {
-            twitch_id: data.twitch_id,
-            username: data.username,
-            display_name: data.display_name || data.username,
-            profile_image_url: data.profile_image_url || null,
-            description: data.description || '',
-            follower_count: data.follower_count || 0,
-            is_active: true
-          },
-          { headers: this.getHeaders() }
+        `${this.baseURL}/channels`,
+        {
+          twitch_id: data.twitch_id,
+          username: data.username,
+          display_name: data.display_name || data.username,
+          profile_image_url: data.profile_image_url || null,
+          description: data.description || '',
+          follower_count: data.follower_count || 0,
+          is_active: true
+        },
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -331,9 +343,9 @@ class ApiClient {
   async updateChannel(id: number, data: { is_active?: boolean }): Promise<Channel> {
     try {
       const response = await axios.put(
-          `${this.baseURL}/channels/${id}`,
-          data,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/channels/${id}`,
+        data,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -377,17 +389,17 @@ class ApiClient {
   }): Promise<Game> {
     try {
       const response = await axios.post(
-          `${this.baseURL}/games`,
-          {
-            twitch_game_id: data.twitch_game_id,
-            name: data.name,
-            box_art_url: data.box_art_url,
-            category: data.category || data.name.split(' ')[0].toLowerCase(),
-            tags: data.tags || [],
-            status: data.status || 'active',
-            is_active: data.is_active !== undefined ? data.is_active : true
-          },
-          { headers: this.getHeaders() }
+        `${this.baseURL}/games`,
+        {
+          twitch_game_id: data.twitch_game_id,
+          name: data.name,
+          box_art_url: data.box_art_url,
+          category: data.category || data.name.split(' ')[0].toLowerCase(),
+          tags: data.tags || [],
+          status: data.status || 'active',
+          is_active: data.is_active !== undefined ? data.is_active : true
+        },
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -399,9 +411,9 @@ class ApiClient {
   async updateGame(id: number, data: { is_active?: boolean }): Promise<Game> {
     try {
       const response = await axios.put(
-          `${this.baseURL}/games/${id}`,
-          data,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/games/${id}`,
+        data,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -448,9 +460,9 @@ class ApiClient {
       }
 
       const response = await axios.post(
-          `${this.baseURL}/tasks`,
-          taskData,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks`,
+        taskData,
+        { headers: this.getHeaders() }
       );
 
       return response.data;
@@ -474,9 +486,9 @@ class ApiClient {
       }
 
       const response = await axios.put(
-          `${this.baseURL}/tasks/${id}`,
-          updateData,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}`,
+        updateData,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -488,9 +500,9 @@ class ApiClient {
   async getTask(id: number, path: string): Promise<void> {
     try {
       await axios.put(
-          `${this.baseURL}/tasks/${id}/path`,
-          { path },
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}/path`,
+        { path },
+        { headers: this.getHeaders() }
       );
     } catch (error) {
       console.error('Error updating task path:', error);
@@ -501,8 +513,8 @@ class ApiClient {
   async getTaskDetails(id: number): Promise<TaskDetails> {
     try {
       const response = await axios.get(
-          `${this.baseURL}/tasks/${id}/details`,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}/details`,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -514,8 +526,8 @@ class ApiClient {
   async deleteTask(id: number): Promise<void> {
     try {
       await axios.delete(
-          `${this.baseURL}/tasks/${id}`,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}`,
+        { headers: this.getHeaders() }
       );
     } catch (error) {
       console.error('Error deleting task:', error);
@@ -526,9 +538,9 @@ class ApiClient {
   async updateTaskPath(id: number, path: string): Promise<void> {
     try {
       await axios.put(
-          `${this.baseURL}/tasks/${id}/path`,
-          { path },
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}/path`,
+        { path },
+        { headers: this.getHeaders() }
       );
     } catch (error) {
       console.error('Error updating task path:', error);
@@ -540,8 +552,8 @@ class ApiClient {
   async getTaskProgress(id: number): Promise<TaskProgress> {
     try {
       const response = await axios.get(
-          `${this.baseURL}/tasks/${id}/progress`,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}/progress`,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -553,8 +565,8 @@ class ApiClient {
   async getTaskStorage(id: number): Promise<TaskStorage> {
     try {
       const response = await axios.get(
-          `${this.baseURL}/tasks/${id}/storage`,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}/storage`,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -566,9 +578,9 @@ class ApiClient {
   async runTask(id: number): Promise<void> {
     try {
       await axios.post(
-          `${this.baseURL}/tasks/${id}/run`,
-          {},
-          { headers: this.getHeaders() }
+        `${this.baseURL}/tasks/${id}/run`,
+        {},
+        { headers: this.getHeaders() }
       );
     } catch (error) {
       console.error('Error running task:', error);
@@ -711,9 +723,9 @@ class ApiClient {
   } = {}): Promise<void> {
     try {
       await axios.post(
-          `${this.baseURL}/channels/track/${channelId}`,
-          options,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/channels/track/${channelId}`,
+        options,
+        { headers: this.getHeaders() }
       );
     } catch (error) {
       console.error('Error tracking channel:', error);
@@ -727,9 +739,9 @@ class ApiClient {
   } = {}): Promise<void> {
     try {
       await axios.post(
-          `${this.baseURL}/games/track/${gameId}`,
-          options,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/games/track/${gameId}`,
+        options,
+        { headers: this.getHeaders() }
       );
     } catch (error) {
       console.error('Error tracking game:', error);
@@ -756,9 +768,9 @@ class ApiClient {
   }): Promise<TrackPremiereResponse> {
     try {
       const response = await axios.post(
-          `${this.baseURL}/discovery/premieres/${id}/track`,
-          config,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/discovery/premieres/${id}/track`,
+        config,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -770,9 +782,9 @@ class ApiClient {
   async updateDiscoveryPreferences(preferences: Partial<DiscoveryPreferences>): Promise<UpdatePreferencesResponse> {
     try {
       const response = await axios.put(
-          `${this.baseURL}/discovery/preferences`,
-          preferences,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/discovery/preferences`,
+        preferences,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {
@@ -826,9 +838,9 @@ class ApiClient {
   }) {
     try {
       const response = await axios.put(
-          `${this.baseURL}/settings`,
-          settings,
-          { headers: this.getHeaders() }
+        `${this.baseURL}/settings`,
+        settings,
+        { headers: this.getHeaders() }
       );
       return response.data;
     } catch (error) {

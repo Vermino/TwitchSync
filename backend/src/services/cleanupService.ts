@@ -346,34 +346,46 @@ export class CleanupService extends EventEmitter {
 
     try {
       // Find downloads that have been stuck for a long time
+      // Exclude VODs that actually completed (have entries in completed_vods)
       const abandonedResult = await client.query(`
-        SELECT id, download_path
-        FROM vods
-        WHERE download_status IN ('downloading', 'processing')
-        AND updated_at < NOW() - INTERVAL '6 hours'
+        SELECT v.id, v.download_path, cv.vod_id IS NOT NULL as is_completed
+        FROM vods v
+        LEFT JOIN completed_vods cv ON v.id = cv.vod_id
+        WHERE v.download_status IN ('downloading', 'processing')
+        AND v.updated_at < NOW() - INTERVAL '6 hours'
       `);
 
       for (const vod of abandonedResult.rows) {
         try {
-          // Clean up temp files
-          if (vod.download_path) {
-            const tempPath = path.join(config.storage.tempPath, path.basename(vod.download_path));
-            await this.removeDirectoryRecursive(tempPath);
+          if (vod.is_completed) {
+            // This VOD actually completed — fix its status instead of marking failed
+            await client.query(`
+              UPDATE vods
+              SET download_status = 'completed',
+                  download_progress = 100,
+                  updated_at = NOW()
+              WHERE id = $1
+            `, [vod.id]);
+            logger.info(`Fixed completed download mistakenly stuck in downloading: VOD ${vod.id}`);
+          } else {
+            // Truly abandoned — clean up temp files and mark as failed
+            if (vod.download_path) {
+              const tempPath = path.join(config.storage.tempPath, path.basename(vod.download_path));
+              await this.removeDirectoryRecursive(tempPath);
+            }
+
+            await client.query(`
+              UPDATE vods
+              SET download_status = 'failed',
+                  error_message = 'Download abandoned during cleanup',
+                  download_path = NULL,
+                  download_progress = 0,
+                  resume_segment_index = 0,
+                  updated_at = NOW()
+              WHERE id = $1
+            `, [vod.id]);
+            logger.info(`Cleaned up abandoned download: VOD ${vod.id}`);
           }
-
-          // Reset VOD status
-          await client.query(`
-            UPDATE vods
-            SET download_status = 'failed',
-                error_message = 'Download abandoned during cleanup',
-                download_path = NULL,
-                download_progress = 0,
-                resume_segment_index = 0,
-                updated_at = NOW()
-            WHERE id = $1
-          `, [vod.id]);
-
-          logger.info(`Cleaned up abandoned download: VOD ${vod.id}`);
         } catch (error) {
           logger.error(`Failed to cleanup abandoned download ${vod.id}:`, error);
         }

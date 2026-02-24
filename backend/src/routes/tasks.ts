@@ -42,7 +42,7 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      // Get all tasks with monitoring data
+      // Get all tasks with live VOD progress data
       const result = await client.query(`
         SELECT 
           t.id,
@@ -65,17 +65,35 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
           t.updated_at,
           tm.status as monitoring_status,
           tm.status_message,
-          tm.progress_percentage,
-          tm.items_total,
-          tm.items_completed,
+          -- Live VOD progress calculation
+          COALESCE(vod_stats.total_vods, 0) as items_total,
+          COALESCE(vod_stats.completed_vods, 0) as items_completed,
+          COALESCE(vod_stats.downloading_vods, 0) as items_downloading,
+          COALESCE(vod_stats.failed_vods, 0) as items_failed,
+          CASE 
+            WHEN COALESCE(vod_stats.total_vods, 0) > 0 
+            THEN ROUND((COALESCE(vod_stats.completed_vods, 0)::numeric / vod_stats.total_vods::numeric) * 100)
+            ELSE 0
+          END as progress_percentage,
           array_agg(DISTINCT COALESCE(c.display_name, c.username)) FILTER (WHERE c.username IS NOT NULL) as channel_names,
           array_agg(DISTINCT g.name) FILTER (WHERE g.name IS NOT NULL) as game_names
         FROM tasks t
         LEFT JOIN task_monitoring tm ON t.id = tm.task_id
         LEFT JOIN channels c ON c.id = ANY(t.channel_ids)
         LEFT JOIN games g ON g.id = ANY(t.game_ids)
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) as total_vods,
+            COUNT(*) FILTER (WHERE v.download_status = 'completed') as completed_vods,
+            COUNT(*) FILTER (WHERE v.download_status = 'downloading') as downloading_vods,
+            COUNT(*) FILTER (WHERE v.download_status = 'failed') as failed_vods
+          FROM vods v
+          WHERE v.task_id = t.id
+        ) vod_stats ON true
         WHERE t.user_id = $1
-        GROUP BY t.id, tm.status, tm.status_message, tm.progress_percentage, tm.items_total, tm.items_completed
+        GROUP BY t.id, tm.status, tm.status_message,
+                 vod_stats.total_vods, vod_stats.completed_vods,
+                 vod_stats.downloading_vods, vod_stats.failed_vods
         ORDER BY t.priority DESC, t.created_at DESC
       `, [parseInt(userId)]);
 

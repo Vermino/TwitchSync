@@ -32,25 +32,8 @@ export default function TaskStats({ task, channels = [], games = [], channelsLoa
 
   const { data: vods = [] } = useQuery({
     queryKey: ['vods'],
-    queryFn: async () => {
-      try {
-        const response = await fetch('/api/vods', {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
-        });
-        if (!response.ok) {
-          throw new Error('Failed to fetch VODs');
-        }
-        const data = await response.json();
-        return data;
-      } catch (error) {
-        console.error('Error fetching VODs:', error);
-        return [];
-      }
-    },
-    refetchInterval: 5000 // Refresh every 5 seconds for real-time updates
+    queryFn: () => api.getVods(),
+    refetchInterval: 5000
   });
 
   const getTaskVods = (taskId: number) => {

@@ -3,10 +3,10 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { authenticate } from '../../middleware/auth';
-import { 
-  getDownloadQueue, 
-  getQueueHistory, 
-  getQueueStats, 
+import {
+  getDownloadQueue,
+  getQueueHistory,
+  getQueueStats,
   updateVodPriority,
   retryFailedVod,
   bulkUpdatePriority,
@@ -16,8 +16,8 @@ import {
   getQueueEstimate,
   executeBulkAction
 } from './operations';
-import { 
-  validatePriorityUpdate, 
+import {
+  validatePriorityUpdate,
   validateBulkPriorityUpdate,
   validateRetry
 } from './validation';
@@ -55,14 +55,23 @@ export function setupQueueRoutes(pool: Pool): Router {
     }
 
     try {
-      const { status, limit, offset, task_id } = req.query;
+      const { status, limit, offset, task_id, page } = req.query;
       const statusFilter = status ? String(status).split(',') : ['completed', 'failed'];
+      const pageNum = page ? parseInt(String(page), 10) : 1;
       const limitNum = limit ? parseInt(String(limit), 10) : 50;
-      const offsetNum = offset ? parseInt(String(offset), 10) : 0;
+      const offsetNum = offset ? parseInt(String(offset), 10) : (pageNum - 1) * limitNum;
       const taskId = task_id ? parseInt(String(task_id), 10) : undefined;
 
       const history = await getQueueHistory(pool, Number(userId), statusFilter, limitNum, offsetNum, taskId);
-      res.json(history);
+      const totalPages = Math.ceil((history.total || 0) / limitNum);
+
+      res.json({
+        items: history.items,
+        total: history.total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages
+      });
     } catch (error) {
       logger.error('Error fetching queue history:', error);
       res.status(500).json({ error: 'Failed to fetch queue history' });
@@ -79,7 +88,7 @@ export function setupQueueRoutes(pool: Pool): Router {
     try {
       const { task_id } = req.query;
       const taskId = task_id ? parseInt(String(task_id), 10) : undefined;
-      
+
       const stats = await getQueueStats(pool, Number(userId), taskId);
       res.json(stats);
     } catch (error) {
@@ -121,11 +130,11 @@ export function setupQueueRoutes(pool: Pool): Router {
     try {
       const { updates } = req.body;
       const results = await bulkUpdatePriority(pool, updates, Number(userId));
-      
-      res.json({ 
-        message: 'Bulk priority update completed', 
+
+      res.json({
+        message: 'Bulk priority update completed',
         updated: results.length,
-        results 
+        results
       });
     } catch (error) {
       logger.error('Error bulk updating VOD priorities:', error);
@@ -166,7 +175,7 @@ export function setupQueueRoutes(pool: Pool): Router {
     try {
       const vodId = parseInt(req.params.id, 10);
       const result = await moveVodToTop(pool, vodId, Number(userId));
-      
+
       if (!result) {
         return res.status(404).json({ error: 'VOD not found or not in queue' });
       }
@@ -188,7 +197,7 @@ export function setupQueueRoutes(pool: Pool): Router {
     try {
       const vodId = parseInt(req.params.id, 10);
       const result = await moveVodToBottom(pool, vodId, Number(userId));
-      
+
       if (!result) {
         return res.status(404).json({ error: 'VOD not found or not in queue' });
       }
@@ -210,11 +219,11 @@ export function setupQueueRoutes(pool: Pool): Router {
     try {
       const { task_id } = req.query;
       const taskId = task_id ? parseInt(String(task_id), 10) : undefined;
-      
+
       const result = await clearCompletedVods(pool, Number(userId), taskId);
-      res.json({ 
+      res.json({
         message: `Cleared ${result.deleted} completed VODs from history`,
-        deleted: result.deleted 
+        deleted: result.deleted
       });
     } catch (error) {
       logger.error('Error clearing completed VODs:', error);
@@ -232,7 +241,7 @@ export function setupQueueRoutes(pool: Pool): Router {
     try {
       const { task_id } = req.query;
       const taskId = task_id ? parseInt(String(task_id), 10) : undefined;
-      
+
       const estimate = await getQueueEstimate(pool, Number(userId), taskId);
       res.json(estimate);
     } catch (error) {
@@ -250,7 +259,7 @@ export function setupQueueRoutes(pool: Pool): Router {
 
     try {
       const action = req.body;
-      
+
       // Basic validation
       if (!action || !action.type) {
         return res.status(400).json({ error: 'Invalid bulk action: type is required' });
@@ -266,7 +275,7 @@ export function setupQueueRoutes(pool: Pool): Router {
       }
 
       const result = await executeBulkAction(pool, action, Number(userId));
-      
+
       if (result.success) {
         res.json(result);
       } else {
@@ -274,7 +283,7 @@ export function setupQueueRoutes(pool: Pool): Router {
       }
     } catch (error) {
       logger.error('Error executing bulk action:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
         message: 'Failed to execute bulk action',
         errors: [error instanceof Error ? error.message : 'Unknown error']

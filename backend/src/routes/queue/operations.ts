@@ -83,17 +83,13 @@ export async function getQueueHistory(
   taskId?: number
 ): Promise<QueueResponse> {
   return withTransaction(pool, async (client) => {
-    const baseWhere = taskId 
+    const baseWhere = taskId
       ? 'WHERE t.user_id = $1 AND v.download_status = ANY($2) AND t.id = $3'
       : 'WHERE t.user_id = $1 AND v.download_status = ANY($2)';
-    
-    const countParams = taskId 
+
+    const countParams = taskId
       ? [userId, statusFilter, taskId]
       : [userId, statusFilter];
-    
-    const historyParams = taskId 
-      ? [userId, statusFilter, limit, offset, taskId]
-      : [userId, statusFilter, limit, offset];
 
     // Get total count
     const countQuery = `
@@ -102,21 +98,29 @@ export async function getQueueHistory(
       JOIN tasks t ON v.task_id = t.id
       ${baseWhere}
     `;
-    
+
     const countResult = await client.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].total);
 
     // Build proper query for history items
     let historyQuery = `
       SELECT 
-        v.*,
-        t.name as task_name,
+        v.id,
+        v.id as vod_id,
+        v.task_id,
+        v.title,
+        v.thumbnail_url,
+        v.duration,
+        v.download_status as status,
+        v.download_path as file_path,
+        v.error_message,
+        v.retry_count,
+        COALESCE(cv.file_size_bytes, v.file_size, 0) as file_size,
+        COALESCE(cv.download_speed_mbps, 0) as download_speed,
+        COALESCE(cv.download_duration_seconds, 0) as download_time,
+        COALESCE(cv.completed_at, v.downloaded_at, v.updated_at) as completed_at,
         c.username as channel_name,
-        g.name as game_name,
-        cv.completed_at as actual_completed_at,
-        cv.file_size_bytes as actual_file_size,
-        cv.download_duration_seconds,
-        cv.download_speed_mbps
+        g.name as game_name
       FROM vods v
       JOIN tasks t ON v.task_id = t.id
       LEFT JOIN channels c ON v.channel_id = c.id
@@ -124,25 +128,25 @@ export async function getQueueHistory(
       LEFT JOIN completed_vods cv ON v.id = cv.vod_id
       WHERE t.user_id = $1 AND v.download_status = ANY($2)
     `;
-    
+
     let historyQueryParams: any[] = [userId, statusFilter];
     let paramIndex = 3;
-    
+
     if (taskId) {
       historyQuery += ` AND t.id = $${paramIndex}`;
       historyQueryParams.push(taskId);
       paramIndex++;
     }
-    
+
     historyQuery += `
       ORDER BY 
         CASE WHEN v.download_status = 'completed' THEN cv.completed_at ELSE v.updated_at END DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
-    
+
     historyQueryParams.push(limit, offset);
-    
-    const historyResult = await client.query<QueueItem>(historyQuery, historyQueryParams);
+
+    const historyResult = await client.query(historyQuery, historyQueryParams);
 
     return {
       items: historyResult.rows,
@@ -160,10 +164,10 @@ export async function getQueueStats(
   taskId?: number
 ): Promise<QueueStats> {
   return withTransaction(pool, async (client) => {
-    const baseWhere = taskId 
+    const baseWhere = taskId
       ? 'WHERE t.user_id = $1 AND t.id = $2'
       : 'WHERE t.user_id = $1';
-    
+
     const params = taskId ? [userId, taskId] : [userId];
 
     const result = await client.query(`
@@ -181,7 +185,7 @@ export async function getQueueStats(
     `, params);
 
     const row = result.rows[0];
-    
+
     return {
       pending: row.pending || 0,
       queued: row.queued || 0,
@@ -263,10 +267,10 @@ export async function clearCompletedVods(
   taskId?: number
 ): Promise<{ deleted: number }> {
   return withTransaction(pool, async (client) => {
-    const baseWhere = taskId 
+    const baseWhere = taskId
       ? 'WHERE t.user_id = $1 AND v.download_status = $2 AND t.id = $3'
       : 'WHERE t.user_id = $1 AND v.download_status = $2';
-    
+
     const params = taskId ? [userId, 'completed', taskId] : [userId, 'completed'];
 
     const result = await client.query(`
@@ -314,10 +318,10 @@ export async function getQueueEstimate(
   taskId?: number
 ): Promise<{ estimatedMinutes: number; totalItems: number }> {
   return withTransaction(pool, async (client) => {
-    const baseWhere = taskId 
+    const baseWhere = taskId
       ? 'WHERE t.user_id = $1 AND t.id = $2'
       : 'WHERE t.user_id = $1';
-    
+
     const params = taskId ? [userId, taskId] : [userId];
 
     // Get queue statistics and average download speed
@@ -335,9 +339,9 @@ export async function getQueueEstimate(
     const row = result.rows[0];
     const queueItems = row.queue_items || 0;
     const avgDurationSeconds = row.avg_duration_seconds || 300; // Default 5 minutes
-    
+
     const estimatedMinutes = Math.ceil((queueItems * avgDurationSeconds) / 60);
-    
+
     return {
       estimatedMinutes,
       totalItems: queueItems
@@ -369,7 +373,7 @@ export async function retryFailedVod(
     }
 
     const vod = verifyResult.rows[0];
-    
+
     // Check if we can retry (unless reset is requested)
     if (!resetRetryCount && vod.retry_count >= vod.max_retries) {
       logger.warn(`VOD ${vodId} has exceeded max retries (${vod.retry_count}/${vod.max_retries})`);
@@ -440,7 +444,7 @@ export async function executeBulkAction(
       }
 
       logger.info(`Bulk action ${action.type} completed: ${message}`);
-      
+
       return {
         success: true,
         message,
@@ -450,7 +454,7 @@ export async function executeBulkAction(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       logger.error(`Bulk action ${action.type} failed:`, error);
-      
+
       return {
         success: false,
         message: `Bulk action failed: ${errorMsg}`,

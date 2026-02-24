@@ -134,10 +134,33 @@ export class ChannelsController {
         };
       });
 
-      // Check current live status for each channel
+      // Check current live status and backfill missing profile images
       const updatedChannels = await Promise.all(
         result.channels.map(async (channel) => {
           try {
+            // Backfill missing profile_image_url from Twitch API
+            if (!channel.profile_image_url && channel.username) {
+              try {
+                const twitchUser = await this.twitchService.getChannelInfo(channel.username);
+                if (twitchUser?.profile_image_url) {
+                  channel.profile_image_url = twitchUser.profile_image_url;
+                  // Update DB so we don't need to fetch again
+                  const updateClient = await this.pool.connect();
+                  try {
+                    await updateClient.query(
+                      'UPDATE channels SET profile_image_url = $1, updated_at = NOW() WHERE id = $2',
+                      [twitchUser.profile_image_url, channel.id]
+                    );
+                    logger.info(`Backfilled profile_image_url for channel ${channel.username}`);
+                  } finally {
+                    updateClient.release();
+                  }
+                }
+              } catch (err) {
+                logger.warn(`Could not backfill profile image for ${channel.username}:`, err);
+              }
+            }
+
             const currentGame = await this.twitchService.getCurrentGame(channel.twitch_id);
             if (currentGame) {
               return {

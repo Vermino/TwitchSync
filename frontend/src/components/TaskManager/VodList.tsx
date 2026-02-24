@@ -91,7 +91,7 @@ export default function VodList({ taskId, loading }: VodListProps) {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right min-w-[120px]">
-              {vod.status === 'downloading' && (
+              {vod.download_status === 'downloading' && (
                 <div className="mb-2 space-y-1">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Progress</span>
@@ -106,8 +106,8 @@ export default function VodList({ taskId, loading }: VodListProps) {
                   )}
                   {(vod as any).download_speed && (
                     <div className="text-xs text-muted-foreground">
-                      {((vod as any).download_speed < 1 ? 
-                        `${((vod as any).download_speed * 1024).toFixed(0)} KB/s` : 
+                      {((vod as any).download_speed < 1 ?
+                        `${((vod as any).download_speed * 1024).toFixed(0)} KB/s` :
                         `${(vod as any).download_speed.toFixed(1)} MB/s`)}
                     </div>
                   )}
@@ -119,13 +119,13 @@ export default function VodList({ taskId, loading }: VodListProps) {
                 </div>
               )}
               <Badge variant={
-                vod.status === 'completed' ? 'default' :
-                vod.status === 'failed' ? 'destructive' :
-                vod.status === 'downloading' ? 'default' :
-                vod.status === 'paused' ? 'secondary' :
-                'outline'
+                vod.download_status === 'completed' ? 'default' :
+                  vod.download_status === 'failed' ? 'destructive' :
+                    vod.download_status === 'downloading' ? 'default' :
+                      vod.download_status === 'paused' ? 'secondary' :
+                        'outline'
               }>
-                {vod.status}
+                {vod.download_status}
               </Badge>
             </div>
             {vod.error_message && (
