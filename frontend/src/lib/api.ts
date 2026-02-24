@@ -523,6 +523,19 @@ class ApiClient {
     }
   }
 
+  async getDeleteTaskInfo(id: number): Promise<{ files_to_delete: number, freed_bytes: number, queued_vods: number, task_name: string }> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/delete-info`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error getting delete info:', error);
+      throw error;
+    }
+  }
+
   async deleteTask(id: number): Promise<void> {
     try {
       await axios.delete(

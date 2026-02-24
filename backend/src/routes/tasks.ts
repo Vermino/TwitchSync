@@ -5,6 +5,8 @@ import { Pool } from 'pg';
 import { authenticate } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import DownloadManager from '../services/downloadManager';
+import fs from 'fs/promises';
+import path from 'path';
 
 // Extend base Request type to include authenticated user
 interface AuthenticatedRequest extends Request {
@@ -1122,6 +1124,181 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
         can_activate: availableActions.includes('activate'),
         can_scan: availableActions.includes('scan')
       });
+    } finally {
+      client.release();
+    }
+  }));
+
+  // GET /:id/delete-info - Get statistics about what will be deleted
+  router.get('/:id/delete-info', authenticate(pool), handleAsync(async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const taskId = parseInt(req.params.id);
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      // Verify task ownership
+      const taskResult = await client.query('SELECT id, name FROM tasks WHERE id = $1 AND user_id = $2', [taskId, parseInt(userId)]);
+      if (taskResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      // Calculate what will be deleted
+      let fileCount = 0;
+      let totalBytes = 0;
+      let queuedCount = 0;
+
+      const statsResult = await client.query(`
+        SELECT 
+          COUNT(*) as total_vods,
+          COUNT(CASE WHEN download_status IN ('completed', 'failed', 'downloading') THEN 1 END) as files_to_delete,
+          SUM(CASE WHEN download_status IN ('completed', 'failed', 'downloading') THEN file_size ELSE 0 END) as space_to_free,
+          COUNT(CASE WHEN download_status = 'queued' THEN 1 END) as queued_vods
+        FROM vods 
+        WHERE task_id = $1
+      `, [taskId]);
+
+      if (statsResult.rows.length > 0) {
+        const stats = statsResult.rows[0];
+        fileCount = parseInt(stats.files_to_delete) || 0;
+        totalBytes = parseInt(stats.space_to_free) || 0;
+        queuedCount = parseInt(stats.queued_vods) || 0;
+      }
+
+      // Also check completed_vods explicitly
+      const completedStats = await client.query(`
+        SELECT COUNT(*) as count, SUM(file_size_bytes) as size 
+        FROM completed_vods 
+        WHERE task_id = $1
+      `, [taskId]);
+
+      if (completedStats.rows.length > 0) {
+        fileCount += parseInt(completedStats.rows[0].count) || 0;
+        totalBytes += parseInt(completedStats.rows[0].size) || 0;
+      }
+
+      res.json({
+        files_to_delete: fileCount,
+        freed_bytes: totalBytes,
+        queued_vods: queuedCount,
+        task_name: taskResult.rows[0].name
+      });
+    } catch (error) {
+      logger.error(`Error getting delete info for task ${req.params.id}:`, error);
+      res.status(500).json({ error: 'Failed to get delete info' });
+    } finally {
+      client.release();
+    }
+  }));
+
+  // DELETE /:id - Delete a task and all associated data/files
+  router.delete('/:id', authenticate(pool), handleAsync(async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const taskId = parseInt(req.params.id);
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      // 1. Verify task ownership
+      const taskResult = await client.query('SELECT id, name FROM tasks WHERE id = $1 AND user_id = $2', [taskId, parseInt(userId)]);
+      if (taskResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      const taskName = taskResult.rows[0].name;
+      logger.info(`Starting deletion of task ${taskId} (${taskName})`);
+
+      // 2. Stop active downloads
+      if (downloadManager) {
+        const downloadingVods = await client.query('SELECT id FROM vods WHERE task_id = $1 AND download_status = $2', [taskId, 'downloading']);
+        for (const vod of downloadingVods.rows) {
+          try {
+            await downloadManager.cancelDownload(vod.id);
+            logger.info(`Cancelled active download for VOD ${vod.id} during task deletion`);
+          } catch (cancelErr) {
+            logger.error(`Error cancelling VOD ${vod.id} during task deletion:`, cancelErr);
+          }
+        }
+      }
+
+      // 3. Collect file paths to delete
+      const filesToDelete = new Set<string>();
+      let spaceFreed = 0;
+
+      // From vods (in-progress/failed/completed)
+      const vodFilesResult = await client.query('SELECT download_path, file_size FROM vods WHERE task_id = $1 AND download_path IS NOT NULL', [taskId]);
+      vodFilesResult.rows.forEach(row => {
+        filesToDelete.add(row.download_path);
+        if (row.file_size) spaceFreed += parseInt(row.file_size) || 0;
+      });
+
+      // From completed_vods
+      const completedFilesResult = await client.query('SELECT file_path, file_size_bytes FROM completed_vods WHERE task_id = $1 AND file_path IS NOT NULL', [taskId]);
+      completedFilesResult.rows.forEach(row => {
+        filesToDelete.add(row.file_path);
+        if (row.file_size_bytes) spaceFreed += parseInt(row.file_size_bytes) || 0;
+      });
+
+      // Delete files from disk
+      let deletedCount = 0;
+      for (const filePath of filesToDelete) {
+        try {
+          await fs.unlink(filePath);
+          deletedCount++;
+        } catch (fileErr: any) {
+          // Ignore ENOENT (file already gone), log others
+          if (fileErr.code !== 'ENOENT') {
+            logger.warn(`Could not delete file ${filePath} during task deletion: ${fileErr.message}`);
+          }
+        }
+      }
+
+      // 4. Cascade delete DB records inside a transaction
+      await client.query('BEGIN');
+
+      const tablesToDelete = [
+        'completed_vods',
+        'vod_file_states',
+        'vod_retention_policies',
+        'vod_language_stats',
+        'task_skipped_vods',
+        'task_events',
+        'task_monitoring',
+        'task_statistics',
+        'task_performance_metrics',
+        'task_history',
+        'vods'
+      ];
+
+      for (const table of tablesToDelete) {
+        await client.query(`DELETE FROM ${table} WHERE task_id = $1`, [taskId]);
+      }
+
+      // Finally delete the task
+      await client.query('DELETE FROM tasks WHERE id = $1 AND user_id = $2', [taskId, parseInt(userId)]);
+
+      await client.query('COMMIT');
+
+      logger.info(`Successfully deleted task ${taskId}. Removed ${deletedCount} files, freed ~${Math.round(spaceFreed / (1024 * 1024))} MB.`);
+
+      res.json({
+        success: true,
+        message: `Task ${taskName} deleted successfully`,
+        stats: {
+          deleted_files: deletedCount,
+          freed_bytes: spaceFreed
+        }
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error(`Error deleting task ${req.params.id}:`, error);
+      res.status(500).json({ error: 'Failed to delete task' });
     } finally {
       client.release();
     }

@@ -13,6 +13,17 @@ import type { Task, Channel, Game, TaskStatus } from '@/types/task';
 import { useToast } from '@/components/ui/use-toast';
 import { api } from '@/lib/api';
 import { QueueClient } from '@/lib/api/queueClient';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Loader2 } from 'lucide-react';
 
 const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   'running': 'pending',
@@ -33,6 +44,12 @@ const queueClient = new QueueClient();
 export default function TaskManager() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean, taskId: number | null, info: any | null, loading: boolean }>({
+    isOpen: false,
+    taskId: null,
+    info: null,
+    loading: false
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -244,10 +261,27 @@ export default function TaskManager() {
   };
 
   const handleDeleteTask = async (taskId: number) => {
-    if (!window.confirm('Are you sure you want to delete this task?')) {
-      return;
+    setDeleteDialog({ isOpen: true, taskId, info: null, loading: true });
+    try {
+      const info = await api.getDeleteTaskInfo(taskId);
+      setDeleteDialog(prev => ({ ...prev, info, loading: false }));
+    } catch (error) {
+      setDeleteDialog(prev => ({ ...prev, loading: false }));
+      toast({
+        title: "Error",
+        description: "Failed to fetch deletion information.",
+        variant: "destructive",
+      });
     }
-    await deleteTaskMutation.mutateAsync(taskId);
+  };
+
+  const confirmDeleteTask = async () => {
+    if (!deleteDialog.taskId) return;
+    try {
+      await deleteTaskMutation.mutateAsync(deleteDialog.taskId);
+    } finally {
+      setDeleteDialog({ isOpen: false, taskId: null, info: null, loading: false });
+    }
   };
 
   const handleStatusToggle = async (taskId: number, currentStatus: TaskStatus) => {
@@ -405,6 +439,60 @@ export default function TaskManager() {
           task={selectedTask}
         />
       )}
+
+      <AlertDialog open={deleteDialog.isOpen} onOpenChange={(isOpen) => !isOpen && setDeleteDialog(prev => ({ ...prev, isOpen: false }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4 pt-4 text-sm text-muted-foreground">
+                <p>
+                  This will permanently delete the task <strong>{deleteDialog.info?.task_name || 'selected task'}</strong>.
+                </p>
+                {deleteDialog.loading ? (
+                  <div className="flex items-center gap-2 text-primary">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Calculating data to be removed...</span>
+                  </div>
+                ) : deleteDialog.info && (
+                  <div className="rounded-md bg-red-50 p-4 border border-red-200">
+                    <p className="text-red-800 font-medium mb-2">The following data will be permanently deleted from your disk:</p>
+                    <ul className="list-disc list-inside text-red-700 space-y-1">
+                      <li><strong>{deleteDialog.info.files_to_delete}</strong> downloaded VOD files</li>
+                      <li><strong>~{Math.round(deleteDialog.info.freed_bytes / (1024 * 1024))} MB</strong> of disk space freed</li>
+                      {deleteDialog.info.queued_vods > 0 && (
+                        <li><strong>{deleteDialog.info.queued_vods}</strong> VODs in queue will be cancelled</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+                <p className="text-red-600 font-medium">
+                  This action cannot be undone. All downloaded video files will be permanently erased.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteTaskMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDeleteTask();
+              }}
+              disabled={deleteDialog.loading || deleteTaskMutation.isPending}
+              className="bg-red-600 focus:ring-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteTaskMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : 'Yes, delete task and files'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
