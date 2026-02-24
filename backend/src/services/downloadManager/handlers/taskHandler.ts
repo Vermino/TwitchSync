@@ -463,15 +463,6 @@ export class TaskHandler extends EventEmitter {
     }
 
     logger.info(`Title-based filtering complete: ${matchedCount}/${checkedCount} VODs matched game criteria`);
-
-    // SOFT FILTER: If title matching excluded ALL VODs, include them all anyway.
-    // Title-based game matching is unreliable since Twitch's Videos API doesn't include game_id.
-    // It's better to queue too many VODs than to miss all content.
-    if (filteredVods.length === 0 && vods.length > 0) {
-      logger.warn(`Game filter excluded ALL ${vods.length} VODs — title-based matching is unreliable. Including all VODs as fallback.`);
-      return vods;
-    }
-
     return filteredVods;
   }
 

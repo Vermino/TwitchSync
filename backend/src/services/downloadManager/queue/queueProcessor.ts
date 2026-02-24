@@ -145,6 +145,7 @@ export class QueueProcessor extends EventEmitter {
         FROM vods v
         LEFT JOIN tasks t ON v.task_id = t.id
         WHERE v.download_status = 'queued'
+        AND t.status IN ('running', 'downloading')
         AND (v.retry_count IS NULL OR v.retry_count < v.max_retries)
         ORDER BY
           CASE v.download_priority
