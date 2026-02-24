@@ -477,13 +477,20 @@ export class TaskHandler extends EventEmitter {
   } {
     for (const gameName of gameNames) {
       const gameNameLower = gameName.toLowerCase();
-      const gameWords = gameNameLower.split(/\s+/);
+      // Create a normalized version of both to handle "&" vs "and" scenarios gracefully
+      const gameNameNormalized = gameNameLower.replace(/&/g, 'and');
+      const gameWords = gameNameNormalized.split(/\s+/).filter(w => /(and|of|the|in)/.test(w) === false);
       const titleLower = title.toLowerCase();
-      const titleWords = titleLower.split(/\s+/);
+      const titleNormalized = titleLower.replace(/&/g, 'and');
+      const titleWords = titleNormalized.split(/\s+/);
 
-      // First check if the game name appears explicitly in the title
-      const gameAppears = titleLower.includes(gameNameLower) ||
-        gameWords.every(word => titleWords.some(titleWord => titleWord.includes(word)));
+      // First check if the game name appears explicitly in the title (either exact or normalized)
+      let gameAppears = titleLower.includes(gameNameLower) || titleNormalized.includes(gameNameNormalized);
+
+      // If not an exact string match, check if all meaningful words appear
+      if (!gameAppears && gameWords.length > 0) {
+        gameAppears = gameWords.every(word => titleWords.some(titleWord => titleWord.includes(word)));
+      }
 
       if (gameAppears) {
         // Game name found explicitly - analyze context
@@ -531,9 +538,24 @@ export class TaskHandler extends EventEmitter {
     details: string;
   } {
     const titleLower = title.toLowerCase();
+    const gameNameLower = gameName.toLowerCase();
+
+    // Slice & Dice-specific terminology (often shortened or nicknamed)
+    if (gameNameLower === 'slice & dice' || gameNameLower === 'slice and dice') {
+      const sliceTerms = ['slicey', 'slice and dice', 'slice & dice', 'unrolled', 'unfair/classic', 'blurtra', 'loot/classic', 'generate/classic', 'generate/unfair'];
+      for (const term of sliceTerms) {
+        if (titleLower.includes(term)) {
+          return {
+            matches: true,
+            matchType: 'terminology',
+            details: `Slice & Dice terminology "${term}" found`
+          };
+        }
+      }
+    }
 
     // RimWorld-specific terminology
-    if (gameName.toLowerCase() === 'rimworld') {
+    if (gameNameLower === 'rimworld') {
       const rimworldTerms = {
         // RimWorld DLCs and content
         dlcs: ['odyssey', 'biotech', 'ideology', 'royalty'],
