@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 import DownloadManager from '../services/downloadManager';
 import fs from 'fs/promises';
 import path from 'path';
+import { config } from '../config';
 
 // Extend base Request type to include authenticated user
 interface AuthenticatedRequest extends Request {
@@ -1180,6 +1181,33 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
         totalBytes += parseInt(completedStats.rows[0].size) || 0;
       }
 
+      // Calculate actual size of partial/temp downloads on disk
+      const vodsResult = await client.query('SELECT twitch_id FROM vods WHERE task_id = $1', [taskId]);
+
+      for (const row of vodsResult.rows) {
+        if (!row.twitch_id) continue;
+        const tempDirPath = path.join(config.storage.tempDownloadPath, `vod-${row.twitch_id}`);
+        try {
+          const stats = await fs.stat(tempDirPath);
+          if (stats.isDirectory()) {
+            // Very basic size check for files in the temp dir
+            const files = await fs.readdir(tempDirPath);
+            for (const file of files) {
+              const fileStats = await fs.stat(path.join(tempDirPath, file));
+              if (fileStats.isFile()) {
+                totalBytes += fileStats.size;
+                fileCount++; // Count partial/temp files towards total
+              }
+            }
+          }
+        } catch (err: any) {
+          // Ignore if temp directory doesn't exist
+          if (err.code !== 'ENOENT') {
+            logger.warn(`Error checking temp dir size for vod-${row.twitch_id}:`, err);
+          }
+        }
+      }
+
       res.json({
         files_to_delete: fileCount,
         freed_bytes: totalBytes,
@@ -1255,6 +1283,21 @@ export const setupTaskRoutes = (pool: Pool, downloadManager?: DownloadManager): 
           // Ignore ENOENT (file already gone), log others
           if (fileErr.code !== 'ENOENT') {
             logger.warn(`Could not delete file ${filePath} during task deletion: ${fileErr.message}`);
+          }
+        }
+      }
+
+      // 4. Delete temp download directories
+      const vodsResult = await client.query('SELECT twitch_id FROM vods WHERE task_id = $1', [taskId]);
+      for (const row of vodsResult.rows) {
+        if (!row.twitch_id) continue;
+        const tempDirPath = path.join(config.storage.tempDownloadPath, `vod-${row.twitch_id}`);
+        try {
+          await fs.rm(tempDirPath, { recursive: true, force: true });
+          deletedCount++; // Count the directory deletion
+        } catch (err: any) {
+          if (err.code !== 'ENOENT') {
+            logger.warn(`Could not delete temp directory ${tempDirPath}: ${err.message}`);
           }
         }
       }
