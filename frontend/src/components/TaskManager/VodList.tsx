@@ -104,11 +104,11 @@ export default function VodList({ taskId, loading }: VodListProps) {
                       {(vod as any).current_segment}/{(vod as any).total_segments} segments
                     </div>
                   )}
-                  {(vod as any).download_speed && (
+                  {(vod as any).download_speed != null && Number((vod as any).download_speed) > 0 && (
                     <div className="text-xs text-muted-foreground">
-                      {((vod as any).download_speed < 1 ?
-                        `${((vod as any).download_speed * 1024).toFixed(0)} KB/s` :
-                        `${(vod as any).download_speed.toFixed(1)} MB/s`)}
+                      {(Number((vod as any).download_speed) < 1 ?
+                        `${(Number((vod as any).download_speed) * 1024).toFixed(0)} KB/s` :
+                        `${Number((vod as any).download_speed).toFixed(1)} MB/s`)}
                     </div>
                   )}
                   {(vod as any).eta && (
