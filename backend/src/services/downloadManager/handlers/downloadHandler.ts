@@ -36,9 +36,9 @@ export class DownloadHandler extends EventEmitter {
   private webSocketService: WebSocketService;
 
   constructor(
-      private pool: Pool,
-      private tempDir: string,
-      private maxConcurrent: number = 3
+    private pool: Pool,
+    private tempDir: string,
+    private maxConcurrent: number = 3
   ) {
     super();
     this.activeDownloads = new Map();
@@ -86,11 +86,11 @@ export class DownloadHandler extends EventEmitter {
   }
 
   async downloadSegmentsInParallel(
-      vodId: number,
-      segments: SegmentInfo[],
-      tempDir: string,
-      maxConcurrent: number = this.maxConcurrent,
-      throttleSpeed?: number
+    vodId: number,
+    segments: SegmentInfo[],
+    tempDir: string,
+    maxConcurrent: number = this.maxConcurrent,
+    throttleSpeed?: number
   ): Promise<void> {
     const state = this.activeDownloads.get(vodId);
     if (!state) throw new Error(`No download state found for VOD ${vodId}`);
@@ -108,11 +108,11 @@ export class DownloadHandler extends EventEmitter {
           FROM vods 
           WHERE id = $1
         `, [vodId]);
-        
+
         if (resumeResult.rows.length > 0) {
           resumeSegmentIndex = resumeResult.rows[0].resume_segment_index || 0;
           const downloadStatus = resumeResult.rows[0].download_status;
-          
+
           if (resumeSegmentIndex > 0) {
             logger.info(`VOD ${vodId}: Database indicates resume from segment ${resumeSegmentIndex} (status: ${downloadStatus})`);
           }
@@ -135,24 +135,24 @@ export class DownloadHandler extends EventEmitter {
           state.completedSegments.add(segmentIndex);
         }
       });
-      
+
       // Use the higher value between database resume position and existing files
       const fileBasedResume = existingSegments.size > 0 ? Math.max(...Array.from(existingSegments)) + 1 : 0;
       const actualResumePosition = Math.max(resumeSegmentIndex, fileBasedResume);
-      
+
       if (actualResumePosition > 0) {
         logger.info(`VOD ${vodId}: Resuming from segment ${actualResumePosition} (DB: ${resumeSegmentIndex}, Files: ${fileBasedResume})`);
-        
+
         // Mark all segments before resume position as completed
         for (let i = 0; i < actualResumePosition; i++) {
           existingSegments.add(i);
           state.completedSegments.add(i);
         }
-        
+
         // Update download state
         state.resumePosition = actualResumePosition;
         state.progress.segmentIndex = actualResumePosition;
-        
+
         // Update progress immediately to reflect existing segments
         await this.updateDownloadProgress(vodId, segments.length);
       }
@@ -170,20 +170,20 @@ export class DownloadHandler extends EventEmitter {
 
         const outputPath = path.join(tempDir, `segment-${segment.index}.ts`);
         const downloadPromise = this.downloadSegment(vodId, segment, outputPath, throttleSpeed)
-            .then(() => {
-              inProgress.delete(downloadPromise);
-              // Update progress after each segment completes (don't await to avoid blocking)
-              this.updateDownloadProgress(vodId, segments.length).catch(err => {
-                logger.error(`Error updating progress for VOD ${vodId}:`, err);
-              });
-            })
-            .catch((error) => {
-              logger.error(`Error downloading segment ${segment.index}:`, error);
-              inProgress.delete(downloadPromise);
-              if (state.failedSegments.size < 3) { // Allow 3 retries
-                queue.push(segment);
-              }
+          .then(() => {
+            inProgress.delete(downloadPromise);
+            // Update progress after each segment completes (don't await to avoid blocking)
+            this.updateDownloadProgress(vodId, segments.length).catch(err => {
+              logger.error(`Error updating progress for VOD ${vodId}:`, err);
             });
+          })
+          .catch((error) => {
+            logger.error(`Error downloading segment ${segment.index}:`, error);
+            inProgress.delete(downloadPromise);
+            if (state.failedSegments.size < 3) { // Allow 3 retries
+              queue.push(segment);
+            }
+          });
 
         inProgress.add(downloadPromise);
       }
@@ -195,10 +195,10 @@ export class DownloadHandler extends EventEmitter {
   }
 
   async downloadSegment(
-      vodId: number,
-      segment: SegmentInfo,
-      outputPath: string,
-      throttleSpeed?: number
+    vodId: number,
+    segment: SegmentInfo,
+    outputPath: string,
+    throttleSpeed?: number
   ): Promise<void> {
     const state = this.activeDownloads.get(vodId);
     if (!state) throw new Error(`No download state found for VOD ${vodId}`);
@@ -210,10 +210,10 @@ export class DownloadHandler extends EventEmitter {
         method: 'GET',
         url: segment.url,
         responseType: 'stream',
-        headers: {'Range': `bytes=${state.resumePosition}-`}
+        headers: { 'Range': `bytes=${state.resumePosition}-` }
       });
 
-      const writer = fsSync.createWriteStream(outputPath, {flags: 'a'});
+      const writer = fsSync.createWriteStream(outputPath, { flags: 'a' });
       let downloadedBytes = 0;
       const startTime = Date.now();
 
@@ -288,7 +288,7 @@ export class DownloadHandler extends EventEmitter {
       const userSettings = settings?.user_settings || {};
 
       // Ensure download directory exists
-      await fs.mkdir(downloadPath, {recursive: true});
+      await fs.mkdir(downloadPath, { recursive: true });
 
       // Check current active downloads
       const activeDownloads = await client.query(`
@@ -417,37 +417,37 @@ export class DownloadHandler extends EventEmitter {
 
         // Process segments
         await this.downloadSegmentsInParallel(
-            vod.id,
-            playlist.segments,
-            workingDir,
-            MAX_CONCURRENT_DOWNLOADS,
-            bandwidthLimit
+          vod.id,
+          playlist.segments,
+          workingDir,
+          MAX_CONCURRENT_DOWNLOADS,
+          bandwidthLimit
         );
 
         // Combine segments into final video file
         logger.info(`Combining ${playlist.segments.length} segments for VOD ${vod.id}`);
         const downloadStartTime = new Date(state.resources.startTime);
         const finalVideoPath = await this.combineSegments(vod, workingDir, downloadPath, playlist.segments.length);
-        
+
         // Calculate download metrics for completion tracking
         const downloadEndTime = new Date();
         const downloadDurationSeconds = Math.round(
           (downloadEndTime.getTime() - downloadStartTime.getTime()) / 1000
         );
-        
+
         // Get file stats
         const fileStats = await fs.stat(finalVideoPath);
         const fileSizeBytes = fileStats.size;
         const fileName = require('path').basename(finalVideoPath);
-        
+
         // Calculate download speed in Mbps
-        const downloadSpeedMbps = downloadDurationSeconds > 0 
+        const downloadSpeedMbps = downloadDurationSeconds > 0
           ? Number(((fileSizeBytes * 8) / (downloadDurationSeconds * 1000000)).toFixed(2))
           : null;
-        
+
         // Calculate MD5 checksum for integrity verification
         const checksum = await this.calculateMD5(finalVideoPath);
-        
+
         // Update VOD status to completed with file path
         await client.query(`
           UPDATE vods
@@ -466,7 +466,7 @@ export class DownloadHandler extends EventEmitter {
 
         // Use safe upsert function to mark VOD as completed (handles concurrency)
         await client.query(`
-          SELECT upsert_completed_vod($1, $2, $3::bigint, $4, $5, $6, $7, $8, $9, $10)
+          SELECT upsert_completed_vod($1::integer, $2::integer, $3::bigint, $4::text, $5::text, $6::bigint, $7::integer, $8::numeric, $9::text, $10::jsonb)
         `, [
           vod.id,
           vod.task_id,
@@ -489,7 +489,7 @@ export class DownloadHandler extends EventEmitter {
 
         // Update VOD file state using safe release function
         await client.query(`
-          SELECT safe_release_vod_lock($1::bigint, $2, $3, $4, $5, $6, $7)
+          SELECT safe_release_vod_lock($1::bigint, $2::integer, $3::text, $4::text, $5::text, $6::text, $7::bigint)
         `, [
           vod.twitch_id,
           vod.task_id,
@@ -502,12 +502,12 @@ export class DownloadHandler extends EventEmitter {
 
         // Get updated completion statistics for task progress
         const completionStats = await this.completedVodService.getTaskCompletionStats(vod.task_id);
-        
+
         // Ensure proper typing for PostgreSQL parameters
         const completedVods = completionStats.completed_vods || 0;
         const totalVods = completionStats.total_vods || 0;
         const completionPercentage = Math.round(completionStats.completion_percentage || 0);
-        
+
         // Update task progress with actual completion data
         await client.query(`
           UPDATE task_monitoring
@@ -528,7 +528,7 @@ export class DownloadHandler extends EventEmitter {
           totalVods,
           completionPercentage
         ]);
-        
+
         logger.info(`Successfully completed and tracked VOD download`, {
           vod_id: vod.id,
           task_id: vod.task_id,
@@ -545,8 +545,8 @@ export class DownloadHandler extends EventEmitter {
         // Update VOD status based on error type
         const errorMessage = error instanceof Error ? error.message : String(error);
         const isPermanentError = errorMessage.includes('404') ||
-            errorMessage.includes('no longer available') ||
-            errorMessage.includes('Invalid VOD');
+          errorMessage.includes('no longer available') ||
+          errorMessage.includes('Invalid VOD');
 
         const newStatus = isPermanentError ? 'failed' : 'pending';
         await client.query(`
@@ -582,7 +582,7 @@ export class DownloadHandler extends EventEmitter {
           const completedVods = completionStats.completed_vods || 0;
           const totalVods = completionStats.total_vods || 0;
           const completionPercentage = Math.round(completionStats.completion_percentage || 0);
-          
+
           await client.query(`
             UPDATE task_monitoring
             SET status         = 'running',
@@ -622,7 +622,7 @@ export class DownloadHandler extends EventEmitter {
       if (nextVod.rows.length > 0) {
         // Process next VOD asynchronously
         setTimeout(() => {
-          this.processVOD({id: nextVod.rows[0].id}).catch(err => {
+          this.processVOD({ id: nextVod.rows[0].id }).catch(err => {
             logger.error(`Error processing next VOD:`, err);
           });
         }, 1000); // Small delay before starting next download
@@ -655,16 +655,17 @@ export class DownloadHandler extends EventEmitter {
       const retryCount = parseInt(String(vod.retry_count || '0')) + 1;
       const maxRetries = parseInt(String(vod.max_retries || '3'));
 
+      // Pre-calculate the status so we don't need complex CASE statements that confuse pg's type inference
+      const nextStatus = retryCount < maxRetries ? 'pending' : 'failed';
+
       await client.query(`
-        UPDATE vods
-        SET download_status = CASE
-                                WHEN $2::integer < $3:: integer THEN 'pending'::vod_status
-                                ELSE 'failed'::vod_status
-          END,
-            retry_count     = $2::integer,
-            error_message = $4, updated_at = NOW()
-        WHERE id = $1
-      `, [vodId, retryCount, maxRetries, error.message]);
+      UPDATE vods
+      SET download_status = $2::vod_status,
+          retry_count     = $3::integer,
+          error_message   = $4,
+          updated_at      = NOW()
+      WHERE id = $1
+    `, [vodId, nextStatus, retryCount, error.message]);
 
       await client.query(`
         INSERT INTO vod_events (vod_id,
@@ -693,7 +694,7 @@ export class DownloadHandler extends EventEmitter {
       if (retryCount < maxRetries) {
         const retryDelay = Math.pow(2, retryCount) * 1000;
         setTimeout(() => {
-          this.processVOD({id: vodId}).catch(err => {
+          this.processVOD({ id: vodId }).catch(err => {
             logger.error(`Retry failed for VOD ${vodId}:`, err);
           });
         }, retryDelay);
@@ -815,31 +816,31 @@ export class DownloadHandler extends EventEmitter {
     try {
       // Ensure output directory exists
       await fs.mkdir(outputDir, { recursive: true });
-      
+
       // Create output file path
       const sanitizedTitle = vod.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
       const outputFileName = `${vod.twitch_id}_${sanitizedTitle}.ts`;
       const outputPath = path.join(outputDir, outputFileName);
-      
+
       logger.info(`Combining segments to: ${outputPath}`);
-      
+
       // Create file list for ffmpeg concat
       const fileListPath = path.join(tempDir, 'filelist.txt');
       let fileListContent = '';
-      
+
       for (let i = 0; i < segmentCount; i++) {
         const segmentPath = path.join(tempDir, `segment-${i}.ts`);
         if (fsSync.existsSync(segmentPath)) {
           fileListContent += `file '${segmentPath.replace(/\\/g, '/')}'\n`;
         }
       }
-      
+
       await fs.writeFile(fileListPath, fileListContent);
-      
+
       // Use simple concatenation for .ts files (they can be concatenated directly)
       // For better compatibility, we'll just concatenate the files directly
       const writeStream = fsSync.createWriteStream(outputPath);
-      
+
       for (let i = 0; i < segmentCount; i++) {
         const segmentPath = path.join(tempDir, `segment-${i}.ts`);
         if (fsSync.existsSync(segmentPath)) {
@@ -851,15 +852,15 @@ export class DownloadHandler extends EventEmitter {
           });
         }
       }
-      
+
       writeStream.end();
-      
+
       // Wait for write to complete
       await new Promise((resolve) => writeStream.on('finish', resolve));
-      
+
       logger.info(`Successfully combined segments into: ${outputPath}`);
       return outputPath;
-      
+
     } catch (error) {
       logger.error(`Error combining segments for VOD ${vod.id}:`, error);
       throw error;
@@ -873,7 +874,7 @@ export class DownloadHandler extends EventEmitter {
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('md5');
       const stream = fsSync.createReadStream(filePath);
-      
+
       stream.on('data', data => hash.update(data));
       stream.on('end', () => resolve(hash.digest('hex')));
       stream.on('error', reject);
@@ -892,10 +893,10 @@ export class DownloadHandler extends EventEmitter {
 
     // Update every 5 segments or every 1% change
     const lastProgressUpdate = (state as any).lastProgressUpdate || 0;
-    if (completedSegments > 0 && 
-        completedSegments % 5 !== 0 && 
-        progressPercentage === lastProgressUpdate && 
-        progressPercentage < 100) {
+    if (completedSegments > 0 &&
+      completedSegments % 5 !== 0 &&
+      progressPercentage === lastProgressUpdate &&
+      progressPercentage < 100) {
       return;
     }
     (state as any).lastProgressUpdate = progressPercentage;
@@ -936,13 +937,13 @@ export class DownloadHandler extends EventEmitter {
         // Get task completion statistics for accurate task progress
         if (taskId) {
           const completionStats = await this.completedVodService.getTaskCompletionStats(taskId);
-          
+
           // Update task progress with actual completion data and current segment progress
           // Ensure all values are properly typed for PostgreSQL
           const totalVods = completionStats.total_vods || 0;
           const completedVods = completionStats.completed_vods || 0;
           const completionPercentage = completionStats.completion_percentage || 0;
-          
+
           await client.query(`
             UPDATE task_monitoring
             SET status_message = CASE 
@@ -958,9 +959,9 @@ export class DownloadHandler extends EventEmitter {
                 updated_at = NOW()
             WHERE task_id = $1
           `, [
-            taskId, 
-            completedSegments, 
-            totalSegments, 
+            taskId,
+            completedSegments,
+            totalSegments,
             totalVods,
             completedVods,
             totalVods,
