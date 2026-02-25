@@ -20,12 +20,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { 
-  Search, 
-  Filter, 
-  Download, 
-  RefreshCw, 
-  Trash2, 
+import {
+  Search,
+  Filter,
+  Download,
+  RefreshCw,
+  Trash2,
   MoreHorizontal,
   ArrowUpDown,
   CheckCircle,
@@ -108,7 +108,10 @@ export default function DownloadHistory({ taskId }: DownloadHistoryProps) {
     return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
   };
 
-  const formatSpeed = (mbps: number) => {
+  const formatSpeed = (rawMbps: number | string | null | undefined) => {
+    if (!rawMbps) return '0 KB/s';
+    const mbps = Number(rawMbps);
+    if (isNaN(mbps) || mbps === 0) return '0 KB/s';
     if (mbps < 1) return `${(mbps * 1024).toFixed(0)} KB/s`;
     return `${mbps.toFixed(1)} MB/s`;
   };
@@ -117,7 +120,7 @@ export default function DownloadHistory({ taskId }: DownloadHistoryProps) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes}m ${secs}s`;
     }
@@ -338,7 +341,7 @@ export default function DownloadHistory({ taskId }: DownloadHistoryProps) {
                           Retry Download
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         onClick={() => handleDelete(item.id)}
                         className="text-destructive focus:text-destructive"
                       >
