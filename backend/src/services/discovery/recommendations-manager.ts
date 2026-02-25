@@ -56,9 +56,12 @@ export class RecommendationsManager {
             (SELECT COUNT(DISTINCT game_id) FROM user_games) as total_user_games,
             MAX(cgs.avg_viewers) as best_avg_viewers,
             MAX(cgs.peak_viewers) as best_peak_viewers,
-            MAX(cgs.total_streams) as most_streams
+            MAX(cgs.total_streams) as most_streams,
+            -- Aggregate overlapping games into a JSON array
+            json_agg(DISTINCT jsonb_build_object('id', g.id, 'twitch_game_id', g.twitch_game_id, 'name', g.name)) as shared_games_list
           FROM channel_game_stats cgs
           JOIN channels c ON cgs.channel_id = c.id
+          JOIN games g ON cgs.game_id = g.id
           WHERE c.is_active = false
           AND cgs.game_id IN (SELECT game_id FROM user_games)
           AND c.id NOT IN (SELECT item_id FROM ignored_channels)
@@ -77,7 +80,48 @@ export class RecommendationsManager {
 
       logger.info(`[Recommendations] Found ${result.rows.length} channel candidates from local DB`);
 
-      return result.rows.map(row => {
+      // Fetch 1 recent VOD for each channel to display as a preview
+      const channelsWithVods = await Promise.all(result.rows.map(async (row) => {
+        const recent_vods: { thumbnail_url: string; url: string; title: string; game_name: string }[] = [];
+        try {
+          // This API call is lightweight (only 1 VOD), but since we have multiple candidates,
+          // we do it in parallel. In a production system, this could be cached or pre-fetched.
+          const vods = await this.twitchAPI.getChannelVODs(row.twitch_id);
+          if (vods && vods.length > 0) {
+            const sharedTwitchGameIds = new Set(row.shared_games_list?.map((g: any) => g.twitch_game_id));
+            const foundGameIds = new Set<string>();
+
+            for (const vod of vods) {
+              // Try to find VODs that precisely match the overlapping games
+              if (vod.game_id && sharedTwitchGameIds.has(vod.game_id) && !foundGameIds.has(vod.game_id)) {
+                foundGameIds.add(vod.game_id);
+                const gameName = row.shared_games_list?.find((g: any) => g.twitch_game_id === vod.game_id)?.name || 'Unknown Game';
+                recent_vods.push({
+                  thumbnail_url: vod.thumbnail_url?.replace('%{width}', '320').replace('%{height}', '180') || '',
+                  url: vod.url,
+                  title: vod.title,
+                  game_name: gameName
+                });
+              }
+            }
+
+            // Fallback: if no VODs matched the overlapping games (maybe played a long time ago),
+            // just show up to 3 of their most recent VODs
+            if (recent_vods.length === 0) {
+              for (const vod of vods.slice(0, 3)) {
+                recent_vods.push({
+                  thumbnail_url: vod.thumbnail_url?.replace('%{width}', '320').replace('%{height}', '180') || '',
+                  url: vod.url,
+                  title: vod.title,
+                  game_name: 'Recent Stream'
+                });
+              }
+            }
+          }
+        } catch (e) {
+          logger.warn(`Could not fetch VOD preview for ${row.username}`);
+        }
+
         const sharedGames = parseInt(row.shared_games);
         const totalUserGames = parseInt(row.total_user_games) || 1;
 
@@ -89,8 +133,8 @@ export class RecommendationsManager {
 
         const compatibility_score = Math.min(1.0, gameOverlapScore * 0.7 + activityScore * 0.3);
 
-        return {
-          type: 'channel' as const,
+        const recommendation: ChannelRecommendation = {
+          type: 'channel',
           id: row.twitch_id,
           display_name: row.display_name || row.username,
           login: row.username,
@@ -99,12 +143,17 @@ export class RecommendationsManager {
           viewer_count: parseInt(row.best_avg_viewers) || 0,
           compatibility_score,
           recommendation_reasons: [{
-            type: 'GAME_OVERLAP' as ChannelReasonType,
+            type: 'GAME_OVERLAP',
             strength: gameOverlapScore
           }],
+          shared_games_list: row.shared_games_list || [],
+          recent_vods,
           tags: []
         };
-      });
+        return recommendation;
+      }));
+
+      return channelsWithVods;
     } catch (error) {
       logger.error('Error getting channel recommendations:', error);
       return [];

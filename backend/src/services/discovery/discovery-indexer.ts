@@ -102,6 +102,25 @@ export class DiscoveryIndexer {
     }
 
     /**
+     * Start background indexing for a newly tracked game.
+     */
+    public async indexGame(twitchGameId: string, gameDbId: number): Promise<void> {
+        const client = await this.pool.connect();
+        try {
+            logger.info(`[DiscoveryIndexer] Starting background index for manually tracked game ${twitchGameId}`);
+
+            // Discover channels that play this game
+            await this.discoverChannelsForGame(twitchGameId, gameDbId, client);
+
+            logger.info(`[DiscoveryIndexer] Completed index for tracking game ${twitchGameId}`);
+        } catch (error) {
+            logger.error(`[DiscoveryIndexer] Error indexing newly tracked game ${twitchGameId}:`, error);
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
      * Discover channels for a specific game and populate channel_game_stats.
      */
     private async discoverChannelsForGame(twitchGameId: string, gameDbId: number, client: any): Promise<void> {
@@ -128,11 +147,21 @@ export class DiscoveryIndexer {
 
                 let channelDbId: number;
                 if (channelResult.rows.length === 0) {
+                    let profileImageUrl = null;
+                    try {
+                        const info = await this.twitchAPI.getChannelInfo(vod.user_name);
+                        if (info && info.profile_image_url) {
+                            profileImageUrl = info.profile_image_url;
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+
                     const insertResult = await client.query(`
-            INSERT INTO channels (twitch_id, username, display_name, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO channels (twitch_id, username, display_name, profile_image_url, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-          `, [vod.user_id, vod.user_name.toLowerCase(), vod.user_name]);
+          `, [vod.user_id, vod.user_name.toLowerCase(), vod.user_name, profileImageUrl]);
                     channelDbId = insertResult.rows[0].id;
                     discoveredCount++;
                 } else {

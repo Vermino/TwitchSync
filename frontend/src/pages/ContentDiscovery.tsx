@@ -123,56 +123,64 @@ const ContentDiscovery: React.FC = () => {
 
   const handleTrackChannel = async (channelId: string) => {
     const channel = recommendations.channels.find(c => c.id === channelId);
-    const channelName = channel?.display_name || channelId;
+    if (!channel) return;
 
-    setPendingTask({
-      name: `Track ${channelName} `,
-      task_type: 'combined',
-      channel_ids: [channelId],
-      game_ids: [],
-      schedule_type: 'interval',
-      schedule_value: '3600',
-      storage_limit_gb: 0,
-      retention_days: 7,
-      auto_delete: false,
-      priority: 'normal',
-      conditions: {},
-      restrictions: {}
-    });
-    setIsTaskModalOpen(true);
+    try {
+      await api.createChannel({
+        twitch_id: channel.id,
+        username: channel.login,
+        display_name: channel.display_name,
+        profile_image_url: channel.profile_image_url,
+        follower_count: channel.viewer_count // fallback if we don't have exact followers
+      });
 
-    // Assume user will create it and remove from recommendations proactively
-    setRecommendations(prev => ({
-      ...prev,
-      channels: prev.channels.filter(c => c.id !== channelId)
-    }));
+      toast({
+        title: "Channel Added",
+        description: `Successfully started tracking ${channel.display_name}.`,
+      });
+
+      // Remove from recommendations proactively
+      setRecommendations(prev => ({
+        ...prev,
+        channels: prev.channels.filter(c => c.id !== channelId)
+      }));
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add channel.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleTrackGame = async (gameId: string) => {
     const game = recommendations.games.find(g => g.id === gameId);
-    const gameName = game?.name || gameId;
+    if (!game) return;
 
-    setPendingTask({
-      name: `Track ${gameName} `,
-      task_type: 'combined',
-      channel_ids: [],
-      game_ids: [gameId],
-      schedule_type: 'interval',
-      schedule_value: '3600',
-      storage_limit_gb: 0,
-      retention_days: 7,
-      auto_delete: false,
-      priority: 'normal',
-      conditions: {},
-      restrictions: {}
-    });
-    setIsTaskModalOpen(true);
+    try {
+      await api.createGame({
+        twitch_game_id: game.id,
+        name: game.name,
+        box_art_url: game.box_art_url
+      });
 
-    // Assume user will create it and remove from recommendations proactively
-    setRecommendations(prev => ({
-      ...prev,
-      games: prev.games.filter(g => g.id !== gameId)
-    }));
+      toast({
+        title: "Game Tracked",
+        description: `Successfully started tracking ${game.name}.`,
+      });
+
+      // Remove from recommendations proactively
+      setRecommendations(prev => ({
+        ...prev,
+        games: prev.games.filter(g => g.id !== gameId)
+      }));
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to track game.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleIgnoreChannel = async (channelId: string) => {

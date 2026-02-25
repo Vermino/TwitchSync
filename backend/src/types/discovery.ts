@@ -32,20 +32,24 @@ export interface RecommendationReason<T extends string = string> {
   strength: number;
 }
 
-export interface ChannelRecommendation extends RecommendationBase {
+export interface ChannelRecommendation {
   type: 'channel';
+  id: string;
   display_name: string;
   login: string;
   profile_image_url: string;
   description: string;
   viewer_count: number;
+  compatibility_score: number;
   recommendation_reasons: RecommendationReason<ChannelReasonType>[];
+  shared_games_list?: { id: number; name: string }[];
+  recent_vods?: { thumbnail_url: string; url: string; title: string; game_name: string }[];
+  tags?: string[];
   current_game?: {
     id: string;
     name: string;
     box_art_url: string;
   };
-  tags?: string[];
 }
 
 export interface GameRecommendation extends RecommendationBase {

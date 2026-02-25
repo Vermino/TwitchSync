@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import { logger } from '../../utils/logger';
 import { TwitchService } from '../../services/twitch/service';
 import { withTransaction } from '../../middleware/withTransaction';
+import { DiscoveryIndexer } from '../../services/discovery/discovery-indexer';
 import {
   GameError,
   Game,
@@ -16,7 +17,7 @@ import {
 
 export class GamesController {
   private twitchService: TwitchService;
-  
+
   constructor(private pool: Pool) {
     this.twitchService = TwitchService.getInstance();
   }
@@ -171,6 +172,13 @@ export class GamesController {
         );
 
         logger.info(`Game created successfully: ${gameData.name}`);
+
+        // Trigger background discovery indexer for the new game
+        const indexer = DiscoveryIndexer.getInstance(this.pool);
+        indexer.indexGame(result.rows[0].twitch_game_id, result.rows[0].id).catch(e => {
+          logger.error('Failed to trigger background index for new game:', e);
+        });
+
         return result.rows[0];
       });
 

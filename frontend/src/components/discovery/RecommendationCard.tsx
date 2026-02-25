@@ -1,7 +1,7 @@
 // frontend/src/components/discovery/RecommendationCard.tsx
 
-import React from 'react';
-import { Users, Gamepad2, Star, EyeOff } from 'lucide-react';
+import React, { useState } from 'react';
+import { Users, Gamepad2, Star, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -12,6 +12,7 @@ import type {
 } from '@/types/discovery';
 
 const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onAction, onIgnore }) => {
+  const [vodIndex, setVodIndex] = useState(0);
   const renderReasons = () => (
     <div className="space-y-2 mb-3">
       {item.recommendation_reasons.map((reason, index) => (
@@ -40,9 +41,20 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
             </Avatar>
             <div>
               <div className="font-medium">{channelRec.display_name}</div>
-              <div className="text-sm text-gray-600 flex items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap max-w-[150px]">
-                <Gamepad2 size={14} className="shrink-0" />
-                {channelRec.current_game?.name || 'Multiple Games'}
+              <div className="text-sm text-gray-600 flex flex-wrap items-center gap-1 mt-1">
+                {channelRec.shared_games_list && channelRec.shared_games_list.length > 0 ? (
+                  channelRec.shared_games_list.map(g => (
+                    <span key={g.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-medium border border-indigo-100">
+                      <Gamepad2 size={10} />
+                      {g.name}
+                    </span>
+                  ))
+                ) : (
+                  <span className="flex items-center gap-1 text-xs">
+                    <Gamepad2 size={12} />
+                    {channelRec.current_game?.name || 'Multiple Games'}
+                  </span>
+                )}
               </div>
             </div>
             <div className="ml-auto text-right">
@@ -66,12 +78,60 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
             )}
           </div>
 
+          {channelRec.recent_vods && channelRec.recent_vods.length > 0 && (
+            <div className="mb-4">
+              <div className="flex justify-between items-end mb-2">
+                <span className="text-xs font-medium text-gray-500 block">
+                  Recent VOD Previews
+                  <span className="font-normal border bg-gray-50 border-gray-200 rounded px-1 ml-1">
+                    {vodIndex + 1}/{channelRec.recent_vods.length}
+                  </span>
+                </span>
+                {channelRec.recent_vods.length > 1 && (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setVodIndex(prev => prev > 0 ? prev - 1 : channelRec.recent_vods!.length - 1)}
+                      className="p-1 border border-gray-200 hover:bg-gray-100 rounded transition-colors"
+                      title="Previous VOD"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <button
+                      onClick={() => setVodIndex(prev => prev < channelRec.recent_vods!.length - 1 ? prev + 1 : 0)}
+                      className="p-1 border border-gray-200 hover:bg-gray-100 rounded transition-colors"
+                      title="Next VOD"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <a href={channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].url : channelRec.recent_vods[0].url} target="_blank" rel="noopener noreferrer" className="block relative group overflow-hidden rounded-md border border-gray-200">
+                <img
+                  src={channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].thumbnail_url : channelRec.recent_vods[0].thumbnail_url}
+                  alt={channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].title : channelRec.recent_vods[0].title}
+                  className="w-full h-auto object-cover max-h-32 transition-transform duration-300 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                  <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                    Watch on Twitch
+                  </div>
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] sm:text-xs truncate px-2 py-1 flex items-center gap-1">
+                  <Gamepad2 size={12} className="shrink-0 text-gray-300" />
+                  {channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].game_name : channelRec.recent_vods[0].game_name}
+                </div>
+              </a>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button
               onClick={() => onAction(channelRec.id)}
-              className="flex-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+              className="flex-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm font-medium shadow hover:bg-purple-700 hover:shadow-md transition-all active:scale-[0.98]"
             >
-              Follow Channel
+              Add Channel
             </button>
             {onIgnore && (
               <button

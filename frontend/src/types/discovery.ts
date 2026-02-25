@@ -78,6 +78,8 @@ export interface ChannelRecommendation {
   viewer_count: number;
   compatibility_score: number;
   recommendation_reasons: RecommendationReason<ChannelReasonType>[];
+  shared_games_list?: { id: number; name: string }[];
+  recent_vods?: { thumbnail_url: string; url: string; title: string; game_name: string }[];
   tags?: string[];
   current_game?: {
     id: string;
