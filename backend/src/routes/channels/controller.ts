@@ -12,6 +12,7 @@ import {
   UpdateChannelRequest,
   validateChannelData
 } from './validation';
+import { DiscoveryIndexer } from '../../services/discovery/discovery-indexer';
 
 export class ChannelsController {
   private twitchService: TwitchService;
@@ -244,6 +245,16 @@ export class ChannelsController {
       });
 
       res.status(201).json(result);
+
+      // Index channel for discovery in background (non-blocking)
+      try {
+        const indexer = DiscoveryIndexer.getInstance(this.pool);
+        indexer.indexChannel(result.id, result.twitch_id).catch(err =>
+          logger.warn('Background discovery indexing failed:', err)
+        );
+      } catch (e) {
+        logger.warn('Could not start discovery indexing:', e);
+      }
     } catch (error) {
       if (error instanceof ChannelError) {
         next(error);
