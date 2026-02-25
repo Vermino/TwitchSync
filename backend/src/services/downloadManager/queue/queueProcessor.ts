@@ -158,6 +158,8 @@ export class QueueProcessor extends EventEmitter {
         LIMIT $1
       `, [this.maxConcurrent - activeDownloads.size]);
 
+      logger.info(`QueueProcessor debug: activeDownloads=${activeDownloads.size}, maxConcurrent=${this.maxConcurrent}, found ${result.rows.length} queued VODs to process`);
+
       for (const vod of result.rows) {
         try {
           // Emit download start event

@@ -265,6 +265,12 @@ export class DownloadHandler extends EventEmitter {
       const isCompleted = await this.completedVodService.isVodCompleted(vod.twitch_id, vod.task_id);
       if (isCompleted) {
         logger.info(`Skipping VOD ${vod.twitch_id} - already completed for task ${vod.task_id}`);
+        // Ensure the tracking table reflects this so it doesn't loop in queued state forever
+        await client.query(`
+          UPDATE vods 
+          SET download_status = 'completed', updated_at = NOW(), download_progress = 100
+          WHERE id = $1
+        `, [vod.id]);
         return;
       }
       // Get download path from user settings with new fields
