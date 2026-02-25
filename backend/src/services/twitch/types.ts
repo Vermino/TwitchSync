@@ -91,7 +91,16 @@ export interface TwitchChannel {
 export interface StreamFilters {
   limit?: number;
   languages?: string[];
-  gameId?: string;
+  gameId?: string | string[];
+}
+
+export interface VODFilters {
+  limit?: number;
+  languages?: string[];
+  gameId?: string | string[];
+  userId?: string | string[];
+  period?: 'all' | 'day' | 'week' | 'month';
+  sort?: 'time' | 'trending' | 'views';
 }
 
 export interface PlaylistData {
@@ -135,5 +144,6 @@ export interface ITwitchService {
   searchGames(query: string): Promise<EnrichedGame[]>;
   getCurrentGame(channelId: string): Promise<EnrichedGame | null>;
   getTopStreams(filters?: StreamFilters): Promise<any[]>;
+  getTopVODs(filters?: VODFilters): Promise<TwitchVOD[]>;
   getChannelInfo(username: string): Promise<EnrichedChannel | null>;
 }

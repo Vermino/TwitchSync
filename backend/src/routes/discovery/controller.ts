@@ -24,7 +24,7 @@ export class DiscoveryController {
         throw new DiscoveryError('User not authenticated', 401);
       }
 
-      // Get user's discovery preferences with fallback to defaults
+      // Get or create user's discovery preferences with defaults
       const prefsResult = await client.query(`
         INSERT INTO discovery_preferences (
           user_id, 
@@ -44,162 +44,10 @@ export class DiscoveryController {
 
       const preferences = prefsResult.rows[0];
 
-      // Get upcoming premieres based on preferences
-      const premieresResult = await client.query(`
-        WITH filtered_premieres AS (
-          SELECT 
-            pe.*,
-            c.username, c.display_name, c.profile_image_url,
-            g.name as game_name, g.box_art_url,
-            EXISTS (
-              SELECT 1 
-              FROM user_vod_preferences uvp 
-              WHERE uvp.user_id = $1 
-              AND (uvp.channel_id = pe.channel_id OR uvp.game_id = pe.game_id)
-            ) as is_preferred
-          FROM premiere_events pe
-          JOIN channels c ON pe.channel_id = c.id
-          JOIN games g ON pe.game_id = g.id
-          WHERE pe.start_time > NOW()
-          AND pe.predicted_viewers >= $2
-          AND pe.confidence_score >= $3
-        )
-        SELECT *
-        FROM filtered_premieres
-        WHERE is_preferred = true
-        OR (
-          predicted_viewers >= $2 * 2  -- Double threshold for non-preferred
-          AND confidence_score >= $3 + 0.1  -- Higher confidence for non-preferred
-        )
-        ORDER BY start_time ASC
-        LIMIT 10
-      `, [userId, preferences.min_viewers, preferences.confidence_threshold]);
-
-      // Get rising channels based on metrics
-      const risingChannelsResult = await client.query(`
-        WITH channel_metrics AS (
-          SELECT 
-            channel_id,
-            AVG(viewer_count) as avg_viewers,
-            AVG(viewer_growth_rate) as growth_rate,
-            COUNT(DISTINCT vod_id) as recorded_vods
-          FROM channel_metrics
-          WHERE recorded_at > NOW() - INTERVAL '7 days'
-          GROUP BY channel_id
-          HAVING AVG(viewer_growth_rate) > 0.1
-        )
-        SELECT 
-          c.*,
-          cm.avg_viewers,
-          cm.growth_rate,
-          cm.recorded_vods,
-          g.name as current_game_name,
-          g.box_art_url as game_image,
-          COALESCE(
-            (SELECT COUNT(*) FROM user_vod_preferences uvp
-             WHERE uvp.user_id = $1 AND uvp.channel_id = c.id), 
-            0
-          ) as preference_count
-        FROM channels c
-        JOIN channel_metrics cm ON c.id = cm.channel_id
-        LEFT JOIN games g ON c.current_game_id = g.id
-        WHERE cm.avg_viewers BETWEEN $2 AND $3
-        ORDER BY 
-          preference_count DESC,
-          cm.growth_rate DESC,
-          cm.avg_viewers DESC
-        LIMIT 5
-      `, [userId, preferences.min_viewers, preferences.max_viewers]);
-
-      // Get recommendations based on viewing history and preferences
-      const recommendationsResult = await client.query(`
-        WITH user_history AS (
-          SELECT 
-            v.channel_id,
-            v.game_id,
-            COUNT(*) as view_count,
-            MAX(v.created_at) as last_viewed
-          FROM vods v
-          WHERE v.user_id = $1
-          AND v.created_at > NOW() - INTERVAL '30 days'
-          GROUP BY v.channel_id, v.game_id
-        ),
-        channel_scores AS (
-          SELECT 
-            c.id,
-            c.username,
-            c.display_name,
-            c.profile_image_url,
-            g.id as game_id,
-            g.name as game_name,
-            COUNT(DISTINCT uh.game_id) * 0.3 +
-            SUM(CASE 
-              WHEN uh.last_viewed > NOW() - INTERVAL '7 days' THEN 0.5
-              WHEN uh.last_viewed > NOW() - INTERVAL '30 days' THEN 0.3
-              ELSE 0.1
-            END) +
-            COUNT(DISTINCT uh.view_count) * 0.2 as compatibility_score
-          FROM channels c
-          LEFT JOIN games g ON c.current_game_id = g.id
-          LEFT JOIN user_history uh ON c.id = uh.channel_id
-          WHERE c.is_active = true
-          AND NOT EXISTS (
-            SELECT 1 FROM user_vod_preferences up
-            WHERE up.user_id = $1 AND up.channel_id = c.id
-          )
-          GROUP BY c.id, c.username, c.display_name, c.profile_image_url, g.id, g.name
-        ),
-        game_recommendations AS (
-          SELECT 
-            g.id,
-            g.name,
-            g.box_art_url,
-            COUNT(DISTINCT uh.channel_id) * 0.4 +
-            COUNT(DISTINCT pe.id) * 0.3 +
-            COUNT(DISTINCT v.id) * 0.3 as compatibility_score,
-            COUNT(DISTINCT pe.id) as upcoming_premieres
-          FROM games g
-          LEFT JOIN user_history uh ON g.id = uh.game_id
-          LEFT JOIN premiere_events pe ON g.id = pe.game_id 
-            AND pe.start_time > NOW()
-          LEFT JOIN vods v ON g.id = v.game_id 
-            AND v.created_at > NOW() - INTERVAL '7 days'
-          WHERE g.is_active = true
-          AND NOT EXISTS (
-            SELECT 1 FROM user_vod_preferences up
-            WHERE up.user_id = $1 AND up.game_id = g.id
-          )
-          GROUP BY g.id, g.name, g.box_art_url
-          HAVING compatibility_score > 0
-        )
-        SELECT 
-          cs.*,
-          gr.*
-        FROM channel_scores cs
-        CROSS JOIN LATERAL (
-          SELECT json_agg(gr.*) as game_recommendations
-          FROM (
-            SELECT * FROM game_recommendations
-            ORDER BY compatibility_score DESC
-            LIMIT 5
-          ) gr
-        ) gr
-        WHERE cs.compatibility_score > 0
-        ORDER BY cs.compatibility_score DESC
-        LIMIT 10
-      `, [userId]);
-
-      // Cache response for 5 minutes
-      res.set('Cache-Control', 'public, max-age=300');
-      res.json({
-        preferences,
-        premieres: premieresResult.rows,
-        risingChannels: risingChannelsResult.rows,
-        recommendations: {
-          channels: recommendationsResult.rows,
-          games: recommendationsResult.rows[0]?.game_recommendations || []
-        }
-      });
+      // Only return preferences — actual recommendations are fetched
+      // via the separate /recommendations/channels and /recommendations/games endpoints
+      // which use the RecommendationsManager with Twitch API
+      res.json({ preferences });
     } catch (error) {
       logger.error('Error fetching discovery feed:', error);
       next(new DiscoveryError('Failed to fetch discovery feed', 500));

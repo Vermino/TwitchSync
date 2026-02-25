@@ -1,7 +1,7 @@
 // frontend/src/components/discovery/RecommendationCard.tsx
 
 import React from 'react';
-import { Users, Gamepad2, TrendingUp, BarChart2, Star } from 'lucide-react';
+import { Users, Gamepad2, Star, EyeOff } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -14,11 +14,11 @@ import type {
 const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onAction, onIgnore }) => {
   const renderReasons = () => (
     <div className="space-y-2 mb-3">
-      {item.reasons.map((reason, index) => (
+      {item.recommendation_reasons.map((reason, index) => (
         <div key={`${reason.type}-${index}`} className="flex items-center gap-2">
           <Progress value={reason.strength * 100} className="h-2" />
           <span className="text-sm text-gray-600 min-w-[100px]">
-            {reason.type.split('_').map(word =>
+            {reason.type.split('_').map((word: string) =>
               word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
             ).join(' ')}
           </span>
@@ -29,44 +29,41 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
 
   if (type === 'channel') {
     const channelRec = item as ChannelRecommendation;
-    const { channel } = channelRec;
 
     return (
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center gap-3 mb-3">
             <Avatar className="w-12 h-12">
-              <AvatarImage src={channel.avatar} alt={channel.name} />
-              <AvatarFallback>{channel.name[0].toUpperCase()}</AvatarFallback>
+              <AvatarImage src={channelRec.profile_image_url} alt={channelRec.display_name} />
+              <AvatarFallback>{channelRec.display_name[0]?.toUpperCase() || 'C'}</AvatarFallback>
             </Avatar>
             <div>
-              <div className="font-medium">{channel.name}</div>
-              <div className="text-sm text-gray-600 flex items-center gap-1">
-                <Gamepad2 size={14} />
-                {channel.currentGame}
+              <div className="font-medium">{channelRec.display_name}</div>
+              <div className="text-sm text-gray-600 flex items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap max-w-[150px]">
+                <Gamepad2 size={14} className="shrink-0" />
+                {channelRec.current_game?.name || 'Multiple Games'}
               </div>
             </div>
             <div className="ml-auto text-right">
-              <div className="text-sm font-medium">{(channelRec.score * 100).toFixed(0)}%</div>
+              <div className="text-sm font-medium">{(channelRec.compatibility_score * 100).toFixed(0)}%</div>
               <div className="text-xs text-gray-600">Match</div>
             </div>
           </div>
 
           {renderReasons()}
 
-          <div className="grid grid-cols-3 gap-2 mb-3 text-sm text-gray-600">
-            <div className="flex items-center gap-1">
+          <div className="grid grid-cols-2 gap-2 mb-3 text-sm text-gray-600">
+            <div className="flex items-center gap-1" title="VOD Views">
               <Users size={16} />
-              <span>{channel.followers.toLocaleString()}</span>
+              <span>{channelRec.viewer_count.toLocaleString()} Views</span>
             </div>
-            <div className="flex items-center gap-1">
-              <BarChart2 size={16} />
-              <span>{channel.averageViewers.toLocaleString()}/stream</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Star size={16} />
-              <span>{channel.language}</span>
-            </div>
+            {channelRec.tags && channelRec.tags.length > 0 && (
+              <div className="flex items-center gap-1 overflow-hidden" title="Tags">
+                <Star size={16} className="shrink-0" />
+                <span className="truncate">{channelRec.tags.slice(0, 1).join(', ')}</span>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -82,6 +79,7 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
                 className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-100 transition-colors"
                 title="Don't show this channel again"
               >
+                <EyeOff size={16} className="inline mr-1" />
                 Ignore
               </button>
             )}
@@ -92,45 +90,29 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
   }
 
   const gameRec = item as GameRecommendation;
-  const { game } = gameRec;
 
   return (
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center gap-3 mb-3">
           <img
-            src={game.boxArt}
-            alt={game.name}
-            className="w-12 h-12 rounded object-cover"
+            src={gameRec.box_art_url}
+            alt={gameRec.name}
+            className="w-12 h-16 rounded object-cover border border-gray-200"
           />
           <div>
-            <div className="font-medium">{game.name}</div>
-            <div className="text-sm text-gray-600">
-              {game.genres.slice(0, 2).join(', ')}
+            <div className="font-medium">{gameRec.name}</div>
+            <div className="text-sm text-gray-600 truncate max-w-[150px]">
+              {gameRec.tags?.slice(0, 2).join(', ') || 'Game'}
             </div>
           </div>
           <div className="ml-auto text-right">
-            <div className="text-sm font-medium">{(gameRec.score * 100).toFixed(0)}%</div>
+            <div className="text-sm font-medium">{(gameRec.compatibility_score * 100).toFixed(0)}%</div>
             <div className="text-xs text-gray-600">Match</div>
           </div>
         </div>
 
         {renderReasons()}
-
-        <div className="grid grid-cols-3 gap-2 mb-3 text-sm text-gray-600">
-          <div className="flex items-center gap-1">
-            <Users size={16} />
-            <span>{gameRec.metrics.activeChannels.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <BarChart2 size={16} />
-            <span>{gameRec.metrics.averageViewers.toLocaleString()}/stream</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <TrendingUp size={16} />
-            <span>{gameRec.metrics.totalViewers.toLocaleString()}</span>
-          </div>
-        </div>
 
         <div className="flex gap-2">
           <button
@@ -145,6 +127,7 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
               className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-100 transition-colors"
               title="Don't show this game again"
             >
+              <EyeOff size={16} className="inline mr-1" />
               Ignore
             </button>
           )}

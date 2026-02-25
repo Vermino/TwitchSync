@@ -12,7 +12,7 @@ import { setupTaskRoutes } from './tasks';
 import { setupTwitchSearchRoutes } from './twitch/search';
 import { setupVodRoutes } from './vods';
 import { setupQueueRoutes } from './queue';
-import createDiscoveryRouter from './discovery';
+import createDiscoveryRouter from './discovery/index';
 import createDownloadsRouter from './downloads';
 import { createHealthRoutes } from './health';
 import { setupLifecycleRoutes } from './lifecycle';
@@ -53,7 +53,7 @@ export function setupRoutes(pool: Pool): Router {
     { path: '/twitch', handler: setupTwitchSearchRoutes },
     { path: '/vods', handler: setupVodRoutes },
     { path: '/queue', handler: setupQueueRoutes },
-    { path: '/discovery', handler: () => createDiscoveryRouter },
+    { path: '/discovery', handler: createDiscoveryRouter },
     { path: '/downloads', handler: (poolArg: Pool) => createDownloadsRouter(poolArg, downloadManager) },
     { path: '/lifecycle', handler: setupLifecycleRoutes },
   ];

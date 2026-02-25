@@ -24,40 +24,34 @@ const channelSchema = z.object({
 
 // Discovery preferences schema
 export const DiscoveryPreferencesSchema = z.object({
-  body: z.object({
-    min_viewers: z.number().int().min(0),
-    max_viewers: z.number().int().min(0),
-    preferred_languages: z.array(z.string().length(2)),
-    content_rating: z.enum(['all', 'family', 'mature']),
-    notify_only: z.boolean(),
-    schedule_match: z.boolean(),
-    confidence_threshold: z.number().min(0).max(1)
-  }).refine(data => data.min_viewers < data.max_viewers, {
-    message: "min_viewers must be less than max_viewers",
-    path: ["min_viewers"]
-  })
+  min_viewers: z.number().int().min(0),
+  max_viewers: z.number().int().min(0),
+  preferred_languages: z.array(z.string().length(2)),
+  content_rating: z.enum(['all', 'family', 'mature']),
+  notify_only: z.boolean(),
+  schedule_match: z.boolean(),
+  confidence_threshold: z.number().min(0).max(1)
+}).refine(data => data.min_viewers < data.max_viewers, {
+  message: "min_viewers must be less than max_viewers",
+  path: ["min_viewers"]
 });
 
 // Premiere tracking schema
 export const PremiereTrackingSchema = z.object({
-  body: z.object({
-    premiere_id: z.string(),
-    quality: z.enum(['best', 'source', '1080p', '720p', '480p']),
-    retention_days: z.number().int().min(1).max(365),
-    notify: z.boolean().default(true)
-  })
+  premiere_id: z.string(),
+  quality: z.enum(['best', 'source', '1080p', '720p', '480p']),
+  retention_days: z.number().int().min(1).max(365),
+  notify: z.boolean().default(true)
 });
 
 // Feed filters schema
 export const FeedFiltersSchema = z.object({
-  query: z.object({
-    page: z.string().regex(/^\d+$/).transform(Number).optional(),
-    limit: z.string().regex(/^\d+$/).transform(Number).optional(),
-    game_ids: z.string().transform(ids => ids.split(',')).optional(),
-    min_viewers: z.string().regex(/^\d+$/).transform(Number).optional(),
-    max_viewers: z.string().regex(/^\d+$/).transform(Number).optional(),
-    languages: z.string().transform(langs => langs.split(',')).optional()
-  })
+  page: z.string().regex(/^\d+$/).transform(Number).optional(),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional(),
+  game_ids: z.string().transform(ids => ids.split(',')).optional(),
+  min_viewers: z.string().regex(/^\d+$/).transform(Number).optional(),
+  max_viewers: z.string().regex(/^\d+$/).transform(Number).optional(),
+  languages: z.string().transform(langs => langs.split(',')).optional()
 });
 
 // Custom error class
@@ -160,10 +154,10 @@ export const validatePremiereExists = async (
 };
 
 export const validateDiscoveryPreferences = (
-  data: z.infer<typeof DiscoveryPreferencesSchema>['body']
+  data: z.infer<typeof DiscoveryPreferencesSchema>
 ): void => {
   try {
-    DiscoveryPreferencesSchema.shape.body.parse(data);
+    DiscoveryPreferencesSchema.parse(data);
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('Discovery preferences validation failed:', {
@@ -176,6 +170,6 @@ export const validateDiscoveryPreferences = (
   }
 };
 
-export type DiscoveryPreferencesRequest = z.infer<typeof DiscoveryPreferencesSchema>;
-export type PremiereTrackingRequest = z.infer<typeof PremiereTrackingSchema>;
-export type FeedFiltersRequest = z.infer<typeof FeedFiltersSchema>;
+export type DiscoveryPreferencesRequest = { body: z.infer<typeof DiscoveryPreferencesSchema> };
+export type PremiereTrackingRequest = { body: z.infer<typeof PremiereTrackingSchema> };
+export type FeedFiltersRequest = { query: z.infer<typeof FeedFiltersSchema> };

@@ -34,7 +34,6 @@ export type {
 export type {
   SystemSettings,
   StorageStats,
-  UserPreferences,
   NotificationSettings
 } from './settings';
 
@@ -42,12 +41,7 @@ export type {
 export type {
   DiscoveryFeedResponse,
   DiscoveryPreferences,
-  DiscoveryStats,
-  ChannelRecommendation,
   GameRecommendation,
-  RisingChannel,
-  StreamPremiereEvent,
-  TrackPremiereResponse,
   TrendingCategory,
   UpdatePreferencesResponse
 } from './discovery';

@@ -7,9 +7,6 @@ import type {
   DiscoveryStats,
   ChannelRecommendation,
   GameRecommendation,
-  RisingChannel,
-  StreamPremiereEvent,
-  TrackPremiereResponse,
   TrendingCategory,
   UpdatePreferencesResponse
 } from '@/types/discovery';
@@ -24,32 +21,6 @@ export class DiscoveryClient extends BaseApiClient {
       return response.data;
     } catch (error) {
       console.error('Error fetching discovery feed:', error);
-      throw this.handleError(error);
-    }
-  }
-
-  async getPremieres(): Promise<StreamPremiereEvent[]> {
-    try {
-      const response = await this.axios.get(
-        `${this.baseURL}/discovery/premieres`,
-        { headers: this.getHeaders() }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching premieres:', error);
-      throw this.handleError(error);
-    }
-  }
-
-  async getRisingChannels(): Promise<RisingChannel[]> {
-    try {
-      const response = await this.axios.get(
-        `${this.baseURL}/discovery/rising`,
-        { headers: this.getHeaders() }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching rising channels:', error);
       throw this.handleError(error);
     }
   }
@@ -93,23 +64,7 @@ export class DiscoveryClient extends BaseApiClient {
     }
   }
 
-  async trackPremiereEvent(id: string, config: {
-    quality: string;
-    retention: number;
-    notify: boolean;
-  }): Promise<TrackPremiereResponse> {
-    try {
-      const response = await this.axios.post(
-        `${this.baseURL}/discovery/premieres/${id}/track`,
-        config,
-        { headers: this.getHeaders() }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error tracking premiere event:', error);
-      throw this.handleError(error);
-    }
-  }
+
 
   async updateDiscoveryPreferences(preferences: Partial<DiscoveryPreferences>): Promise<UpdatePreferencesResponse> {
     try {

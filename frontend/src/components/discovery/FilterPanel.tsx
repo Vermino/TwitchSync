@@ -26,24 +26,24 @@ const FilterPanel = ({ settings, onChange }: FilterPanelProps) => {
   return (
     <Card>
       <CardContent className="space-y-6 p-4">
-        {/* Viewer Range */}
+        {/* VOD Views */}
         <div>
           <h3 className="font-medium mb-2 flex items-center gap-2">
             <Users size={16} />
-            Viewer Range
+            VOD Views
           </h3>
           <div className="px-2">
             <Slider
               min={0}
-              max={100000}
-              step={100}
+              max={1000000}
+              step={1000}
               value={[settings.minViewers, settings.maxViewers]}
               onValueChange={handleViewerRangeChange}
               className="mt-2"
             />
             <div className="flex justify-between mt-1 text-sm text-gray-600">
-              <span>{settings.minViewers.toLocaleString()}</span>
-              <span>{settings.maxViewers.toLocaleString()}</span>
+              <span>{settings.minViewers === 0 ? '0' : settings.minViewers.toLocaleString()}</span>
+              <span>{settings.maxViewers >= 1000000 ? '1M+' : settings.maxViewers.toLocaleString()} views</span>
             </div>
           </div>
         </div>
@@ -86,15 +86,6 @@ const FilterPanel = ({ settings, onChange }: FilterPanelProps) => {
                 checked={settings.notifyOnly}
                 onCheckedChange={(checked) =>
                   onChange({ ...settings, notifyOnly: checked })
-                }
-              />
-            </label>
-            <label className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Match Schedule</span>
-              <Switch
-                checked={settings.scheduleMatch}
-                onCheckedChange={(checked) =>
-                  onChange({ ...settings, scheduleMatch: checked })
                 }
               />
             </label>

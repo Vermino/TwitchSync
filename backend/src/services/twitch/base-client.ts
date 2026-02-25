@@ -63,11 +63,22 @@ export class TwitchBaseClient {
 
   protected async makeRequest<T>(
     endpoint: string,
-    params: Record<string, string | number> = {},
+    params: Record<string, string | number | string[]> = {},
     config: Partial<AxiosRequestConfig> = {}
   ): Promise<TwitchAPIResponse<T>> {
     try {
       const token = await this.getAccessToken();
+
+      const searchParams = new URLSearchParams();
+      const allParams = { ...params, ...config.params };
+      Object.entries(allParams).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach(v => searchParams.append(key, String(v)));
+        } else if (value !== undefined && value !== null) {
+          searchParams.append(key, String(value));
+        }
+      });
+
       const response = await this.client.get<TwitchAPIResponse<T>>(endpoint, {
         ...config,
         headers: {
@@ -75,10 +86,7 @@ export class TwitchBaseClient {
           'Authorization': `Bearer ${token}`,
           'Client-Id': this.clientId
         },
-        params: {
-          ...params,
-          ...config.params
-        }
+        params: searchParams
       });
       return response.data;
     } catch (error) {

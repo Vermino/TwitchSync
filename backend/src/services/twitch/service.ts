@@ -70,7 +70,7 @@ export class TwitchService implements ITwitchService {
 
       // Sort channels by follower count (highest first)
       enrichedChannels.sort((a, b) => b.follower_count - a.follower_count);
-      
+
       return enrichedChannels;
     } catch (error) {
       logger.error('Error searching channels:', error);
@@ -168,6 +168,15 @@ export class TwitchService implements ITwitchService {
     } catch (error) {
       logger.error('Failed to fetch top streams:', error);
       throw new Error(`Failed to fetch top streams: ${error}`);
+    }
+  }
+
+  async getTopVODs(filters: import('./types').VODFilters = {}): Promise<import('./types').TwitchVOD[]> {
+    try {
+      return await this.apiClient.getTopVODs(filters);
+    } catch (error) {
+      logger.error('Failed to fetch top VODs:', error);
+      throw new Error(`Failed to fetch top VODs: ${error}`);
     }
   }
 

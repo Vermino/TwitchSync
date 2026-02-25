@@ -8,10 +8,8 @@ import type {
   DiscoveryFeedResponse,
   DiscoveryPreferences,
   DiscoveryStats,
+  FilterSettings,
   GameRecommendation,
-  RisingChannel,
-  StreamPremiereEvent,
-  TrackPremiereResponse,
   TrendingCategory,
   UpdatePreferencesResponse
 } from '@/types/discovery';
@@ -681,6 +679,18 @@ class ApiClient {
     }
   }
 
+  async getDiscoveryPreferences(): Promise<DiscoveryPreferences> {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/preferences`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching discovery preferences:', error);
+      throw this.handleError(error);
+    }
+  }
+
   async getPremieres(): Promise<StreamPremiereEvent[]> {
     try {
       const response = await axios.get(`${this.baseURL}/discovery/premieres`, {
@@ -705,10 +715,15 @@ class ApiClient {
     }
   }
 
-  async getChannelRecommendations(): Promise<ChannelRecommendation[]> {
+  async getChannelRecommendations(filters?: Partial<FilterSettings>): Promise<ChannelRecommendation[]> {
     try {
       const response = await axios.get(`${this.baseURL}/discovery/recommendations/channels`, {
-        headers: this.getHeaders()
+        headers: this.getHeaders(),
+        params: {
+          min_viewers: filters?.minViewers,
+          max_viewers: filters?.maxViewers,
+          languages: filters?.preferredLanguages?.join(',')
+        }
       });
       return response.data;
     } catch (error) {
@@ -717,10 +732,15 @@ class ApiClient {
     }
   }
 
-  async getGameRecommendations(): Promise<GameRecommendation[]> {
+  async getGameRecommendations(filters?: Partial<FilterSettings>): Promise<GameRecommendation[]> {
     try {
       const response = await axios.get(`${this.baseURL}/discovery/recommendations/games`, {
-        headers: this.getHeaders()
+        headers: this.getHeaders(),
+        params: {
+          min_viewers: filters?.minViewers,
+          max_viewers: filters?.maxViewers,
+          languages: filters?.preferredLanguages?.join(',')
+        }
       });
       return response.data;
     } catch (error) {

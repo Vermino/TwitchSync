@@ -200,7 +200,7 @@ export class TwitchAPIClient extends TwitchBaseClient {
         }`;
 
       logger.debug(`Getting access token for VOD ${vodId} using GQL`);
-      
+
       const response = await axios.post(gqlUrl, {
         query: gqlQuery,
         variables: {
@@ -254,7 +254,7 @@ export class TwitchAPIClient extends TwitchBaseClient {
     try {
       const randomParam = Math.floor(Math.random() * 99999) + 1;
       const url = `https://usher.ttvnw.net/vod/${vodId}`;
-      
+
       const response = await axios.get(url, {
         params: {
           player: 'twitchweb',
@@ -303,13 +303,13 @@ export class TwitchAPIClient extends TwitchBaseClient {
         if (line.startsWith('#EXT-X-STREAM-INF:')) {
           const streamInfo = line;
           const streamUrl = lines[i + 1];
-          
+
           if (streamUrl && !streamUrl.startsWith('#')) {
             // Extract quality information
             const resolutionMatch = streamInfo.match(/RESOLUTION=(\d+x\d+)/);
             const nameMatch = streamInfo.match(/VIDEO="([^"]+)"/);
             const fpsMatch = streamInfo.match(/FRAME-RATE=([\d.]+)/);
-            
+
             let qualityName = 'unknown';
             if (nameMatch && nameMatch[1]) {
               qualityName = nameMatch[1];
@@ -330,7 +330,7 @@ export class TwitchAPIClient extends TwitchBaseClient {
             const streamPlaylist = await this.getStreamPlaylist(streamUrl);
             if (streamPlaylist) {
               playlistData.qualities[qualityName] = streamPlaylist;
-              
+
               // Use the first quality to calculate total duration
               if (playlistData.duration === 0) {
                 playlistData.duration = streamPlaylist.segments.reduce(
@@ -381,15 +381,15 @@ export class TwitchAPIClient extends TwitchBaseClient {
     try {
       const lines = content.split('\n').map(line => line.trim()).filter(line => line);
       const segments: Array<{ url: string; duration: number }> = [];
-      
+
       let currentDuration = 0;
-      
+
       // Helper function to resolve relative URLs
       const resolveUrl = (url: string): string => {
         if (!baseUrl || url.startsWith('http://') || url.startsWith('https://')) {
           return url;
         }
-        
+
         try {
           // Create URL object from baseUrl and resolve the relative path
           const base = new URL(baseUrl);
@@ -399,10 +399,10 @@ export class TwitchAPIClient extends TwitchBaseClient {
           return url; // Return original if resolution fails
         }
       };
-      
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        
+
         if (line.startsWith('#EXTINF:')) {
           const durationMatch = line.match(/#EXTINF:([\d.]+)/);
           if (durationMatch) {
@@ -428,7 +428,7 @@ export class TwitchAPIClient extends TwitchBaseClient {
           }
         }
       }
-      
+
       return segments.length > 0 ? { segments } : null;
     } catch (error) {
       logger.error('Failed to parse direct playlist:', error);
@@ -468,12 +468,12 @@ export class TwitchAPIClient extends TwitchBaseClient {
   }
 
   async getTopStreams(filters: StreamFilters): Promise<TwitchStreamInfo[]> {
-    const params: Record<string, string | number> = {
+    const params: Record<string, string | number | string[]> = {
       first: filters.limit?.toString() || '100'
     };
 
     if (filters.languages?.length) {
-      params.language = filters.languages.join(',');
+      params.language = filters.languages;
     }
 
     if (filters.gameId) {
@@ -485,6 +485,27 @@ export class TwitchAPIClient extends TwitchBaseClient {
       return response.data;
     } catch (error) {
       logger.error('Failed to get top streams:', error);
+      throw error;
+    }
+  }
+
+  async getTopVODs(filters: import('./types').VODFilters): Promise<TwitchVOD[]> {
+    const params: Record<string, string | number | string[]> = {
+      first: filters.limit?.toString() || '100',
+      type: 'all'
+    };
+
+    if (filters.userId) params.user_id = filters.userId;
+    if (filters.gameId) params.game_id = filters.gameId;
+    if (filters.languages?.length) params.language = filters.languages;
+    if (filters.period) params.period = filters.period;
+    if (filters.sort) params.sort = filters.sort;
+
+    try {
+      const response = await this.makeRequest<TwitchVOD>('/videos', params);
+      return response.data;
+    } catch (error) {
+      logger.error('Failed to get top VODs:', error);
       throw error;
     }
   }

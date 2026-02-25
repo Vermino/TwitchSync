@@ -5,14 +5,14 @@ import { logger } from '../../utils/logger';
 import { UserPreferences } from '../../types/discovery';
 
 export class PreferencesManager {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool) { }
 
   private getDefaultPreferences(): UserPreferences {
     return {
       id: 0,
       user_id: 0,
-      min_viewers: 100,
-      max_viewers: 50000,
+      min_viewers: 0, // Lowered to 0 to capture smaller niche historic VODs
+      max_viewers: 1000000,
       preferred_languages: ['en'],
       content_rating: 'all',
       notify_only: false,
@@ -100,12 +100,12 @@ export class PreferencesManager {
     try {
       // Validate updates
       if (updates.min_viewers && updates.max_viewers &&
-          updates.min_viewers > updates.max_viewers) {
+        updates.min_viewers > updates.max_viewers) {
         throw new Error('min_viewers must be less than max_viewers');
       }
 
       if (updates.confidence_threshold !== undefined &&
-          (updates.confidence_threshold < 0 || updates.confidence_threshold > 1)) {
+        (updates.confidence_threshold < 0 || updates.confidence_threshold > 1)) {
         throw new Error('confidence_threshold must be between 0 and 1');
       }
 
@@ -153,6 +153,24 @@ export class PreferencesManager {
     } catch (error) {
       logger.error('Error deleting preferences:', error);
       throw error;
+    }
+  }
+
+  async ignoreDiscoveryItem(userId: string, itemType: string, itemId: string, client?: PoolClient): Promise<void> {
+    const dbClient = client || await this.pool.connect();
+    try {
+      await dbClient.query(`
+        INSERT INTO ignored_discovery_items (user_id, item_type, item_id, created_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+        ON CONFLICT DO NOTHING
+      `, [userId, itemType, itemId]);
+    } catch (error) {
+      logger.error('Error ignoring discovery item:', error);
+      throw error;
+    } finally {
+      if (!client) {
+        dbClient.release();
+      }
     }
   }
 }

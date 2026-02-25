@@ -21,10 +21,8 @@ import {
 } from '@/components/ui/select';
 import {
   Bell,
-  Clock,
   Download,
   Filter,
-  TrendingUp,
   Sparkles,
   MousePointerClick,
 } from 'lucide-react';
@@ -34,8 +32,6 @@ interface DiscoverySettingsProps {
   onOpenChange: (open: boolean) => void;
   settings: {
     notifications: {
-      premieres: boolean;
-      risingStars: boolean;
       recommendations: boolean;
     };
     archiving: {
@@ -44,7 +40,6 @@ interface DiscoverySettingsProps {
       retention: number;
     };
     discovery: {
-      scheduleMatch: boolean;
       minConfidence: number;
       autoTrack: boolean;
     };
@@ -87,40 +82,6 @@ const DiscoverySettings = ({
           <TabsContent value="notifications" className="space-y-4">
             <div className="space-y-4 mt-4">
               <div className="flex items-center justify-between">
-                <Label htmlFor="premieres" className="flex items-center gap-2">
-                  <Bell className="w-4 h-4" />
-                  Premiere Notifications
-                </Label>
-                <Switch
-                  id="premieres"
-                  checked={settings.notifications.premieres}
-                  onCheckedChange={(checked) =>
-                    onSettingsChange({
-                      ...settings,
-                      notifications: { ...settings.notifications, premieres: checked },
-                    })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="risingStars" className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" />
-                  Rising Stars Alerts
-                </Label>
-                <Switch
-                  id="risingStars"
-                  checked={settings.notifications.risingStars}
-                  onCheckedChange={(checked) =>
-                    onSettingsChange({
-                      ...settings,
-                      notifications: { ...settings.notifications, risingStars: checked },
-                    })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
                 <Label htmlFor="recommendations" className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4" />
                   Recommendation Updates
@@ -144,7 +105,7 @@ const DiscoverySettings = ({
               <div className="flex items-center justify-between">
                 <Label htmlFor="autoArchive" className="flex items-center gap-2">
                   <Download className="w-4 h-4" />
-                  Auto-Archive Premieres
+                  Auto-Archive Recommendations
                 </Label>
                 <Switch
                   id="autoArchive"
@@ -204,23 +165,6 @@ const DiscoverySettings = ({
 
           <TabsContent value="discovery" className="space-y-4">
             <div className="space-y-4 mt-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="scheduleMatch" className="flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  Match My Schedule
-                </Label>
-                <Switch
-                  id="scheduleMatch"
-                  checked={settings.discovery.scheduleMatch}
-                  onCheckedChange={(checked) =>
-                    onSettingsChange({
-                      ...settings,
-                      discovery: { ...settings.discovery, scheduleMatch: checked },
-                    })
-                  }
-                />
-              </div>
-
               <div className="space-y-2">
                 <Label>Minimum Confidence Score</Label>
                 <Slider

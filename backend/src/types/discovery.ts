@@ -24,8 +24,11 @@ export interface RecommendationBase {
   compatibility_score: number;
 }
 
-export interface RecommendationReason {
-  type: 'GAME_OVERLAP' | 'VIEWER_OVERLAP' | 'SCHEDULE_MATCH';
+export type ChannelReasonType = 'GAME_OVERLAP' | 'VIEWER_OVERLAP' | 'SCHEDULE_MATCH';
+export type GameReasonType = 'CHANNEL_OVERLAP' | 'VIEWER_OVERLAP' | 'GENRE_MATCH';
+
+export interface RecommendationReason<T extends string = string> {
+  type: T;
   strength: number;
 }
 
@@ -36,7 +39,7 @@ export interface ChannelRecommendation extends RecommendationBase {
   profile_image_url: string;
   description: string;
   viewer_count: number;
-  recommendation_reasons: RecommendationReason[];
+  recommendation_reasons: RecommendationReason<ChannelReasonType>[];
   current_game?: {
     id: string;
     name: string;
@@ -50,6 +53,7 @@ export interface GameRecommendation extends RecommendationBase {
   game_id: string;
   name: string;
   box_art_url: string;
+  recommendation_reasons: RecommendationReason<GameReasonType>[];
   category?: string;
   tags?: string[];
 }

@@ -3,18 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { discoveryService } from '@/services/discovery';
+import { api } from '@/lib/api';
 import DiscoveryHeader from '../components/discovery/DiscoveryHeader';
 import FilterPanel from '../components/discovery/FilterPanel';
-import StatsCard from '../components/discovery/StatsCard';
 import RecommendationCard from '../components/discovery/RecommendationCard';
-import PremiereCard from '../components/discovery/PremiereCard';
 import DiscoverySettings from '../components/discovery/DiscoverySettings';
+import TaskModal from '@/components/TaskModal/TaskModal';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type {
-  DiscoveryFeedResponse,
   FilterSettings,
-  DiscoveryStats,
   ChannelRecommendation,
   GameRecommendation
 } from '@/types/discovery';
@@ -27,58 +25,27 @@ interface RecommendationsState {
   loading: boolean;
 }
 
-const defaultDiscoveryData: DiscoveryFeedResponse = {
-  preferences: {
-    minViewers: 100,
-    maxViewers: 50000,
-    preferredLanguages: ['EN'],
-    contentRating: 'all',
-    notifyOnly: false,
-    scheduleMatch: true,
-    confidenceThreshold: 0.7
-  },
-  premieres: [],
-  risingChannels: [],
-  recommendations: {
-    channels: [],
-    games: []
-  },
-  trending: [],
-  stats: {
-    upcomingPremieres: 0,
-    trackedPremieres: 0,
-    risingChannels: 0,
-    pendingArchives: 0,
-    todayDiscovered: 0
-  }
-};
 
 const ContentDiscovery: React.FC = () => {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'premieres' | 'discover' | 'history'>('discover');
   const [recommendations, setRecommendations] = useState<RecommendationsState>({
     channels: [],
     games: [],
     lastUpdated: null,
     loading: true
   });
-  const [stats, setStats] = useState<DiscoveryStats | null>(null);
   const [filterSettings, setFilterSettings] = useState<FilterSettings>({
     minViewers: 100,
     maxViewers: 50000,
     preferredLanguages: ['EN'],
     contentRating: 'all',
     notifyOnly: false,
-    scheduleMatch: true,
     confidenceThreshold: 0.7
   });
-  const [discoveryData, _setDiscoveryData] = useState<DiscoveryFeedResponse>(defaultDiscoveryData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState({
     notifications: {
-      premieres: true,
-      risingStars: true,
       recommendations: false
     },
     archiving: {
@@ -87,11 +54,14 @@ const ContentDiscovery: React.FC = () => {
       retention: 30
     },
     discovery: {
-      scheduleMatch: true,
       minConfidence: 0.7,
       autoTrack: false
     }
   });
+
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [pendingTask, setPendingTask] = useState<any>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const loadRecommendations = async () => {
     setRecommendations(prev => ({ ...prev, loading: true }));
@@ -109,15 +79,11 @@ const ContentDiscovery: React.FC = () => {
         loading: false
       });
 
-      // Also update stats
-      const statsData = await discoveryService.getDiscoveryStats();
-      setStats(statsData);
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Error",
-        description: `Failed to load recommendations: ${errorMessage}`,
+        description: `Failed to load recommendations: ${errorMessage} `,
         variant: "destructive"
       });
       setRecommendations(prev => ({ ...prev, loading: false }));
@@ -127,70 +93,86 @@ const ContentDiscovery: React.FC = () => {
   };
 
   useEffect(() => {
-    loadRecommendations();
-  }, [filterSettings]);
+    let mounted = true;
+    api.getDiscoveryFeed().then(feed => {
+      if (mounted && feed?.preferences) {
+        const prefs = feed.preferences as any;
+        setFilterSettings(prev => ({
+          ...prev,
+          minViewers: prefs.min_viewers ?? prefs.minViewers ?? 0,
+          maxViewers: prefs.max_viewers ?? prefs.maxViewers ?? 1000000,
+          preferredLanguages: prefs.preferred_languages ?? prefs.preferredLanguages ?? ['en'],
+          contentRating: prefs.content_rating ?? prefs.contentRating ?? 'all',
+          notifyOnly: prefs.notify_only ?? prefs.notifyOnly ?? false,
+          confidenceThreshold: prefs.confidence_threshold ?? prefs.confidenceThreshold ?? 0.7
+        }));
+      }
+      if (mounted) setIsInitialized(true);
+    }).catch((e: any) => {
+      console.error("Failed to load initial discovery preferences", e);
+      if (mounted) setIsInitialized(true);
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (isInitialized) {
+      loadRecommendations();
+    }
+  }, [filterSettings, isInitialized]);
 
   const handleTrackChannel = async (channelId: string) => {
-    try {
-      // Find the channel data to get the actual name
-      const channel = recommendations.channels.find(c => c.id === channelId);
-      const channelName = channel?.channel.name || channelId;
+    const channel = recommendations.channels.find(c => c.id === channelId);
+    const channelName = channel?.display_name || channelId;
 
-      await discoveryService.trackChannel(channelName, {
-        quality: 'best',
-        notifications: true,
-        autoArchive: true
-      });
+    setPendingTask({
+      name: `Track ${channelName} `,
+      task_type: 'combined',
+      channel_ids: [channelId],
+      game_ids: [],
+      schedule_type: 'interval',
+      schedule_value: '3600',
+      storage_limit_gb: 0,
+      retention_days: 7,
+      auto_delete: false,
+      priority: 'normal',
+      conditions: {},
+      restrictions: {}
+    });
+    setIsTaskModalOpen(true);
 
-      toast({
-        title: "Success",
-        description: `${channelName} is now being tracked`,
-      });
-
-      // Remove from recommendations
-      setRecommendations(prev => ({
-        ...prev,
-        channels: prev.channels.filter(c => c.id !== channelId)
-      }));
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      toast({
-        title: "Error",
-        description: `Failed to track channel: ${errorMessage}`,
-        variant: "destructive"
-      });
-    }
+    // Assume user will create it and remove from recommendations proactively
+    setRecommendations(prev => ({
+      ...prev,
+      channels: prev.channels.filter(c => c.id !== channelId)
+    }));
   };
 
   const handleTrackGame = async (gameId: string) => {
-    try {
-      // Find the game data to get the actual name
-      const game = recommendations.games.find(g => g.id === gameId);
-      const gameName = game?.game.name || gameId;
+    const game = recommendations.games.find(g => g.id === gameId);
+    const gameName = game?.name || gameId;
 
-      await discoveryService.trackGame(gameName, {
-        notifications: true,
-        autoArchive: true
-      });
+    setPendingTask({
+      name: `Track ${gameName} `,
+      task_type: 'combined',
+      channel_ids: [],
+      game_ids: [gameId],
+      schedule_type: 'interval',
+      schedule_value: '3600',
+      storage_limit_gb: 0,
+      retention_days: 7,
+      auto_delete: false,
+      priority: 'normal',
+      conditions: {},
+      restrictions: {}
+    });
+    setIsTaskModalOpen(true);
 
-      toast({
-        title: "Success",
-        description: `${gameName} is now being tracked`,
-      });
-
-      // Remove from recommendations
-      setRecommendations(prev => ({
-        ...prev,
-        games: prev.games.filter(g => g.id !== gameId)
-      }));
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      toast({
-        title: "Error",
-        description: `Failed to track game: ${errorMessage}`,
-        variant: "destructive"
-      });
-    }
+    // Assume user will create it and remove from recommendations proactively
+    setRecommendations(prev => ({
+      ...prev,
+      games: prev.games.filter(g => g.id !== gameId)
+    }));
   };
 
   const handleIgnoreChannel = async (channelId: string) => {
@@ -208,7 +190,7 @@ const ContentDiscovery: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: 'Error',
-        description: `Failed to ignore channel: ${errorMessage}`,
+        description: `Failed to ignore channel: ${errorMessage} `,
         variant: 'destructive'
       });
     }
@@ -229,7 +211,7 @@ const ContentDiscovery: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: 'Error',
-        description: `Failed to ignore game: ${errorMessage}`,
+        description: `Failed to ignore game: ${errorMessage} `,
         variant: 'destructive'
       });
     }
@@ -263,7 +245,7 @@ const ContentDiscovery: React.FC = () => {
             variant="outline"
             disabled={isRefreshing}
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w - 4 h - 4 mr - 2 ${isRefreshing ? 'animate-spin' : ''} `} />
             Try Again
           </Button>
         </div>
@@ -284,7 +266,7 @@ const ContentDiscovery: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {recommendations.channels.map(channel => (
                 <RecommendationCard
-                  key={`channel-${channel.id}`}
+                  key={`channel - ${channel.id} `}
                   item={channel}
                   type="channel"
                   onAction={(id) => handleTrackChannel(id)}
@@ -307,7 +289,7 @@ const ContentDiscovery: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {recommendations.games.map(game => (
                 <RecommendationCard
-                  key={`game-${game.id}`}
+                  key={`game - ${game.id} `}
                   item={game}
                   type="game"
                   onAction={(id) => handleTrackGame(id)}
@@ -339,10 +321,8 @@ const ContentDiscovery: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <DiscoveryHeader
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
         onSettingsClick={() => setShowSettings(true)}
-        notificationCount={stats?.pendingArchives ?? 0}
+        notificationCount={0}
       />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -353,7 +333,6 @@ const ContentDiscovery: React.FC = () => {
               settings={filterSettings}
               onChange={setFilterSettings}
             />
-            {stats && <StatsCard stats={stats} />}
           </div>
 
           {/* Main Content */}
@@ -371,31 +350,12 @@ const ContentDiscovery: React.FC = () => {
                 onClick={loadRecommendations}
                 disabled={isRefreshing}
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w - 4 h - 4 mr - 2 ${isRefreshing ? 'animate-spin' : ''} `} />
                 Refresh
               </Button>
             </div>
 
-            {activeTab === 'discover' && renderRecommendations()}
-
-            {activeTab === 'premieres' && (
-              <div className="grid grid-cols-2 gap-6">
-                {discoveryData.premieres.map(premiere => (
-                  <PremiereCard
-                    key={`premiere-${premiere.id}`}
-                    premiere={premiere}
-                    onTrack={handleTrackChannel}
-                    onIgnore={async (id) => await handleIgnoreChannel(id)}
-                  />
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'history' && (
-              <div className="text-center py-12 text-gray-500">
-                History view coming soon...
-              </div>
-            )}
+            {renderRecommendations()}
           </div>
         </div>
       </div>
@@ -407,8 +367,18 @@ const ContentDiscovery: React.FC = () => {
         settings={userSettings}
         onSettingsChange={setUserSettings}
       />
+
+      {/* Task Creation Modal */}
+      <TaskModal
+        isOpen={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+        onSubmit={async () => { }}
+        task={pendingTask}
+      />
     </div>
   );
 };
 
 export default ContentDiscovery;
+
+
