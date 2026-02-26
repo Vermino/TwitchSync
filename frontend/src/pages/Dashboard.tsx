@@ -60,7 +60,7 @@ const Dashboard: React.FC = () => {
     queryKey: ['dashboardStats'],
     queryFn: () => api.getDashboardStats(),
     staleTime: 30000,
-    cacheTime: 60000,
+    gcTime: 60000,
     retry: 2,
     retryDelay: 1000,
     refetchOnWindowFocus: false

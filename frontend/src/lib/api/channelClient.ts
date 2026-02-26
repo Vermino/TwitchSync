@@ -27,8 +27,9 @@ export class ChannelClient extends BaseApiClient {
           last_game_id: channel.last_game_id,
           last_game_name: channel.last_game_name,
           last_game_box_art: channel.last_game_box_art,
-          most_played_game: channel.most_played_game,
-          premieres: channel.premieres || []
+          most_played_game: channel.most_played_game || undefined,
+          premieres: channel.premieres || [],
+          created_at: channel.created_at || new Date().toISOString()
         }));
       }
       return [];

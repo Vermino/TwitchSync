@@ -10,6 +10,7 @@ import type {
   DiscoveryStats,
   FilterSettings,
   GameRecommendation,
+  TrackPremiereResponse,
   TrendingCategory,
   UpdatePreferencesResponse
 } from '@/types/discovery';
@@ -294,8 +295,9 @@ class ApiClient {
           last_game_id: channel.last_game_id,
           last_game_name: channel.last_game_name,
           last_game_box_art: channel.last_game_box_art,
-          most_played_game: channel.most_played_game,
-          premieres: channel.premieres || []
+          most_played_game: channel.most_played_game || undefined,
+          premieres: channel.premieres || [],
+          created_at: channel.created_at || new Date().toISOString()
         }));
       }
       return [];
@@ -691,29 +693,7 @@ class ApiClient {
     }
   }
 
-  async getPremieres(): Promise<StreamPremiereEvent[]> {
-    try {
-      const response = await axios.get(`${this.baseURL}/discovery/premieres`, {
-        headers: this.getHeaders()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching premieres:', error);
-      throw this.handleError(error);
-    }
-  }
 
-  async getRisingChannels(): Promise<RisingChannel[]> {
-    try {
-      const response = await axios.get(`${this.baseURL}/discovery/rising`, {
-        headers: this.getHeaders()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching rising channels:', error);
-      throw this.handleError(error);
-    }
-  }
 
   async getChannelRecommendations(filters?: Partial<FilterSettings>): Promise<ChannelRecommendation[]> {
     try {

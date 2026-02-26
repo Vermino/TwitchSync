@@ -13,34 +13,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../components/ui/tooltip';
-import { Badge } from '../components/ui/badge';
+
+import type { Channel } from '../types';
 
 interface Game {
   id: string;
   name: string;
   box_art_url: string;
-}
-
-interface Channel {
-  id: number;
-  twitch_id: string;
-  username: string;
-  display_name: string;
-  profile_image_url: string;
-  description?: string;
-  follower_count: number;
-  is_active: boolean;
-  is_live: boolean;
-  last_stream_date?: string;
-  last_game_id?: string;
-  last_game_name?: string;
-  last_game_box_art?: string;
-  most_played_game?: {
-    id: string;
-    name: string;
-    box_art_url: string;
-    hours: number;
-  };
 }
 
 const GameBox: React.FC<{ game: Game; className?: string }> = ({ game, className = "" }) => {
@@ -92,7 +71,8 @@ const Channels = () => {
             last_game_name: channel.last_game_name,
             last_game_box_art: channel.last_game_box_art,
             most_played_game: channel.most_played_game,
-          }));
+            created_at: channel.created_at,
+          })) as Channel[];
         }
         return [];
       } catch (error) {
@@ -120,7 +100,7 @@ const Channels = () => {
       for (const channel of selectedChannels) {
         try {
           const result = await api.createChannel({
-            twitch_id: channel.id,
+            twitch_id: channel.id || channel.twitch_id,
             username: channel.username || channel.display_name.toLowerCase(),
             display_name: channel.display_name,
             profile_image_url: channel.thumbnail_url || channel.profile_image_url,
@@ -202,7 +182,7 @@ const Channels = () => {
                   <div className="flex items-center">
                     <div className="relative">
                       <Avatar className="h-10 w-10">
-                        <AvatarImage src={channel.profile_image_url} alt={channel.display_name} />
+                        <AvatarImage src={channel.profile_image_url || undefined} alt={channel.display_name} />
                         <AvatarFallback>{channel.display_name[0].toUpperCase()}</AvatarFallback>
                       </Avatar>
                       {channel.is_live && (
@@ -252,18 +232,7 @@ const Channels = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {channel.most_played_game ? (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div>
-                            <GameBox game={channel.most_played_game} />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{channel.most_played_game.hours != null ? `${channel.most_played_game.hours.toFixed(1)} hours streamed` : 'Current Game'}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    <span className="text-sm text-gray-900">{channel.most_played_game}</span>
                   ) : (
                     <span className="text-sm text-gray-500">No data</span>
                   )}
@@ -285,7 +254,7 @@ const Channels = () => {
       <ChannelSearchModal
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
-        onSelect={addChannelMutation.mutateAsync}
+        onSelect={async (channels) => { await addChannelMutation.mutateAsync(channels); }}
         allowMultiple={true}
         existingChannels={channels?.map(channel => ({
           twitch_id: channel.twitch_id

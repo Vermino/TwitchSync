@@ -138,6 +138,12 @@ export interface UpdatePreferencesResponse {
   preferences: DiscoveryPreferences;
 }
 
+export interface TrackPremiereResponse {
+  success: boolean;
+  message?: string;
+  taskId?: number;
+}
+
 export interface RecommendationCardProps {
   item: Recommendation;
   type: 'channel' | 'game';

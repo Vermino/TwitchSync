@@ -97,6 +97,7 @@ export interface DiscoveryPreferences {
   notify_only: boolean;
   schedule_match: boolean;
   confidence_threshold: number;
+  tags?: string[];
   created_at: Date;
   updated_at: Date;
 }
@@ -157,6 +158,7 @@ export interface UpdatePreferencesRequest {
   notify_only?: boolean;
   schedule_match?: boolean;
   confidence_threshold?: number;
+  tags?: string[];
 }
 
 export interface TrackPremiereRequest {
