@@ -63,32 +63,34 @@ export class DiscoveryController {
         throw new DiscoveryError('User not authenticated', 401);
       }
 
-      const preferences = req.body as DiscoveryPreferencesRequest['body'];
-      validateDiscoveryPreferences(preferences);
+      // req.body is already validated by the Zod partial schema middleware
+      const preferences = req.body;
 
       const result = await withTransaction(this.pool, async (client) => {
         const updated = await client.query(`
           UPDATE discovery_preferences
           SET 
-            min_viewers = $2,
-            max_viewers = $3,
-            preferred_languages = $4,
-            content_rating = $5,
-            notify_only = $6,
-            schedule_match = $7,
-            confidence_threshold = $8,
+            min_viewers = COALESCE($2, min_viewers),
+            max_viewers = COALESCE($3, max_viewers),
+            preferred_languages = COALESCE($4, preferred_languages),
+            content_rating = COALESCE($5, content_rating),
+            notify_only = COALESCE($6, notify_only),
+            schedule_match = COALESCE($7, schedule_match),
+            confidence_threshold = COALESCE($8, confidence_threshold),
+            tags = COALESCE($9, tags),
             updated_at = CURRENT_TIMESTAMP
           WHERE user_id = $1
           RETURNING *
         `, [
           userId,
-          preferences.min_viewers,
-          preferences.max_viewers,
-          preferences.preferred_languages,
-          preferences.content_rating,
-          preferences.notify_only,
-          preferences.schedule_match,
-          preferences.confidence_threshold
+          preferences.min_viewers ?? null,
+          preferences.max_viewers ?? null,
+          preferences.preferred_languages ?? null,
+          preferences.content_rating ?? null,
+          preferences.notify_only ?? null,
+          preferences.schedule_match ?? null,
+          preferences.confidence_threshold ?? null,
+          preferences.tags ?? null
         ]);
 
         return updated.rows[0];

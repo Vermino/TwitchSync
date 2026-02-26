@@ -1,6 +1,7 @@
 // frontend/src/components/discovery/FilterPanel.tsx
 
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
@@ -8,11 +9,12 @@ import {
   Bell,
   Filter,
   Globe,
-  Users
+  Users,
+  Hash
 } from 'lucide-react';
 import type { FilterPanelProps } from '@/types/discovery';
 
-const FilterPanel = ({ settings, onChange }: FilterPanelProps) => {
+const FilterPanel = ({ settings, onChange, onApply, isApplying }: FilterPanelProps) => {
   const languages = ['EN', 'ES', 'FR', 'DE', 'JP', 'KR', 'PT', 'RU'];
 
   const handleViewerRangeChange = (value: number[]) => {
@@ -35,7 +37,7 @@ const FilterPanel = ({ settings, onChange }: FilterPanelProps) => {
           <div className="px-2">
             <Slider
               min={0}
-              max={1000000}
+              max={100000}
               step={1000}
               value={[settings.minViewers, settings.maxViewers]}
               onValueChange={handleViewerRangeChange}
@@ -43,7 +45,7 @@ const FilterPanel = ({ settings, onChange }: FilterPanelProps) => {
             />
             <div className="flex justify-between mt-1 text-sm text-gray-600">
               <span>{settings.minViewers === 0 ? '0' : settings.minViewers.toLocaleString()}</span>
-              <span>{settings.maxViewers >= 1000000 ? '1M+' : settings.maxViewers.toLocaleString()} views</span>
+              <span>{settings.maxViewers >= 100000 ? '100k+' : settings.maxViewers.toLocaleString()} views</span>
             </div>
           </div>
         </div>
@@ -70,6 +72,27 @@ const FilterPanel = ({ settings, onChange }: FilterPanelProps) => {
                 {lang}
               </Badge>
             ))}
+          </div>
+        </div>
+
+        {/* Tags Settings */}
+        <div>
+          <h3 className="font-medium mb-2 flex items-center gap-2">
+            <Hash size={16} />
+            Required Tags
+          </h3>
+          <div className="px-2">
+            <input
+              type="text"
+              placeholder="e.g. speedrun, vtuber, blind"
+              className="w-full text-sm p-2 border border-gray-300 rounded focus:border-purple-500 outline-none"
+              value={settings.tags ? settings.tags.join(', ') : ''}
+              onChange={(e) => {
+                const tagString = e.target.value;
+                const newTags = tagString.split(',').map(t => t.trim()).filter(t => t.length > 0);
+                onChange({ ...settings, tags: newTags });
+              }}
+            />
           </div>
         </div>
 
@@ -112,6 +135,17 @@ const FilterPanel = ({ settings, onChange }: FilterPanelProps) => {
               {(settings.confidenceThreshold * 100).toFixed(0)}% minimum
             </div>
           </div>
+        </div>
+
+        {/* Apply Button */}
+        <div className="pt-2 border-t">
+          <Button
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+            onClick={onApply}
+            disabled={isApplying}
+          >
+            {isApplying ? 'Applying Filters...' : 'Apply Filters'}
+          </Button>
         </div>
       </CardContent>
     </Card>

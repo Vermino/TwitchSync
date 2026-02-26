@@ -53,11 +53,11 @@ export const premiereTrackingLimiter = rateLimit({
 
 // Rate limiter for discovery preference updates
 export const preferenceUpdateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 20 updates per 15 minutes
+  windowMs: 60 * 1000, // 1 minute
+  max: 60, // limit each IP to 60 updates per 1 minute to allow for rapid slider adjustments
   message: {
     error: 'Too many preference updates',
-    message: 'Please try again after 15 minutes'
+    message: 'Please try again after 1 minute'
   },
   standardHeaders: true,
   legacyHeaders: false,

@@ -60,7 +60,6 @@ const ContentDiscovery: React.FC = () => {
   });
 
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [pendingTask, setPendingTask] = useState<any>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
   const loadRecommendations = async () => {
@@ -115,11 +114,27 @@ const ContentDiscovery: React.FC = () => {
     return () => { mounted = false; };
   }, []);
 
+  // Load recommendations exactly once on initialization
   useEffect(() => {
     if (isInitialized) {
       loadRecommendations();
     }
-  }, [filterSettings, isInitialized]);
+  }, [isInitialized]);
+
+  const handleApplyFilters = async () => {
+    if (!isInitialized) return;
+
+    // Auto-save changes to preferences when manually applying
+    api.updateDiscoveryPreferences({
+      minViewers: filterSettings.minViewers,
+      maxViewers: filterSettings.maxViewers,
+      preferredLanguages: filterSettings.preferredLanguages,
+      tags: filterSettings.tags,
+      confidenceThreshold: filterSettings.confidenceThreshold
+    }).catch(err => console.error("Failed to persist discovery preferences:", err));
+
+    await loadRecommendations();
+  };
 
   const handleTrackChannel = async (channelId: string) => {
     const channel = recommendations.channels.find(c => c.id === channelId);
@@ -340,6 +355,8 @@ const ContentDiscovery: React.FC = () => {
             <FilterPanel
               settings={filterSettings}
               onChange={setFilterSettings}
+              onApply={handleApplyFilters}
+              isApplying={recommendations.loading}
             />
           </div>
 
@@ -381,7 +398,6 @@ const ContentDiscovery: React.FC = () => {
         isOpen={isTaskModalOpen}
         onClose={() => setIsTaskModalOpen(false)}
         onSubmit={async () => { }}
-        task={pendingTask}
       />
     </div>
   );

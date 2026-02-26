@@ -29,6 +29,7 @@ export interface DiscoveryPreferences {
   contentRating: 'all' | 'family' | 'mature';
   notifyOnly: boolean;
   confidenceThreshold: number;
+  tags?: string[];
 }
 
 export interface FilterSettings {
@@ -38,6 +39,7 @@ export interface FilterSettings {
   contentRating: string;
   notifyOnly: boolean;
   confidenceThreshold: number;
+  tags?: string[];
 }
 
 // Channel and Game interfaces
@@ -78,7 +80,7 @@ export interface ChannelRecommendation {
   viewer_count: number;
   compatibility_score: number;
   recommendation_reasons: RecommendationReason<ChannelReasonType>[];
-  shared_games_list?: { id: number; name: string }[];
+  shared_games_list?: { id: number; name: string; box_art_url: string; twitch_game_id: string }[];
   recent_vods?: { thumbnail_url: string; url: string; title: string; game_name: string }[];
   tags?: string[];
   current_game?: {
@@ -146,6 +148,8 @@ export interface RecommendationCardProps {
 export interface FilterPanelProps {
   settings: FilterSettings;
   onChange: (settings: FilterSettings) => void;
+  onApply: () => void;
+  isApplying?: boolean;
 }
 
 export interface StatsCardProps {

@@ -722,7 +722,9 @@ class ApiClient {
         params: {
           min_viewers: filters?.minViewers,
           max_viewers: filters?.maxViewers,
-          languages: filters?.preferredLanguages?.join(',')
+          languages: filters?.preferredLanguages?.join(','),
+          tags: filters?.tags?.join(','),
+          confidence_threshold: filters?.confidenceThreshold
         }
       });
       return response.data;
@@ -739,7 +741,9 @@ class ApiClient {
         params: {
           min_viewers: filters?.minViewers,
           max_viewers: filters?.maxViewers,
-          languages: filters?.preferredLanguages?.join(',')
+          languages: filters?.preferredLanguages?.join(','),
+          tags: filters?.tags?.join(','),
+          confidence_threshold: filters?.confidenceThreshold
         }
       });
       return response.data;
@@ -814,10 +818,23 @@ class ApiClient {
 
   async updateDiscoveryPreferences(preferences: Partial<DiscoveryPreferences>): Promise<UpdatePreferencesResponse> {
     try {
+      // Map frontend camelCase to backend snake_case for validation payload
+      const payload: any = {};
+      if (preferences.minViewers !== undefined) payload.min_viewers = preferences.minViewers;
+      if (preferences.maxViewers !== undefined) payload.max_viewers = preferences.maxViewers;
+      if (preferences.preferredLanguages !== undefined) payload.preferred_languages = preferences.preferredLanguages;
+      if (preferences.contentRating !== undefined) payload.content_rating = preferences.contentRating;
+      if (preferences.notifyOnly !== undefined) payload.notify_only = preferences.notifyOnly;
+      if (preferences.confidenceThreshold !== undefined) payload.confidence_threshold = preferences.confidenceThreshold;
+      if (preferences.tags !== undefined) payload.tags = preferences.tags;
+
       const response = await axios.put(
         `${this.baseURL}/discovery/preferences`,
-        preferences,
-        { headers: this.getHeaders() }
+        payload,
+        {
+          headers: this.getHeaders(),
+          timeout: 10000 // DB updates shouldn't take forever, but longer than default
+        }
       );
       return response.data;
     } catch (error) {

@@ -22,19 +22,26 @@ const channelSchema = z.object({
   compatibility_score: z.number().min(0).max(1)
 });
 
-// Discovery preferences schema
-export const DiscoveryPreferencesSchema = z.object({
+// Discovery preferences schema (base object)
+const DiscoveryPreferencesBaseSchema = z.object({
   min_viewers: z.number().int().min(0),
   max_viewers: z.number().int().min(0),
   preferred_languages: z.array(z.string().length(2)),
   content_rating: z.enum(['all', 'family', 'mature']),
   notify_only: z.boolean(),
   schedule_match: z.boolean(),
-  confidence_threshold: z.number().min(0).max(1)
-}).refine(data => data.min_viewers < data.max_viewers, {
+  confidence_threshold: z.number().min(0).max(1),
+  tags: z.array(z.string()).optional()
+});
+
+// Full schema with refinement (for creating new preferences)
+export const DiscoveryPreferencesSchema = DiscoveryPreferencesBaseSchema.refine(data => data.min_viewers < data.max_viewers, {
   message: "min_viewers must be less than max_viewers",
   path: ["min_viewers"]
 });
+
+// Partial schema for updates (no refinement needed)
+export const DiscoveryPreferencesUpdateSchema = DiscoveryPreferencesBaseSchema.partial();
 
 // Premiere tracking schema
 export const PremiereTrackingSchema = z.object({

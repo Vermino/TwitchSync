@@ -8,6 +8,7 @@ import { validateRequest, validateQuery } from '../../middleware/validation';
 import { authenticate } from '../../middleware/auth';
 import {
   DiscoveryPreferencesSchema,
+  DiscoveryPreferencesUpdateSchema,
   PremiereTrackingSchema,
   FeedFiltersSchema
 } from './validation';
@@ -43,6 +44,9 @@ export function createDiscoveryRouter(pool: Pool): Router {
         const overrides = {
           min_viewers: req.query.min_viewers ? parseInt(req.query.min_viewers as string, 10) : undefined,
           max_viewers: req.query.max_viewers ? parseInt(req.query.max_viewers as string, 10) : undefined,
+          preferred_languages: req.query.languages ? (req.query.languages as string).split(',').filter(Boolean) : undefined,
+          tags: req.query.tags ? (req.query.tags as string).split(',').filter(Boolean) : undefined,
+          confidence_threshold: req.query.confidence_threshold ? parseFloat(req.query.confidence_threshold as string) : undefined
         };
 
         const channelRecommendations = await discovery.getChannelRecommendations(userReq.user.id.toString(), overrides);
@@ -67,6 +71,9 @@ export function createDiscoveryRouter(pool: Pool): Router {
         const overrides = {
           min_viewers: req.query.min_viewers ? parseInt(req.query.min_viewers as string, 10) : undefined,
           max_viewers: req.query.max_viewers ? parseInt(req.query.max_viewers as string, 10) : undefined,
+          preferred_languages: req.query.languages ? (req.query.languages as string).split(',').filter(Boolean) : undefined,
+          tags: req.query.tags ? (req.query.tags as string).split(',').filter(Boolean) : undefined,
+          confidence_threshold: req.query.confidence_threshold ? parseFloat(req.query.confidence_threshold as string) : undefined
         };
 
         const gameRecommendations = await discovery.getGameRecommendations(userReq.user.id.toString(), overrides);
@@ -86,11 +93,11 @@ export function createDiscoveryRouter(pool: Pool): Router {
     controller.getDiscoveryFeed
   );
 
-  // Update discovery preferences
+  // Update discovery preferences (partial updates allowed)
   router.put(
     '/preferences',
     preferenceUpdateLimiter,
-    validateRequest(DiscoveryPreferencesSchema),
+    validateRequest(DiscoveryPreferencesUpdateSchema),
     controller.updatePreferences
   );
 

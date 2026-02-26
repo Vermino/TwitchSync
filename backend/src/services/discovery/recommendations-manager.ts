@@ -30,7 +30,7 @@ export class RecommendationsManager {
     const client = await this.pool.connect();
     try {
       // Pure SQL: find untracked channels that share games with tracked channels
-      const result = await client.query(`
+      let queryText = `
         WITH user_games AS (
           -- Games played by user's tracked channels
           SELECT DISTINCT cgs.game_id
@@ -42,8 +42,51 @@ export class RecommendationsManager {
           SELECT DISTINCT item_id::integer
           FROM ignored_discovery_items
           WHERE user_id = $1 AND item_type = 'channel'
-        ),
-        candidate_channels AS (
+        )
+      `;
+
+      let whereClauses = [
+        "c.is_active = false",
+        "cgs.game_id IN (SELECT game_id FROM user_games)",
+        "c.id NOT IN (SELECT item_id FROM ignored_channels)"
+      ];
+
+      const queryParams: any[] = [userId];
+      let paramCount = 1;
+
+      // Add minimum viewers filter
+      if (userPrefs.min_viewers !== undefined) {
+        paramCount++;
+        whereClauses.push(`cgs.avg_viewers >= $${paramCount}`);
+        queryParams.push(userPrefs.min_viewers);
+      }
+
+      // Add maximum viewers filter
+      if (userPrefs.max_viewers !== undefined) {
+        paramCount++;
+        whereClauses.push(`cgs.avg_viewers <= $${paramCount}`);
+        queryParams.push(userPrefs.max_viewers);
+      }
+
+      // Add languages filter
+      if (userPrefs.preferred_languages && userPrefs.preferred_languages.length > 0) {
+        const langParams = userPrefs.preferred_languages.map(lang => {
+          paramCount++;
+          queryParams.push(lang.toLowerCase());
+          return `$${paramCount}`;
+        });
+        whereClauses.push(`(c.language IN (${langParams.join(', ')}) OR c.language IS NULL)`);
+      }
+
+      // Add tags filter (overlap using && so if they share any tag it matches)
+      if (userPrefs.tags && userPrefs.tags.length > 0) {
+        paramCount++;
+        whereClauses.push(`c.tags && $${paramCount}::text[]`);
+        queryParams.push(userPrefs.tags);
+      }
+
+      queryText += `
+        , candidate_channels AS (
           -- Untracked channels that play at least one of the user's games
           SELECT
             c.id,
@@ -58,20 +101,20 @@ export class RecommendationsManager {
             MAX(cgs.peak_viewers) as best_peak_viewers,
             MAX(cgs.total_streams) as most_streams,
             -- Aggregate overlapping games into a JSON array
-            json_agg(DISTINCT jsonb_build_object('id', g.id, 'twitch_game_id', g.twitch_game_id, 'name', g.name)) as shared_games_list
+            json_agg(DISTINCT jsonb_build_object('id', g.id, 'twitch_game_id', g.twitch_game_id, 'name', g.name, 'box_art_url', g.box_art_url)) as shared_games_list
           FROM channel_game_stats cgs
           JOIN channels c ON cgs.channel_id = c.id
           JOIN games g ON cgs.game_id = g.id
-          WHERE c.is_active = false
-          AND cgs.game_id IN (SELECT game_id FROM user_games)
-          AND c.id NOT IN (SELECT item_id FROM ignored_channels)
+          WHERE ${whereClauses.join(' AND ')}
           GROUP BY c.id, c.twitch_id, c.username, c.display_name, c.profile_image_url, c.follower_count
         )
         SELECT *
         FROM candidate_channels
         ORDER BY shared_games DESC, best_avg_viewers DESC
-        LIMIT 20
-      `, [userId]);
+        LIMIT 50
+      `;
+
+      const result = await client.query(queryText, queryParams);
 
       if (result.rows.length === 0) {
         logger.info('[Recommendations] No channel candidates found in local DB');
@@ -139,9 +182,11 @@ export class RecommendationsManager {
           tags: []
         };
         return recommendation;
-      }));
+      })).then(results => results.filter(c => c !== null) as ChannelRecommendation[]);
 
-      return channelsWithVods;
+      // Apply confidence threshold filter in memory since it requires the computed score
+      const threshold = userPrefs.confidence_threshold ?? 0;
+      return channelsWithVods.filter(c => c.compatibility_score >= threshold);
     } catch (error) {
       logger.error('Error getting channel recommendations:', error);
       return [];
