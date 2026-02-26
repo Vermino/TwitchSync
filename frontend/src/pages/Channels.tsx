@@ -41,12 +41,6 @@ interface Channel {
     box_art_url: string;
     hours: number;
   };
-  premieres?: Array<{
-    game: Game;
-    date: string;
-    duration: number;
-    viewers?: number;
-  }>;
 }
 
 const GameBox: React.FC<{ game: Game; className?: string }> = ({ game, className = "" }) => {
@@ -98,7 +92,6 @@ const Channels = () => {
             last_game_name: channel.last_game_name,
             last_game_box_art: channel.last_game_box_art,
             most_played_game: channel.most_played_game,
-            premieres: channel.premieres || []
           }));
         }
         return [];
@@ -199,7 +192,6 @@ const Channels = () => {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Stream Game</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Stream Date</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Most Played</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Premieres</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -268,44 +260,12 @@ const Channels = () => {
                           </div>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{channel.most_played_game.hours.toFixed(1)} hours streamed</p>
+                          <p>{channel.most_played_game.hours != null ? `${channel.most_played_game.hours.toFixed(1)} hours streamed` : 'Current Game'}</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   ) : (
                     <span className="text-sm text-gray-500">No data</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {channel.premieres && channel.premieres.length > 0 ? (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <Badge variant="secondary" className="cursor-pointer">
-                            {channel.premieres.length} premiere{channel.premieres.length !== 1 ? 's' : ''}
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <div className="p-2 space-y-2">
-                            {channel.premieres.map((premiere, index) => (
-                              <div key={index} className="flex items-center gap-2">
-                                <GameBox game={premiere.game} className="min-w-0" />
-                                <span className="text-sm text-gray-500">
-                                  {new Date(premiere.date).toLocaleDateString()}
-                                </span>
-                                {premiere.viewers && (
-                                  <span className="text-sm text-gray-500">
-                                    {formatNumber(premiere.viewers)} viewers
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ) : (
-                    <span className="text-sm text-gray-500">None</span>
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">

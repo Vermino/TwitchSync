@@ -184,11 +184,10 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
                 <div
                   key={channel.id}
                   onClick={() => handleSelectChannel(channel)}
-                  className={`flex items-start gap-4 p-4 cursor-pointer transition-colors ${
-                    selectedChannels.some(c => c.id === channel.id)
+                  className={`flex items-start gap-4 p-4 cursor-pointer transition-colors ${selectedChannels.some(c => c.id === channel.id)
                       ? 'bg-purple-50'
                       : 'hover:bg-gray-50'
-                  }`}
+                    }`}
                 >
                   <div className="relative">
                     <Avatar className="w-16 h-16">
@@ -212,10 +211,12 @@ const ChannelSearchModal: React.FC<ChannelSearchModalProps> = ({
                           <h3 className="font-semibold text-lg">{channel.display_name}</h3>
                           <span className="text-gray-500 text-sm">@{channel.username}</span>
                         </div>
-                        <div className="flex items-center gap-1 text-sm text-gray-600">
-                          <Users className="w-4 h-4" />
-                          <span>{formatNumber(channel.follower_count)} followers</span>
-                        </div>
+                        {channel.follower_count > 0 && (
+                          <div className="flex items-center gap-1 text-sm text-gray-600">
+                            <Users className="w-4 h-4" />
+                            <span>{formatNumber(channel.follower_count)} followers</span>
+                          </div>
+                        )}
                       </div>
                       {selectedChannels.some(c => c.id === channel.id) && (
                         <Check className="w-6 h-6 text-purple-600" />

@@ -51,48 +51,7 @@ export class ChannelsController {
 
         // Get paginated channels with related data
         const channelsResult = await client.query(`
-          WITH first_premieres AS (
-            SELECT DISTINCT ON (channel_id) 
-              channel_id,
-              game_id,
-              started_at,
-              duration,
-              peak_viewers,
-              is_premiere
-            FROM channel_game_history
-            WHERE is_premiere = true
-            ORDER BY channel_id, started_at ASC
-          ),
-          channel_premieres AS (
-            SELECT 
-              fp.channel_id,
-              jsonb_build_object(
-                'game', jsonb_build_object(
-                  'id', g.id,
-                  'name', g.name,
-                  'box_art_url', g.box_art_url
-                ),
-                'date', fp.started_at,
-                'duration', fp.duration,
-                'viewers', fp.peak_viewers
-              ) as premiere_data
-            FROM first_premieres fp
-            JOIN games g ON fp.game_id = g.id
-          ),
-          channel_most_played AS (
-            SELECT DISTINCT ON (channel_id)
-              channel_id,
-              jsonb_build_object(
-                'id', g2.id,
-                'name', g2.name,
-                'box_art_url', g2.box_art_url,
-                'hours', EXTRACT(EPOCH FROM total_time)/3600
-              ) as game_data
-            FROM channel_game_stats stats
-            JOIN games g2 ON stats.game_id = g2.id
-            ORDER BY channel_id, total_time DESC
-          ),
-          last_stream AS (
+          WITH last_stream AS (
             SELECT DISTINCT ON (channel_id)
               channel_id,
               game_id,
@@ -107,18 +66,10 @@ export class ChannelsController {
             ls.last_stream_date,
             g.id as last_game_id,
             g.name as last_game_name,
-            g.box_art_url as last_game_box_art,
-            cmp.game_data as most_played_game,
-            CASE 
-              WHEN cp.premiere_data IS NOT NULL 
-              THEN ARRAY[cp.premiere_data] 
-              ELSE ARRAY[]::jsonb[] 
-            END as premieres
+            g.box_art_url as last_game_box_art
           FROM channels c
           LEFT JOIN last_stream ls ON c.id = ls.channel_id
           LEFT JOIN games g ON ls.game_id = g.id
-          LEFT JOIN channel_most_played cmp ON c.id = cmp.channel_id
-          LEFT JOIN channel_premieres cp ON c.id = cp.channel_id
           WHERE c.is_active = true
           ORDER BY c.follower_count DESC
           LIMIT $1 OFFSET $2
@@ -135,7 +86,7 @@ export class ChannelsController {
         };
       });
 
-      // Check current live status and backfill missing profile images
+      // Enrich channels with live Twitch API data
       const updatedChannels = await Promise.all(
         result.channels.map(async (channel) => {
           try {
@@ -145,7 +96,6 @@ export class ChannelsController {
                 const twitchUser = await this.twitchService.getChannelInfo(channel.username);
                 if (twitchUser?.profile_image_url) {
                   channel.profile_image_url = twitchUser.profile_image_url;
-                  // Update DB so we don't need to fetch again
                   const updateClient = await this.pool.connect();
                   try {
                     await updateClient.query(
@@ -162,19 +112,61 @@ export class ChannelsController {
               }
             }
 
+            let enriched = { ...channel };
+
+            // Use /channels endpoint to get current game (works even when offline)
+            try {
+              const channelInfo = await this.twitchService.getChannelInfoById(channel.twitch_id);
+              if (channelInfo && channelInfo.game_id && channelInfo.game_name) {
+                // Get box art for the game
+                let boxArtUrl = '';
+                try {
+                  const gameInfo = await this.twitchService.getGameById(channelInfo.game_id);
+                  if (gameInfo) {
+                    boxArtUrl = gameInfo.box_art_url || '';
+                  }
+                } catch { /* ignore */ }
+
+                // Set as last game
+                enriched.last_game_id = channelInfo.game_id;
+                enriched.last_game_name = channelInfo.game_name;
+                enriched.last_game_box_art = boxArtUrl;
+
+                // Set as most played game (from live /channels API data)
+                enriched.most_played_game = {
+                  id: channelInfo.game_id,
+                  name: channelInfo.game_name,
+                  box_art_url: boxArtUrl
+                };
+              }
+            } catch (err) {
+              logger.warn(`Could not fetch channel info for ${channel.username}:`, err);
+            }
+
+            // Check if currently live via /streams endpoint
             const currentGame = await this.twitchService.getCurrentGame(channel.twitch_id);
             if (currentGame) {
-              return {
-                ...channel,
-                is_live: true,
-                last_game_id: currentGame.id,
-                last_game_name: currentGame.name,
-                last_game_box_art: currentGame.box_art_url
-              };
+              enriched.is_live = true;
+              enriched.last_game_id = currentGame.id;
+              enriched.last_game_name = currentGame.name;
+              enriched.last_game_box_art = currentGame.box_art_url;
             }
-            return channel;
+
+            // Fetch VODs for last_stream_date if missing
+            if (!enriched.last_stream_date) {
+              try {
+                const vods = await this.twitchService.getChannelVODs(channel.twitch_id);
+                if (vods && vods.length > 0) {
+                  enriched.last_stream_date = vods[0].created_at;
+                }
+              } catch (e) {
+                logger.warn(`Could not fetch VODs for ${channel.username}`);
+              }
+            }
+
+            return enriched;
           } catch (error) {
-            logger.error(`Error fetching current game for channel ${channel.username}:`, error);
+            logger.error(`Error enriching channel ${channel.username}:`, error);
             return channel;
           }
         })
@@ -249,6 +241,7 @@ export class ChannelsController {
       // Index channel for discovery in background (non-blocking)
       try {
         const indexer = DiscoveryIndexer.getInstance(this.pool);
+        // 'result' here is the channel object returned from the transaction
         indexer.indexChannel(result.id, result.twitch_id).catch(err =>
           logger.warn('Background discovery indexing failed:', err)
         );

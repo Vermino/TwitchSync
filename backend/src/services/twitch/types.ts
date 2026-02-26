@@ -86,6 +86,7 @@ export interface TwitchChannel {
   view_count: number;
   broadcaster_type: string;
   follower_count?: number;
+  tags?: string[];
 }
 
 export interface StreamFilters {

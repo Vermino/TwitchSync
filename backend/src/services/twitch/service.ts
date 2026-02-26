@@ -34,35 +34,46 @@ export class TwitchService implements ITwitchService {
       // First search for channels
       const channels = await this.apiClient.searchChannels(query);
 
+      // Batch-fetch real user profiles for profile images and better data
+      // The search endpoint returns stream thumbnails, not profile images
+      const userIds = channels.map(c => c.id);
+      const userProfiles = await this.apiClient.getUsersByIds(userIds);
+      const profileMap = new Map<string, { profile_image_url: string }>(
+        userProfiles.map((u: any) => [u.id, u])
+      );
+
       // Enrich the channels with additional data
       const enrichedChannels = await Promise.all(
         channels.map(async (channel) => {
           try {
             const currentGame = await this.getCurrentGame(channel.id);
-            const followerCount = await this.getChannelFollowers(channel.id);
+            const profile = profileMap.get(channel.id);
 
             return {
               ...channel,
               twitch_id: channel.id,
               username: channel.login,
+              profile_image_url: profile?.profile_image_url || channel.profile_image_url,
               current_game: currentGame ? {
                 id: currentGame.id,
                 name: currentGame.name,
                 box_art_url: currentGame.box_art_url
               } : undefined,
               is_live: !!currentGame,
-              follower_count: followerCount,
-              tags: []
+              follower_count: channel.view_count || 0,
+              tags: channel.tags || []
             };
           } catch (error) {
             logger.error(`Error enriching channel ${channel.display_name}:`, error);
+            const profile = profileMap.get(channel.id);
             return {
               ...channel,
               twitch_id: channel.id,
               username: channel.login,
+              profile_image_url: profile?.profile_image_url || channel.profile_image_url,
               follower_count: 0,
               is_live: false,
-              tags: []
+              tags: channel.tags || []
             };
           }
         })
@@ -84,6 +95,19 @@ export class TwitchService implements ITwitchService {
     } catch (error) {
       logger.error(`Error getting follower count for channel ${channelId}:`, error);
       return 0;
+    }
+  }
+
+  /**
+   * Get channel info by broadcaster ID using /channels endpoint.
+   * Returns game_id, game_name, title, tags even when the channel is offline.
+   */
+  async getChannelInfoById(broadcasterId: string) {
+    try {
+      return await this.apiClient.getChannelById(broadcasterId);
+    } catch (error) {
+      logger.error(`Error getting channel info by ID ${broadcasterId}:`, error);
+      return null;
     }
   }
 

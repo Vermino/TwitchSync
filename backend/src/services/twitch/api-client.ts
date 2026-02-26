@@ -38,15 +38,16 @@ export class TwitchAPIClient extends TwitchBaseClient {
         first: '20'
       });
 
-      return response.data.map((channel: TwitchStreamInfo) => ({
-        id: channel.user_id,
-        login: channel.user_login,
+      return response.data.map((channel: any) => ({
+        id: channel.id || channel.user_id,
+        login: channel.broadcaster_login || channel.user_login,
         display_name: channel.user_name,
         profile_image_url: channel.thumbnail_url,
         offline_image_url: '',
         description: channel.title,
         view_count: channel.viewer_count,
-        broadcaster_type: ''
+        broadcaster_type: '',
+        tags: (channel as any).tags || []
       }));
     } catch (error) {
       logger.error('Failed to search channels:', error);
@@ -64,6 +65,19 @@ export class TwitchAPIClient extends TwitchBaseClient {
     } catch (error) {
       logger.error(`Failed to get follower count for channel ${channelId}:`, error);
       return 0;
+    }
+  }
+
+  async getUsersByIds(ids: string[]): Promise<TwitchChannel[]> {
+    try {
+      if (ids.length === 0) return [];
+      // Twitch /users supports up to 100 ids per request
+      const params = ids.slice(0, 100).map(id => `id=${id}`).join('&');
+      const response = await this.makeRequest<TwitchChannel>(`/users?${params}`, {});
+      return response.data || [];
+    } catch (error) {
+      logger.error('Failed to batch fetch users:', error);
+      return [];
     }
   }
 
@@ -86,6 +100,30 @@ export class TwitchAPIClient extends TwitchBaseClient {
     } catch (error) {
       logger.error(`Failed to get channel info for ${channelId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Get channel info using /channels endpoint (works even when offline).
+   * Returns game_id, game_name, title, tags, etc.
+   */
+  async getChannelById(broadcasterId: string): Promise<{
+    broadcaster_id: string;
+    broadcaster_login: string;
+    broadcaster_name: string;
+    game_id: string;
+    game_name: string;
+    title: string;
+    tags: string[];
+  } | null> {
+    try {
+      const response = await this.makeRequest<any>('/channels', {
+        broadcaster_id: broadcasterId
+      });
+      return response.data[0] || null;
+    } catch (error) {
+      logger.error(`Failed to get channel by ID ${broadcasterId}:`, error);
+      return null;
     }
   }
 
