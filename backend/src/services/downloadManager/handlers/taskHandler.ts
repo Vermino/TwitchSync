@@ -985,6 +985,12 @@ export class TaskHandler extends EventEmitter {
       }
 
       try {
+        let actualGameId = null;
+        try {
+          const chInfo = await this.twitchService.getChannelInfoById(vod.user_id);
+          actualGameId = chInfo?.game_id || null;
+        } catch (e) { }
+
         // Check if VOD exists using BIGINT type
         const vodExists = await client.query(`
           SELECT id 
@@ -1039,7 +1045,7 @@ export class TaskHandler extends EventEmitter {
             vod.thumbnail_url,    // $11
             vod.published_at,     // $12
             { transcode: false, extract_chat: true }, // $13
-            vod.game_id || null   // $14 - Fixed parameter mismatch
+            actualGameId          // $14 - Fixed parameter mismatch
           ]);
         } else {
           // Update existing VOD with proper parameter alignment
@@ -1077,7 +1083,7 @@ export class TaskHandler extends EventEmitter {
             vod.thumbnail_url,    // $11
             vod.published_at,     // $12
             { transcode: false, extract_chat: true }, // $13
-            vod.game_id || null   // $14 - Fixed parameter mismatch
+            actualGameId          // $14 - Fixed parameter mismatch
           ]);
         }
 

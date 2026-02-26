@@ -96,7 +96,31 @@ export class TwitchAPIClient extends TwitchBaseClient {
       const response = await this.makeRequest<TwitchStreamInfo>('/streams', {
         user_id: channelId
       });
-      return response.data[0] || null;
+
+      if (response.data && response.data.length > 0) {
+        return response.data[0];
+      }
+
+      // Fallback: if offline, use /channels endpoint for current data
+      const channelInfo = await this.getChannelById(channelId);
+      if (channelInfo) {
+        return {
+          id: '',
+          user_id: channelInfo.broadcaster_id,
+          user_login: channelInfo.broadcaster_login,
+          user_name: channelInfo.broadcaster_name,
+          game_id: channelInfo.game_id,
+          game_name: channelInfo.game_name,
+          type: '', // empty means offline
+          title: channelInfo.title,
+          viewer_count: 0,
+          started_at: '',
+          language: (channelInfo as any).broadcaster_language || '',
+          thumbnail_url: '',
+          tags: channelInfo.tags || []
+        } as TwitchStreamInfo;
+      }
+      return null;
     } catch (error) {
       logger.error(`Failed to get channel info for ${channelId}:`, error);
       throw error;

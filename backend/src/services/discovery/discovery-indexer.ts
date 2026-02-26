@@ -49,14 +49,17 @@ export class DiscoveryIndexer {
 
             logger.info(`[DiscoveryIndexer] Found ${gamesResult.rows.length} tracked games`);
 
-            // Step 2: Link this channel to each tracked game in channel_game_stats
-            // (We know the user added this channel because they care about these games)
-            for (const game of gamesResult.rows) {
-                await client.query(`
+            // Step 2: Get channel's actual current game from Twitch API
+            const channelInfo = await this.twitchAPI.getChannelInfoById(twitchId);
+            if (channelInfo && channelInfo.game_id) {
+                const matchedGame = gamesResult.rows.find(g => g.twitch_game_id === channelInfo.game_id);
+                if (matchedGame) {
+                    await client.query(`
           INSERT INTO channel_game_stats (channel_id, game_id, total_streams, avg_viewers, peak_viewers, last_played, first_played, updated_at)
           VALUES ($1, $2, 1, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           ON CONFLICT (channel_id, game_id) DO NOTHING
-        `, [channelDbId, game.id]);
+        `, [channelDbId, matchedGame.id]);
+                }
             }
 
             // Step 3: For each tracked game, discover other channels via Twitch API
@@ -73,15 +76,9 @@ export class DiscoveryIndexer {
             const newGameIds = new Set<string>();
             for (const ch of discoveredChannels.rows) {
                 try {
-                    const vods = await this.twitchAPI.getTopVODs({
-                        userId: ch.twitch_id,
-                        period: 'month',
-                        limit: 10
-                    });
-                    for (const vod of vods) {
-                        if (vod.game_id && !gamesResult.rows.find(g => g.twitch_game_id === vod.game_id)) {
-                            newGameIds.add(vod.game_id);
-                        }
+                    const chInfo = await this.twitchAPI.getChannelInfoById(ch.twitch_id);
+                    if (chInfo && chInfo.game_id && !gamesResult.rows.find(g => g.twitch_game_id === chInfo.game_id)) {
+                        newGameIds.add(chInfo.game_id);
                     }
                 } catch {
                     // Rate limited or error, skip

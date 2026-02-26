@@ -79,7 +79,7 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
           </div>
 
           {channelRec.recent_vods && channelRec.recent_vods.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-6">
               <div className="flex justify-between items-end mb-2">
                 <span className="text-xs font-medium text-gray-500 block">
                   Recent VOD Previews
@@ -88,17 +88,17 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
                   </span>
                 </span>
                 {channelRec.recent_vods.length > 1 && (
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 relative z-50">
                     <button
-                      onClick={() => setVodIndex(prev => prev > 0 ? prev - 1 : channelRec.recent_vods!.length - 1)}
-                      className="p-1 border border-gray-200 hover:bg-gray-100 rounded transition-colors"
+                      onClick={(e) => { e.preventDefault(); setVodIndex(prev => prev > 0 ? prev - 1 : channelRec.recent_vods!.length - 1); }}
+                      className="p-1 border border-gray-200 bg-white hover:bg-gray-100 rounded transition-colors shadow-sm"
                       title="Previous VOD"
                     >
                       <ChevronLeft size={14} />
                     </button>
                     <button
-                      onClick={() => setVodIndex(prev => prev < channelRec.recent_vods!.length - 1 ? prev + 1 : 0)}
-                      className="p-1 border border-gray-200 hover:bg-gray-100 rounded transition-colors"
+                      onClick={(e) => { e.preventDefault(); setVodIndex(prev => prev < channelRec.recent_vods!.length - 1 ? prev + 1 : 0); }}
+                      className="p-1 border border-gray-200 bg-white hover:bg-gray-100 rounded transition-colors shadow-sm"
                       title="Next VOD"
                     >
                       <ChevronRight size={14} />
@@ -107,22 +107,46 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
                 )}
               </div>
 
-              <a href={channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].url : channelRec.recent_vods[0].url} target="_blank" rel="noopener noreferrer" className="block relative group overflow-hidden rounded-md border border-gray-200">
-                <img
-                  src={channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].thumbnail_url : channelRec.recent_vods[0].thumbnail_url}
-                  alt={channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].title : channelRec.recent_vods[0].title}
-                  className="w-full h-auto object-cover max-h-32 transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                  <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                    Watch on Twitch
-                  </div>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] sm:text-xs truncate px-2 py-1 flex items-center gap-1">
-                  <Gamepad2 size={12} className="shrink-0 text-gray-300" />
-                  {channelRec.recent_vods[vodIndex] ? channelRec.recent_vods[vodIndex].game_name : channelRec.recent_vods[0].game_name}
-                </div>
-              </a>
+              <div className="relative h-32 w-full mt-1">
+                {channelRec.recent_vods.map((vod, i) => {
+                  let diff = i - vodIndex;
+                  if (diff < 0) diff += channelRec.recent_vods!.length;
+
+                  // Show up to 4 cards in the stack visually
+                  const isVisible = diff < 4;
+
+                  return (
+                    <a
+                      key={vod.title + i}
+                      href={vod.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute inset-x-0 top-0 h-32 block group overflow-hidden rounded-md border border-gray-200 transition-all duration-300 ease-in-out origin-top shadow-sm bg-black"
+                      style={{
+                        zIndex: 40 - diff,
+                        transform: `translateY(${diff * 6}px) scale(${1 - diff * 0.04})`,
+                        opacity: isVisible ? 1 - (diff * 0.15) : 0,
+                        pointerEvents: diff === 0 ? 'auto' : 'none'
+                      }}
+                    >
+                      <img
+                        src={vod.thumbnail_url}
+                        alt={vod.title}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                        <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                          Watch on Twitch
+                        </div>
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] sm:text-xs truncate px-2 py-1 flex items-center gap-1">
+                        <Gamepad2 size={12} className="shrink-0 text-gray-300" />
+                        {vod.game_name}
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
             </div>
           )}
 

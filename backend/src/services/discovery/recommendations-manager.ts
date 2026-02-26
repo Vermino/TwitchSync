@@ -89,33 +89,21 @@ export class RecommendationsManager {
           const vods = await this.twitchAPI.getChannelVODs(row.twitch_id);
           if (vods && vods.length > 0) {
             const sharedTwitchGameIds = new Set(row.shared_games_list?.map((g: any) => g.twitch_game_id));
-            const foundGameIds = new Set<string>();
+            // Get channel's current game from /channels API
+            const chInfo = await this.twitchAPI.getChannelInfoById(row.twitch_id);
+            const isPlayingSharedGame = chInfo && chInfo.game_id && sharedTwitchGameIds.has(chInfo.game_id);
+            const gameName = isPlayingSharedGame
+              ? row.shared_games_list?.find((g: any) => g.twitch_game_id === chInfo.game_id)?.name || 'Unknown Game'
+              : 'Recent Stream';
 
-            for (const vod of vods) {
-              // Try to find VODs that precisely match the overlapping games
-              if (vod.game_id && sharedTwitchGameIds.has(vod.game_id) && !foundGameIds.has(vod.game_id)) {
-                foundGameIds.add(vod.game_id);
-                const gameName = row.shared_games_list?.find((g: any) => g.twitch_game_id === vod.game_id)?.name || 'Unknown Game';
-                recent_vods.push({
-                  thumbnail_url: vod.thumbnail_url?.replace('%{width}', '320').replace('%{height}', '180') || '',
-                  url: vod.url,
-                  title: vod.title,
-                  game_name: gameName
-                });
-              }
-            }
-
-            // Fallback: if no VODs matched the overlapping games (maybe played a long time ago),
-            // just show up to 3 of their most recent VODs
-            if (recent_vods.length === 0) {
-              for (const vod of vods.slice(0, 3)) {
-                recent_vods.push({
-                  thumbnail_url: vod.thumbnail_url?.replace('%{width}', '320').replace('%{height}', '180') || '',
-                  url: vod.url,
-                  title: vod.title,
-                  game_name: 'Recent Stream'
-                });
-              }
+            // Push up to 5 recent VODs
+            for (const vod of vods.slice(0, 5)) {
+              recent_vods.push({
+                thumbnail_url: vod.thumbnail_url?.replace('%{width}', '320').replace('%{height}', '180') || '',
+                url: vod.url,
+                title: vod.title,
+                game_name: gameName
+              });
             }
           }
         } catch (e) {

@@ -65,7 +65,8 @@ export interface TwitchVOD {
   type: 'upload' | 'archive' | 'highlight';
   duration: string;
   muted_segments: null | any[];
-  game_id?: string; // Added for filtering support
+  /** @deprecated The Twitch /videos API does NOT return game_id. Will always be undefined directly from Twitch. */
+  game_id?: string; // Added for internal metadata, not native from Twitch
 }
 
 export interface TwitchGame {
