@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { Pool } from 'pg';
 import { authenticate } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { VODLifecycleManager } from '../services/vodLifecycleManager';
 
 // Simple async handler wrapper
 const handleAsync = (fn: Function) => (req: any, res: any, next: any) => {
@@ -12,62 +13,17 @@ const handleAsync = (fn: Function) => (req: any, res: any, next: any) => {
 
 export function setupLifecycleRoutes(pool: Pool): Router {
   const router = Router();
+  const lifecycleManager = new VODLifecycleManager(pool);
 
   /**
    * GET /api/lifecycle/storage/analytics - Get storage analytics
    */
   router.get('/storage/analytics', authenticate(pool), handleAsync(async (req: any, res: any) => {
     const userId = parseInt(req.user!.id);
-    
+
     try {
-      // Get basic statistics from existing tables
-      const result = await pool.query(`
-        SELECT 
-          COUNT(DISTINCT v.id) as total_files,
-          COUNT(DISTINCT v.channel_id) as total_channels,
-          COUNT(DISTINCT v.game_id) as total_games,
-          COALESCE(SUM(CASE WHEN v.status = 'completed' THEN 1 ELSE 0 END), 0) as files_downloaded,
-          COALESCE(SUM(CASE WHEN v.status = 'downloading' THEN 1 ELSE 0 END), 0) as files_downloading,
-          COALESCE(SUM(CASE WHEN v.status = 'failed' THEN 1 ELSE 0 END), 0) as files_failed
-        FROM vods v 
-        JOIN tasks t ON v.task_id = t.id 
-        WHERE t.user_id = $1
-      `, [userId]);
-
-      const stats = result.rows[0] || {};
-
-      res.json({
-        totalFiles: parseInt(stats.total_files || '0'),
-        totalSizeGB: 0, // Would need file system analysis
-        filesDownloaded: parseInt(stats.files_downloaded || '0'),
-        filesDownloading: parseInt(stats.files_downloading || '0'),
-        filesFailed: parseInt(stats.files_failed || '0'),
-        duplicateFiles: 0, // Would need duplicate analysis
-        corruptedFiles: 0, // Would need integrity checking
-        protectedFiles: 0, // Would need protection tracking
-        missingFiles: 0,
-        downloadedFiles: parseInt(stats.files_downloaded || '0'),
-        downloadedSizeGB: 0,
-        protectedSizeGB: 0,
-        missingSizeGB: 0,
-        corruptedSizeGB: 0,
-        byChannel: [],
-        byGame: [],
-        channelBreakdown: [],
-        gameBreakdown: [],
-        storageTimeline: [],
-        storageBreakdown: {
-          videos: 0,
-          thumbnails: 0,
-          metadata: 0,
-          logs: 0
-        },
-        retentionPolicyCompliance: {
-          compliant: 0,
-          violations: 0,
-          protected: 0
-        }
-      });
+      const analytics = await lifecycleManager.generateStorageAnalytics(userId);
+      res.json(analytics);
     } catch (error) {
       logger.error('Error fetching storage analytics:', error);
       res.status(500).json({ error: 'Failed to fetch storage analytics' });
@@ -117,17 +73,11 @@ export function setupLifecycleRoutes(pool: Pool): Router {
    * GET /api/lifecycle/storage/cleanup-analysis - Analyze files eligible for cleanup
    */
   router.get('/storage/cleanup-analysis', authenticate(pool), handleAsync(async (req: any, res: any) => {
+    const userId = parseInt(req.user!.id);
+
     try {
-      // Return mock cleanup analysis for now
-      res.json({
-        eligibleFiles: [],
-        totalSpaceSavingGB: 0,
-        oldestFileAge: 0,
-        retentionPolicyViolations: 0,
-        byRetentionPolicy: 0,
-        byStorageLimit: 0,
-        byCorruption: 0
-      });
+      const analysis = await lifecycleManager.analyzeCleanupCandidates(userId);
+      res.json(analysis);
     } catch (error) {
       logger.error('Error analyzing cleanup:', error);
       res.status(500).json({ error: 'Failed to analyze cleanup candidates' });
@@ -138,17 +88,13 @@ export function setupLifecycleRoutes(pool: Pool): Router {
    * POST /api/lifecycle/storage/cleanup - Execute storage cleanup
    */
   router.post('/storage/cleanup', authenticate(pool), handleAsync(async (req: any, res: any) => {
+    const userId = parseInt(req.user!.id);
+
     try {
       const { fileIds, dryRun = false } = req.body;
-      
-      // Mock implementation - would perform actual cleanup
-      res.json({
-        success: true,
-        dryRun,
-        filesProcessed: fileIds?.length || 0,
-        spaceSavedGB: 0,
-        errors: []
-      });
+
+      const result = await lifecycleManager.executeCleanup(userId, fileIds, dryRun);
+      res.json(result);
     } catch (error) {
       logger.error('Error executing cleanup:', error);
       res.status(500).json({ error: 'Failed to execute cleanup' });
@@ -162,9 +108,9 @@ export function setupLifecycleRoutes(pool: Pool): Router {
     const userId = parseInt(req.user!.id);
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
-    
+
     try {
-      // Get VODs ordered by creation date (proxy for file size)
+      // Get VODs ordered by actual file size
       const result = await pool.query(`
         SELECT 
           v.id,
@@ -177,13 +123,17 @@ export function setupLifecycleRoutes(pool: Pool): Router {
           v.duration,
           v.created_at,
           v.updated_at,
-          'source' as quality
+          vfs.file_size_bytes,
+          vfs.is_user_protected,
+          fvh.created_at as last_verified_at
         FROM vods v
         JOIN tasks t ON v.task_id = t.id
         LEFT JOIN channels c ON v.channel_id = c.id  
         LEFT JOIN games g ON v.game_id = g.id
-        WHERE t.user_id = $1 AND v.status = 'completed'
-        ORDER BY v.duration DESC, v.created_at DESC
+        LEFT JOIN vod_file_states vfs ON v.id = vfs.vod_id
+        LEFT JOIN file_verification_history fvh ON vfs.id = fvh.file_state_id
+        WHERE t.user_id = $1 AND v.download_status = 'completed' AND vfs.file_state = 'present'
+        ORDER BY CAST(COALESCE(vfs.file_size_bytes, '0') AS BIGINT) DESC, v.created_at DESC
         LIMIT $2 OFFSET $3
       `, [userId, limit, offset]);
 
@@ -191,10 +141,10 @@ export function setupLifecycleRoutes(pool: Pool): Router {
         id: row.id.toString(),
         vodId: row.id.toString(),
         filename: `${row.title || `VOD_${row.twitch_id}`}.mp4`,
-        sizeGB: (row.duration || 0) / 3600, // Rough estimate based on duration
+        sizeGB: parseInt(row.file_size_bytes || '0') / (1024 * 1024 * 1024),
         status: 'downloaded',
-        isProtected: false,
-        lastVerified: null,
+        isProtected: row.is_user_protected || false,
+        lastVerified: row.last_verified_at || row.created_at || null,
         channelName: row.channel_name || '',
         channelDisplayName: row.channel_display_name || '',
         gameName: row.game_name || 'Unknown',
@@ -224,14 +174,24 @@ export function setupLifecycleRoutes(pool: Pool): Router {
   router.get('/vods/:vodId/file-state', authenticate(pool), handleAsync(async (req: any, res: any) => {
     const userId = parseInt(req.user!.id);
     const vodId = parseInt(req.params.vodId);
-    
+
     try {
       const result = await pool.query(`
-        SELECT v.*, c.username as channel_name, g.name as game_name
+        SELECT 
+          v.*, 
+          c.username as channel_name, 
+          g.name as game_name,
+          vfs.file_size_bytes,
+          vfs.is_protected,
+          vfs.checksum_md5,
+          fvh.last_verified_at,
+          fvh.status as verification_status
         FROM vods v
         JOIN tasks t ON v.task_id = t.id
         LEFT JOIN channels c ON v.channel_id = c.id
         LEFT JOIN games g ON v.game_id = g.id  
+        LEFT JOIN vod_file_states vfs ON v.id = vfs.vod_id
+        LEFT JOIN file_verification_history fvh ON v.id = fvh.vod_id
         WHERE v.id = $1 AND t.user_id = $2
       `, [vodId, userId]);
 
@@ -246,10 +206,10 @@ export function setupLifecycleRoutes(pool: Pool): Router {
         filename: `${vod.title || `VOD_${vod.twitch_id}`}.mp4`,
         status: vod.status,
         fileExists: vod.status === 'completed',
-        isProtected: false,
-        lastVerified: null,
-        checksumStatus: 'unknown',
-        fileSize: 0,
+        isProtected: vod.is_protected || false,
+        lastVerified: vod.last_verified_at || null,
+        checksumStatus: vod.verification_status || 'unknown',
+        fileSize: parseInt(vod.file_size_bytes || '0'),
         channelName: vod.channel_name,
         gameName: vod.game_name,
         duration: vod.duration
@@ -265,9 +225,15 @@ export function setupLifecycleRoutes(pool: Pool): Router {
    */
   router.post('/vods/:vodId/protect', authenticate(pool), handleAsync(async (req: any, res: any) => {
     const vodId = parseInt(req.params.vodId);
-    
+
     try {
-      // Mock implementation - would mark VOD as protected
+      await pool.query(`
+        INSERT INTO vod_file_states (vod_id, is_protected, file_state)
+        VALUES ($1, true, 'missing')
+        ON CONFLICT (vod_id) 
+        DO UPDATE SET is_protected = true, updated_at = NOW()
+      `, [vodId]);
+
       res.json({
         success: true,
         vodId,
@@ -285,9 +251,14 @@ export function setupLifecycleRoutes(pool: Pool): Router {
    */
   router.delete('/vods/:vodId/protect', authenticate(pool), handleAsync(async (req: any, res: any) => {
     const vodId = parseInt(req.params.vodId);
-    
+
     try {
-      // Mock implementation - would remove protection
+      await pool.query(`
+        UPDATE vod_file_states 
+        SET is_protected = false, updated_at = NOW() 
+        WHERE vod_id = $1
+      `, [vodId]);
+
       res.json({
         success: true,
         vodId,
@@ -305,15 +276,16 @@ export function setupLifecycleRoutes(pool: Pool): Router {
    */
   router.post('/vods/:vodId/verify', authenticate(pool), handleAsync(async (req: any, res: any) => {
     const vodId = parseInt(req.params.vodId);
-    
+
     try {
-      // Mock implementation - would verify VOD integrity
+      const result = await lifecycleManager.verifyVodFile(vodId, true);
+
       res.json({
         success: true,
         vodId,
-        status: 'verified',
-        message: 'VOD integrity verified',
-        checksum: 'mock-checksum-123'
+        status: result.status,
+        message: result.status === 'verified' ? 'VOD integrity verified' : (result.error || 'Verification failed'),
+        checksum: result.checksum
       });
     } catch (error) {
       logger.error('Error verifying VOD:', error);
@@ -326,9 +298,14 @@ export function setupLifecycleRoutes(pool: Pool): Router {
    */
   router.post('/vods/:vodId/redownload', authenticate(pool), handleAsync(async (req: any, res: any) => {
     const vodId = parseInt(req.params.vodId);
-    
+
     try {
-      // Mock implementation - would queue for redownload
+      await pool.query(`
+        UPDATE vods 
+        SET status = 'downloading', retry_count = 0, updated_at = NOW() 
+        WHERE id = $1
+      `, [vodId]);
+
       res.json({
         success: true,
         vodId,

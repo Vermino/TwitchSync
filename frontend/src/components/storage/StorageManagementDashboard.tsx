@@ -90,12 +90,12 @@ import {
   AreaChart
 } from 'recharts';
 
-import type { 
-  StorageAnalytics, 
-  VerificationStats, 
-  FileItem, 
-  CleanupAnalysis, 
-  CleanupResult 
+import type {
+  StorageAnalytics,
+  VerificationStats,
+  FileItem,
+  CleanupAnalysis,
+  CleanupResult
 } from '@/types';
 
 import { api } from '@/lib/api';
@@ -103,7 +103,7 @@ import { api } from '@/lib/api';
 export default function StorageManagementDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -188,12 +188,12 @@ export default function StorageManagementDashboard() {
   // Computed values
   const filteredFiles = useMemo(() => {
     if (!largestFiles?.files) return [];
-    
+
     return largestFiles.files
       .filter((file: FileItem) => {
         if (searchQuery && !file.filename.toLowerCase().includes(searchQuery.toLowerCase()) &&
-            !file.channelDisplayName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-            !file.gameName.toLowerCase().includes(searchQuery.toLowerCase())) {
+          !file.channelDisplayName.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !file.gameName.toLowerCase().includes(searchQuery.toLowerCase())) {
           return false;
         }
         if (filterStatus !== 'all' && file.status !== filterStatus) {
@@ -219,7 +219,7 @@ export default function StorageManagementDashboard() {
 
   // Event handlers
   const handleSelectFile = useCallback((fileId: string) => {
-    setSelectedFiles(prev => 
+    setSelectedFiles(prev =>
       prev.includes(fileId)
         ? prev.filter(id => id !== fileId)
         : [...prev, fileId]
@@ -319,6 +319,14 @@ export default function StorageManagementDashboard() {
       </div>
     );
   }
+
+  const basePieData = [
+    { name: 'Downloaded', value: analytics?.downloadedSizeGB || 0, color: '#10b981' },
+    { name: 'Missing', value: analytics?.missingSizeGB || 0, color: '#f59e0b' },
+    { name: 'Corrupted', value: analytics?.corruptedSizeGB || 0, color: '#ef4444' },
+  ].filter(item => item.value > 0);
+
+  const pieData = basePieData.length > 0 ? basePieData : [{ name: 'No Data', value: 1, color: '#e5e7eb' }];
 
   return (
     <div className="space-y-6 p-6">
@@ -423,23 +431,15 @@ export default function StorageManagementDashboard() {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={[
-                          { name: 'Downloaded', value: analytics?.downloadedSizeGB || 0, color: '#10b981' },
-                          { name: 'Missing', value: analytics?.missingSizeGB || 0, color: '#f59e0b' },
-                          { name: 'Corrupted', value: analytics?.corruptedSizeGB || 0, color: '#ef4444' },
-                        ]}
+                        data={pieData}
                         cx="50%"
                         cy="50%"
                         innerRadius={40}
                         outerRadius={80}
                         dataKey="value"
-                        label={({ name, value }) => `${name}: ${formatFileSize(value)}`}
+                        label={({ name, value }) => name === 'No Data' ? name : `${name}: ${formatFileSize(value)}`}
                       >
-                        {[
-                          { color: '#10b981' },
-                          { color: '#f59e0b' },
-                          { color: '#ef4444' }
-                        ].map((entry, index) => (
+                        {pieData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -464,25 +464,25 @@ export default function StorageManagementDashboard() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
                       <YAxis />
-                      <RechartsTooltip 
+                      <RechartsTooltip
                         labelFormatter={(value) => `Month: ${value}`}
                         formatter={(value: number, name: string) => [formatFileSize(value), name]}
                       />
-                      <Area 
-                        type="monotone" 
-                        dataKey="totalSizeGB" 
+                      <Area
+                        type="monotone"
+                        dataKey="totalSizeGB"
                         stackId="1"
-                        stroke="#8b5cf6" 
-                        fill="#8b5cf6" 
+                        stroke="#8b5cf6"
+                        fill="#8b5cf6"
                         fillOpacity={0.6}
                         name="Total Storage"
                       />
-                      <Area 
-                        type="monotone" 
-                        dataKey="downloadedSizeGB" 
+                      <Area
+                        type="monotone"
+                        dataKey="downloadedSizeGB"
                         stackId="2"
-                        stroke="#10b981" 
-                        fill="#10b981" 
+                        stroke="#10b981"
+                        fill="#10b981"
                         fillOpacity={0.8}
                         name="Downloaded"
                       />
@@ -501,18 +501,18 @@ export default function StorageManagementDashboard() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-3">
-                <Button 
-                  onClick={() => bulkVerifyMutation.mutate()} 
+                <Button
+                  onClick={() => bulkVerifyMutation.mutate()}
                   disabled={verificationInProgress}
                   className="h-20 flex flex-col items-center justify-center space-y-2"
                 >
                   <CheckCircle className="h-6 w-6" />
                   <span>Verify All Files</span>
                 </Button>
-                
+
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button 
+                    <Button
                       variant="outline"
                       disabled={cleanupInProgress || !cleanupAnalysis}
                       className="h-20 flex flex-col items-center justify-center space-y-2"
@@ -541,7 +541,7 @@ export default function StorageManagementDashboard() {
                   </AlertDialogContent>
                 </AlertDialog>
 
-                <Button 
+                <Button
                   variant="outline"
                   className="h-20 flex flex-col items-center justify-center space-y-2"
                   onClick={() => queryClient.invalidateQueries()}
@@ -570,7 +570,7 @@ export default function StorageManagementDashboard() {
                       className="pl-8"
                     />
                   </div>
-                  
+
                   <Select value={filterStatus} onValueChange={setFilterStatus}>
                     <SelectTrigger className="w-48">
                       <SelectValue />
@@ -703,8 +703,8 @@ export default function StorageManagementDashboard() {
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
+                                    <Button
+                                      variant="ghost"
                                       size="sm"
                                       onClick={() => verifyFileMutation.mutate(file.vodId)}
                                       disabled={verifyFileMutation.isPending}
@@ -715,12 +715,12 @@ export default function StorageManagementDashboard() {
                                   <TooltipContent>Verify file</TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-                              
+
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
+                                    <Button
+                                      variant="ghost"
                                       size="sm"
                                       onClick={() => redownloadFileMutation.mutate(file.vodId)}
                                       disabled={redownloadFileMutation.isPending}
@@ -735,8 +735,8 @@ export default function StorageManagementDashboard() {
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
+                                    <Button
+                                      variant="ghost"
                                       size="sm"
                                       onClick={() => {
                                         if (file.isProtected) {
@@ -815,11 +815,11 @@ export default function StorageManagementDashboard() {
                         <span className="font-mono text-orange-600">{cleanupAnalysis?.retentionPolicyViolations || 0}</span>
                       </div>
                     </div>
-                    
+
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button 
-                          className="w-full" 
+                        <Button
+                          className="w-full"
                           disabled={cleanupInProgress || (cleanupAnalysis?.eligibleFiles.length || 0) === 0}
                         >
                           {cleanupInProgress && <RefreshCw className="h-4 w-4 mr-2 animate-spin" />}
@@ -830,7 +830,7 @@ export default function StorageManagementDashboard() {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Confirm Cleanup Execution</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will permanently delete {cleanupAnalysis?.eligibleFiles.length || 0} files 
+                            This will permanently delete {cleanupAnalysis?.eligibleFiles.length || 0} files
                             and free up {formatFileSize(cleanupAnalysis?.totalSpaceSavingGB || 0)} of storage space.
                             <br /><br />
                             <strong>This action cannot be undone.</strong>
@@ -863,12 +863,12 @@ export default function StorageManagementDashboard() {
                   <label className="text-sm font-medium">Retention Period (days)</label>
                   <Input type="number" defaultValue="30" />
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Maximum Storage (GB)</label>
                   <Input type="number" defaultValue="1000" />
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Auto-cleanup frequency</label>
                   <Select defaultValue="weekly">
@@ -923,8 +923,8 @@ export default function StorageManagementDashboard() {
                     <span>Progress</span>
                     <span>{((verificationStats?.verifiedFiles || 0) / (verificationStats?.totalFiles || 1) * 100).toFixed(1)}%</span>
                   </div>
-                  <Progress 
-                    value={(verificationStats?.verifiedFiles || 0) / (verificationStats?.totalFiles || 1) * 100} 
+                  <Progress
+                    value={(verificationStats?.verifiedFiles || 0) / (verificationStats?.totalFiles || 1) * 100}
                   />
                 </div>
 
@@ -944,7 +944,7 @@ export default function StorageManagementDashboard() {
                   <div>
                     <div className="text-muted-foreground">Last Run</div>
                     <div className="font-mono">
-                      {verificationStats?.lastVerificationDate 
+                      {verificationStats?.lastVerificationDate
                         ? new Date(verificationStats.lastVerificationDate).toLocaleDateString()
                         : 'Never'
                       }
@@ -952,8 +952,8 @@ export default function StorageManagementDashboard() {
                   </div>
                 </div>
 
-                <Button 
-                  onClick={() => bulkVerifyMutation.mutate()} 
+                <Button
+                  onClick={() => bulkVerifyMutation.mutate()}
                   disabled={verificationInProgress}
                   className="w-full"
                 >
@@ -1042,7 +1042,7 @@ export default function StorageManagementDashboard() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="displayName" />
                       <YAxis />
-                      <RechartsTooltip 
+                      <RechartsTooltip
                         formatter={(value: number, name: string) => [
                           name === 'sizeGB' ? formatFileSize(value) : value,
                           name === 'sizeGB' ? 'Storage' : 'Files'
@@ -1068,7 +1068,7 @@ export default function StorageManagementDashboard() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="gameName" />
                       <YAxis />
-                      <RechartsTooltip 
+                      <RechartsTooltip
                         formatter={(value: number, name: string) => [
                           name === 'sizeGB' ? formatFileSize(value) : value,
                           name === 'sizeGB' ? 'Storage' : 'Files'
@@ -1101,8 +1101,8 @@ export default function StorageManagementDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {analytics?.channelBreakdown.map((channel) => (
-                      <TableRow key={channel.channelName}>
+                    {analytics?.channelBreakdown.map((channel, index) => (
+                      <TableRow key={channel.channelName || `unknown-channel-${index}`}>
                         <TableCell>
                           <div className="font-medium">{channel.displayName}</div>
                           <div className="text-sm text-muted-foreground">@{channel.channelName}</div>
@@ -1133,8 +1133,8 @@ export default function StorageManagementDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {analytics?.gameBreakdown.map((game) => (
-                      <TableRow key={game.gameName}>
+                    {analytics?.gameBreakdown.map((game, index) => (
+                      <TableRow key={game.gameName || `unknown-game-${index}`}>
                         <TableCell>
                           <div className="font-medium">{game.gameName}</div>
                         </TableCell>

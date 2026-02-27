@@ -1,0 +1,278 @@
+﻿src/services/vodLifecycleManager.ts(316,28): error TS1127: Invalid character.
+src/services/vodLifecycleManager.ts(337,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(345,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(356,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(356,18): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(362,17): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(363,9): error TS1443: Module declaration names may only use ' or " quoted strings.
+src/services/vodLifecycleManager.ts(464,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(464,29): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(464,34): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(464,47): error TS1005: '(' expected.
+src/services/vodLifecycleManager.ts(464,57): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(468,9): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(469,11): error TS1005: ')' expected.
+src/services/vodLifecycleManager.ts(472,9): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(473,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(473,28): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(495,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(495,18): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(495,21): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(495,26): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(495,32): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(495,46): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(500,33): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(500,40): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(500,47): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(500,66): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(500,74): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(500,86): error TS1005: '(' expected.
+src/services/vodLifecycleManager.ts(500,91): error TS1005: ')' expected.
+src/services/vodLifecycleManager.ts(500,99): error TS1443: Module declaration names may only use ' or " quoted strings.
+src/services/vodLifecycleManager.ts(516,33): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(516,59): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(516,64): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(516,70): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(516,73): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(516,84): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(516,89): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(516,102): error TS1443: Module declaration names may only use ' or " quoted strings.
+src/services/vodLifecycleManager.ts(526,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(526,25): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(526,34): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(526,54): error TS1443: Module declaration names may only use ' or " quoted strings.
+src/services/vodLifecycleManager.ts(551,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(551,31): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(551,39): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(551,53): error TS1005: '(' expected.
+src/services/vodLifecycleManager.ts(551,58): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(551,59): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(555,9): error TS1005: ')' expected.
+src/services/vodLifecycleManager.ts(556,19): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(556,20): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(558,21): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(558,22): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(558,24): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(558,37): error TS1005: ',' expected.
+src/services/vodLifecycleManager.ts(559,23): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(559,24): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(559,26): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(559,39): error TS1005: ',' expected.
+src/services/vodLifecycleManager.ts(560,25): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(560,26): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(560,28): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(560,41): error TS1005: ',' expected.
+src/services/vodLifecycleManager.ts(561,27): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(561,28): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(561,30): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(561,43): error TS1005: ',' expected.
+src/services/vodLifecycleManager.ts(562,9): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(562,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(563,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(563,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(563,19): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(563,21): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(564,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(564,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(564,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(564,22): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(565,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(574,19): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(574,20): error TS1109: Expression expected.
+src/services/vodLifecycleManager.ts(576,9): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(576,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(577,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(577,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(577,19): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(577,21): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(578,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(578,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(578,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(578,22): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(579,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(580,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(592,9): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(592,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(593,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(593,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(593,19): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(593,21): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(594,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(594,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(594,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(594,22): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(595,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(596,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(597,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(597,15): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(597,38): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(598,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(609,9): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(609,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(610,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(610,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(610,19): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(610,21): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(611,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(611,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(611,30): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(611,34): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(612,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(612,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(612,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(612,22): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(613,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(614,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(615,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(615,15): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(616,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(616,15): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(616,18): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(617,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(626,9): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(626,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(627,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(627,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(627,19): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(627,21): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(628,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(628,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(628,30): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(628,34): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(629,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(629,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(629,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(629,22): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(630,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(631,11): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(632,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(632,15): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(633,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(633,15): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(633,18): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(634,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(635,7): error TS1443: Module declaration names may only use ' or " quoted strings.
+src/services/vodLifecycleManager.ts(669,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(669,28): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(669,38): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(669,52): error TS1005: '(' expected.
+src/services/vodLifecycleManager.ts(669,57): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(669,58): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(696,18): error TS1005: ')' expected.
+src/services/vodLifecycleManager.ts(696,27): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(696,35): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(696,50): error TS1005: '(' expected.
+src/services/vodLifecycleManager.ts(696,51): error TS1005: ')' expected.
+src/services/vodLifecycleManager.ts(696,68): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(696,78): error TS1443: Module declaration names may only use ' or " quoted strings.
+src/services/vodLifecycleManager.ts(712,27): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(712,37): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(712,45): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(712,56): error TS1005: '(' expected.
+src/services/vodLifecycleManager.ts(712,61): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(712,62): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(712,72): error TS1005: ')' expected.
+src/services/vodLifecycleManager.ts(755,7): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(756,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(756,26): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(757,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(757,13): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(757,16): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(757,34): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(789,7): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(789,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(790,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(790,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(790,18): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(790,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(791,7): error TS1435: Unknown keyword or identifier. Did you mean 'let'?
+src/services/vodLifecycleManager.ts(791,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(791,17): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(791,33): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(791,37): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(792,7): error TS1435: Unknown keyword or identifier. Did you mean 'let'?
+src/services/vodLifecycleManager.ts(792,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(792,17): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(792,40): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(792,44): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(793,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(794,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(795,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(795,28): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(796,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(796,13): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(796,31): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(797,5): error TS1443: Module declaration names may only use ' or " quoted strings.
+src/services/vodLifecycleManager.ts(842,17): error TS1435: Unknown keyword or identifier. Did you mean 'void'?
+src/services/vodLifecycleManager.ts(842,21): error TS1228: A type predicate is only allowed in return type position for functions and methods.
+src/services/vodLifecycleManager.ts(842,24): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(842,51): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(842,69): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(842,79): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(842,86): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(842,89): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(964,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(964,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(968,17): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(969,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(969,27): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(969,30): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(995,7): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(995,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(996,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(996,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(996,17): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(996,19): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(997,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(997,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(997,18): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(997,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(998,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(998,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(998,28): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(998,32): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(999,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1000,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1001,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1001,39): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1001,42): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1002,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1003,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1004,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1004,13): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1004,42): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1028,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1034,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1038,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1042,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1047,21): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1047,28): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1047,43): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1047,56): error TS1128: Declaration or statement expected.
+src/services/vodLifecycleManager.ts(1054,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1054,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1057,17): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1073,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1073,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1074,7): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(1074,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1075,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1075,12): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1075,18): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1075,20): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1076,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1077,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1077,24): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1077,25): error TS1128: Declaration or statement expected.
+src/services/vodLifecycleManager.ts(1078,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1089,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1089,14): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1095,17): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1096,7): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1096,43): error TS1005: ';' expected.
+src/services/vodLifecycleManager.ts(1096,46): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1130,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1130,16): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1131,9): error TS1435: Unknown keyword or identifier. Did you mean 'from'?
+src/services/vodLifecycleManager.ts(1132,9): error TS1434: Unexpected keyword or identifier.
+src/services/vodLifecycleManager.ts(1142,36): error TS1160: Unterminated template literal.

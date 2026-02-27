@@ -493,7 +493,6 @@ export class DownloadHandler extends EventEmitter {
           })
         ]);
 
-        // Update VOD file state using safe release function
         await client.query(`
           SELECT safe_release_vod_lock($1::bigint, $2::integer, $3::text, $4::text, $5::text, $6::text, $7::bigint)
         `, [
@@ -504,6 +503,28 @@ export class DownloadHandler extends EventEmitter {
           'present',
           finalVideoPath,
           fileSizeBytes
+        ]);
+
+        // Fallback upsert for vod_file_states to guarantee it exists for UI, even if lock release failed
+        await client.query(`
+          INSERT INTO vod_file_states (
+            vod_id, task_id, twitch_vod_id, file_path, file_size_bytes, 
+            file_state, operation_status, checksum_md5, first_downloaded_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, 'present', 'completed', $6, NOW(), NOW())
+          ON CONFLICT (twitch_vod_id, task_id) DO UPDATE SET
+            file_path = EXCLUDED.file_path,
+            file_size_bytes = EXCLUDED.file_size_bytes,
+            file_state = 'present',
+            operation_status = 'completed',
+            checksum_md5 = EXCLUDED.checksum_md5,
+            updated_at = NOW()
+        `, [
+          vod.id,
+          vod.task_id,
+          vod.twitch_id,
+          finalVideoPath,
+          fileSizeBytes,
+          checksum
         ]);
 
         // Get updated completion statistics for task progress

@@ -232,7 +232,11 @@ const Channels = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {channel.most_played_game ? (
-                    <span className="text-sm text-gray-900">{channel.most_played_game}</span>
+                    <span className="text-sm text-gray-900">
+                      {typeof channel.most_played_game === 'object'
+                        ? channel.most_played_game.name
+                        : String(channel.most_played_game)}
+                    </span>
                   ) : (
                     <span className="text-sm text-gray-500">No data</span>
                   )}
