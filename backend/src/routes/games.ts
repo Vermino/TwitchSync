@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import { authenticate } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { Game } from '../types/database';
+import { DiscoveryIndexer } from '../services/discovery/discovery-indexer';
 
 export const setupGameRoutes = (pool: Pool) => {
   const router = Router();
@@ -41,11 +42,19 @@ export const setupGameRoutes = (pool: Pool) => {
                  name = $2, 
                  box_art_url = $3,
                  updated_at = CURRENT_TIMESTAMP 
-             WHERE twitch_game_id = $1 
+              WHERE twitch_game_id = $1 
              RETURNING *`,
             [twitch_game_id, name, box_art_url]
           );
-          res.json(result.rows[0]);
+
+          const reactivatedGame = result.rows[0];
+
+          // Background index reactivated game
+          DiscoveryIndexer.getInstance(pool)
+            .indexGame(twitch_game_id, reactivatedGame.id)
+            .catch(err => logger.error(`Failed background index for reactivated game ${name}:`, err));
+
+          res.json(reactivatedGame);
           return;
         }
         res.status(409).json({ error: 'Game already exists' });
@@ -59,7 +68,15 @@ export const setupGameRoutes = (pool: Pool) => {
          RETURNING *`,
         [twitch_game_id, name, box_art_url]
       );
-      res.status(201).json(result.rows[0]);
+
+      const newGame = result.rows[0];
+
+      // Kick off background discovery for this new game
+      DiscoveryIndexer.getInstance(pool)
+        .indexGame(twitch_game_id, newGame.id)
+        .catch(err => logger.error(`Failed background index for new game ${name}:`, err));
+
+      res.status(201).json(newGame);
     } catch (error) {
       logger.error('Error adding game:', error);
       res.status(500).json({ error: 'Failed to add game' });

@@ -28,6 +28,7 @@ export class SettingsController {
         SELECT 
           (SELECT value FROM system_settings WHERE category = 'downloads' AND key = 'max_concurrent')::int as concurrent_downloads,
           (SELECT value FROM system_settings WHERE category = 'downloads' AND key = 'temp_dir') as temp_storage_location,
+          (SELECT value FROM system_settings WHERE category = 'downloads' AND key = 'default_quality') as default_quality,
           (SELECT value FROM system_settings WHERE category = 'storage' AND key = 'retention_days')::int as retention_days
       `);
 
@@ -37,7 +38,8 @@ export class SettingsController {
           downloadPath: path.join(os.homedir(), 'TwitchSync', 'Downloads'),
           tempStorageLocation: result.rows[0].temp_storage_location || path.join(os.homedir(), 'TwitchSync', 'Temp'),
           concurrentDownloadLimit: result.rows[0].concurrent_downloads || 3,
-          bandwidthThrottle: 0
+          bandwidthThrottle: 0,
+          defaultQuality: String(result.rows[0].default_quality || 'source').replace(/^"|"$/g, '')
         },
         fileOrganization: {
           filenameTemplate: '{date}_{channel}_{title}',
@@ -109,6 +111,14 @@ export class SettingsController {
             SET value = $1 
             WHERE category = 'downloads' AND key = 'temp_dir'
           `, [settings.downloads.tempStorageLocation]);
+
+          if (settings.downloads.defaultQuality) {
+            await client.query(`
+              INSERT INTO system_settings (category, key, value)
+              VALUES ('downloads', 'default_quality', $1)
+              ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
+            `, [`"${settings.downloads.defaultQuality}"`]);
+          }
         }
 
         // Update storage settings

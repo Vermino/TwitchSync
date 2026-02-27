@@ -96,6 +96,32 @@ const DownloadSettings: React.FC<DownloadSettingsProps> = ({
             className="w-32 p-2 border rounded-lg"
           />
         </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Global Default Video Quality
+          </label>
+          <select
+            value={settings.defaultQuality || 'source'}
+            onChange={(e) => onSettingsChange({
+              ...settings,
+              defaultQuality: e.target.value
+            })}
+            className="w-48 p-2 border rounded-lg bg-white"
+          >
+            <option value="source">Source (Best)</option>
+            <option value="1080p60">1080p 60fps</option>
+            <option value="1080p">1080p</option>
+            <option value="720p60">720p 60fps</option>
+            <option value="720p">720p</option>
+            <option value="480p">480p</option>
+            <option value="360p">360p</option>
+            <option value="160p">160p</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Used as a fallback if no specific quality is set for a task or channel.
+          </p>
+        </div>
       </div>
     </div>
   );

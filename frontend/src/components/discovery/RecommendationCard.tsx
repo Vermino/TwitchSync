@@ -5,6 +5,7 @@ import { Users, Gamepad2, Star, EyeOff, ChevronLeft, ChevronRight } from 'lucide
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { GameBox } from '@/components/ui/GameBox';
 import type {
   RecommendationCardProps,
   ChannelRecommendation,
@@ -41,18 +42,21 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
             </Avatar>
             <div>
               <div className="font-medium">{channelRec.display_name}</div>
-              <div className="text-sm text-gray-600 flex flex-wrap items-center gap-1 mt-1">
+              <div className="text-sm text-gray-600 flex flex-wrap items-center gap-2 mt-2">
                 {channelRec.shared_games_list && channelRec.shared_games_list.length > 0 ? (
                   channelRec.shared_games_list.map(g => (
-                    <span key={g.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-medium border border-indigo-100">
-                      <Gamepad2 size={10} />
-                      {g.name}
-                    </span>
+                    <div key={g.id} className="transform scale-90 origin-left" title={g.name}>
+                      <GameBox game={{ id: String(g.id), name: g.name, box_art_url: g.box_art_url }} showName={false} />
+                    </div>
                   ))
+                ) : channelRec.current_game ? (
+                  <div className="transform scale-90 origin-left">
+                    <GameBox game={channelRec.current_game} />
+                  </div>
                 ) : (
                   <span className="flex items-center gap-1 text-xs">
                     <Gamepad2 size={12} />
-                    {channelRec.current_game?.name || 'Multiple Games'}
+                    Multiple Games
                   </span>
                 )}
               </div>
@@ -179,17 +183,7 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, type, onA
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center gap-3 mb-3">
-          <img
-            src={gameRec.box_art_url}
-            alt={gameRec.name}
-            className="w-12 h-16 rounded object-cover border border-gray-200"
-          />
-          <div>
-            <div className="font-medium">{gameRec.name}</div>
-            <div className="text-sm text-gray-600 truncate max-w-[150px]">
-              {gameRec.tags?.slice(0, 2).join(', ') || 'Game'}
-            </div>
-          </div>
+          <GameBox game={gameRec} />
           <div className="ml-auto text-right">
             <div className="text-sm font-medium">{(gameRec.compatibility_score * 100).toFixed(0)}%</div>
             <div className="text-xs text-gray-600">Match</div>

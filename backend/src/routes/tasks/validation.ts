@@ -7,6 +7,7 @@ export const TaskTypeEnum = z.enum(['channel', 'game', 'combined']);
 export const TaskScheduleTypeEnum = z.enum(['interval', 'cron', 'manual']);
 export const TaskStatusEnum = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'paused']);
 export const TaskPriorityEnum = z.enum(['low', 'medium', 'high']);
+export const VideoQualityEnum = z.enum(['source', '1080p60', '1080p', '720p60', '720p', '480p', '360p', '160p']);
 
 // Sub-schemas
 const TaskConditionsSchema = z.object({
@@ -48,6 +49,7 @@ export const CreateTaskSchema = z.object({
   auto_delete: z.boolean().optional(),
   is_active: z.boolean().optional(),
   priority: TaskPriorityEnum.optional().default('low'),
+  quality: VideoQualityEnum.optional(),
   conditions: TaskConditionsSchema,
   restrictions: TaskRestrictionsSchema,
 });
@@ -65,6 +67,7 @@ export const UpdateTaskSchema = z.object({
   is_active: z.boolean().optional(),
   priority: TaskPriorityEnum.optional(),
   status: TaskStatusEnum.optional(),
+  quality: VideoQualityEnum.optional(),
   conditions: TaskConditionsSchema,
   restrictions: TaskRestrictionsSchema,
 });
@@ -103,6 +106,7 @@ export const BaseTaskSchema = z.object({
   is_active: z.boolean(),
   status: TaskStatusEnum,
   priority: TaskPriorityEnum,
+  quality: VideoQualityEnum.optional(),
   created_at: z.date(),
   updated_at: z.date(),
   monitoring_status: z.string().optional(),

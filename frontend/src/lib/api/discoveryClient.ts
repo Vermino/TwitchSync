@@ -8,7 +8,8 @@ import type {
   ChannelRecommendation,
   GameRecommendation,
   TrendingCategory,
-  UpdatePreferencesResponse
+  UpdatePreferencesResponse,
+  FilterSettings
 } from '@/types/discovery';
 
 export class DiscoveryClient extends BaseApiClient {
@@ -25,11 +26,18 @@ export class DiscoveryClient extends BaseApiClient {
     }
   }
 
-  async getChannelRecommendations(): Promise<ChannelRecommendation[]> {
+  async getChannelRecommendations(filters?: FilterSettings): Promise<ChannelRecommendation[]> {
     try {
+      const params = filters ? {
+        min_viewers: filters.minViewers,
+        max_viewers: filters.maxViewers,
+        languages: filters.preferredLanguages?.join(','),
+        tags: filters.tags?.join(','),
+        confidence_threshold: filters.confidenceThreshold
+      } : {};
       const response = await this.axios.get(
         `${this.baseURL}/discovery/recommendations/channels`,
-        { headers: this.getHeaders() }
+        { headers: this.getHeaders(), params }
       );
       return response.data;
     } catch (error) {
@@ -38,11 +46,18 @@ export class DiscoveryClient extends BaseApiClient {
     }
   }
 
-  async getGameRecommendations(): Promise<GameRecommendation[]> {
+  async getGameRecommendations(filters?: FilterSettings): Promise<GameRecommendation[]> {
     try {
+      const params = filters ? {
+        min_viewers: filters.minViewers,
+        max_viewers: filters.maxViewers,
+        languages: filters.preferredLanguages?.join(','),
+        tags: filters.tags?.join(','),
+        confidence_threshold: filters.confidenceThreshold
+      } : {};
       const response = await this.axios.get(
         `${this.baseURL}/discovery/recommendations/games`,
-        { headers: this.getHeaders() }
+        { headers: this.getHeaders(), params }
       );
       return response.data;
     } catch (error) {

@@ -173,9 +173,38 @@ export class TaskHandler extends EventEmitter {
                 const downloadPriority = this.mapTaskPriorityToDownloadPriority(task.priority);
                 logger.info(`Task ${taskId}: mapping priority "${task.priority}" -> "${downloadPriority}"`);
 
+                // Resolve video quality hierarchy: Task > Channel > Global Default
+                let preferredQuality = 'source'; // Fallback
+
+                if (task.quality && task.quality !== 'auto') {
+                  // Task-specific quality takes precedence
+                  preferredQuality = task.quality;
+                } else {
+                  // Check channel-specific preferences
+                  const channelPrefsResult = await client.query(`
+                    SELECT preferred_quality 
+                    FROM user_vod_preferences 
+                    WHERE target_id = $1::varchar AND target_type = 'channel'
+                  `, [channelTwitchId.toString()]);
+
+                  if (channelPrefsResult.rows.length > 0 && channelPrefsResult.rows[0].preferred_quality) {
+                    preferredQuality = channelPrefsResult.rows[0].preferred_quality;
+                  } else {
+                    // Fall back to global default
+                    const globalPrefsResult = await client.query(`
+                      SELECT value 
+                      FROM system_settings 
+                      WHERE category = 'downloads' AND key = 'default_quality'
+                    `);
+                    if (globalPrefsResult.rows.length > 0 && globalPrefsResult.rows[0].value) {
+                      preferredQuality = String(globalPrefsResult.rows[0].value).replace(/^"|"$/g, '');
+                    }
+                  }
+                }
+
                 // Ensure the game exists in our database before queuing
                 await this.ensureGameExists(vodInfo, client);
-                await this.queueVODDownload(vodInfo, downloadPriority, taskId, channelDbId, client);
+                await this.queueVODDownload(vodInfo, downloadPriority, preferredQuality, taskId, channelDbId, client);
                 processedVods++;
 
                 await this.updateTaskProgress(taskId, {
@@ -966,6 +995,7 @@ export class TaskHandler extends EventEmitter {
   private async queueVODDownload(
     vod: TwitchVOD,
     priority: string,
+    preferredQuality: string,
     taskId: number,
     channelId: number,
     client: PoolClient
@@ -1028,7 +1058,7 @@ export class TaskHandler extends EventEmitter {
             ) VALUES (
               $1::bigint, $2, $3, 
               (SELECT id FROM games WHERE twitch_game_id = $14 LIMIT 1),
-              $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, 'source',
+              $4, $5, $6, $7, $8, $9, 'queued', 'queued', $10, 0, 3, $15,
               true, true, $11, $12, $13, NOW(), NOW()
             )
           `, [
@@ -1045,7 +1075,8 @@ export class TaskHandler extends EventEmitter {
             vod.thumbnail_url,    // $11
             vod.published_at,     // $12
             { transcode: false, extract_chat: true }, // $13
-            actualGameId          // $14 - Fixed parameter mismatch
+            actualGameId,         // $14
+            preferredQuality      // $15
           ]);
         } else {
           // Update existing VOD with proper parameter alignment
@@ -1067,6 +1098,7 @@ export class TaskHandler extends EventEmitter {
                 published_at = $12,
                 processing_options = $13,
                 retry_count = 0,
+                preferred_quality = $15,
                 updated_at = NOW()
             WHERE twitch_id = $1::bigint
           `, [
@@ -1083,7 +1115,8 @@ export class TaskHandler extends EventEmitter {
             vod.thumbnail_url,    // $11
             vod.published_at,     // $12
             { transcode: false, extract_chat: true }, // $13
-            actualGameId          // $14 - Fixed parameter mismatch
+            actualGameId,         // $14
+            preferredQuality      // $15
           ]);
         }
 

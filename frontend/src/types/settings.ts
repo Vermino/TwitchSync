@@ -3,6 +3,7 @@ export interface DownloadSettings {
   tempStorageLocation: string;
   concurrentDownloadLimit: number;
   bandwidthThrottle: number;
+  defaultQuality: string;
 }
 
 export interface FileOrganizationSettings {

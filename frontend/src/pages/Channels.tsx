@@ -16,26 +16,7 @@ import {
 
 import type { Channel } from '../types';
 
-interface Game {
-  id: string;
-  name: string;
-  box_art_url: string;
-}
-
-const GameBox: React.FC<{ game: Game; className?: string }> = ({ game, className = "" }) => {
-  if (!game?.box_art_url) return <span className="text-gray-500">No data</span>;
-
-  return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <img
-        src={game.box_art_url}
-        alt={game.name}
-        className="w-8 h-10 rounded"
-      />
-      <span className="text-sm text-gray-900">{game.name}</span>
-    </div>
-  );
-};
+import { GameBox } from '../components/ui/GameBox';
 
 const formatNumber = (num: number): string => {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -232,11 +213,15 @@ const Channels = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {channel.most_played_game ? (
-                    <span className="text-sm text-gray-900">
-                      {typeof channel.most_played_game === 'object'
-                        ? channel.most_played_game.name
-                        : String(channel.most_played_game)}
-                    </span>
+                    typeof channel.most_played_game === 'object' && channel.most_played_game !== null && 'id' in channel.most_played_game ? (
+                      <GameBox game={channel.most_played_game as any} />
+                    ) : (
+                      <span className="text-sm text-gray-900">
+                        {typeof channel.most_played_game === 'object' && channel.most_played_game !== null && 'name' in channel.most_played_game
+                          ? (channel.most_played_game as any).name
+                          : String(channel.most_played_game)}
+                      </span>
+                    )
                   ) : (
                     <span className="text-sm text-gray-500">No data</span>
                   )}

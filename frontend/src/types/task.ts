@@ -58,8 +58,8 @@ export interface Task {
   retention_days?: number;
   auto_delete: boolean;
   priority: TaskPriority;
-  conditions: Record<string, any>;
-  restrictions: Record<string, any>;
+  conditions: TaskConditions;
+  restrictions: TaskRestrictions;
   progress?: TaskProgress;
   last_run?: string;
   created_at: string;
@@ -80,7 +80,7 @@ export interface Channel {
   last_game_id?: string;
   last_game_name?: string;
   last_game_box_art?: string;
-  most_played_game?: string;
+  most_played_game?: string | { id: string; name: string; box_art_url: string };
   premieres?: any[];
   last_game_check?: string | null;
   current_game_id?: string | null;
@@ -112,6 +112,7 @@ export interface CreateTaskRequest {
   retention_days?: number;
   auto_delete?: boolean;
   priority?: TaskPriority;
+  quality?: string;
   conditions?: Record<string, any>;
   restrictions?: Record<string, any>;
 }
@@ -137,4 +138,19 @@ export interface TaskStorage {
   files_count: number;
   oldest_file?: string;
   newest_file?: string;
+}
+
+export interface TaskConditions {
+  minFollowers?: number;
+  minViews?: number;
+  minDuration?: number;
+  languages?: string[];
+  requireChat?: boolean;
+}
+
+export interface TaskRestrictions {
+  maxVodsPerChannel?: number;
+  maxStoragePerChannel?: number;
+  maxTotalVods?: number;
+  maxTotalStorage?: number;
 }

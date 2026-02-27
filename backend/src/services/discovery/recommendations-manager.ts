@@ -37,6 +37,11 @@ export class RecommendationsManager {
           FROM channel_game_stats cgs
           JOIN channels c ON cgs.channel_id = c.id
           WHERE c.is_active = true
+          UNION
+          -- Games tracked explicitly by the user
+          SELECT id as game_id
+          FROM games
+          WHERE is_active = true
         ),
         ignored_channels AS (
           SELECT DISTINCT item_id::integer
@@ -142,7 +147,7 @@ export class RecommendationsManager {
             // Push up to 5 recent VODs
             for (const vod of vods.slice(0, 5)) {
               recent_vods.push({
-                thumbnail_url: vod.thumbnail_url?.replace('%{width}', '320').replace('%{height}', '180') || '',
+                thumbnail_url: vod.thumbnail_url?.replace(/%?{width}/g, '320').replace(/%?{height}/g, '180') || '',
                 url: vod.url,
                 title: vod.title,
                 game_name: gameName

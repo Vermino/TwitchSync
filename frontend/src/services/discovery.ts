@@ -1,7 +1,7 @@
 // frontend/src/services/discovery.ts
 
 import axios from 'axios';
-import { api } from '@/lib/api';
+import { api } from '@/lib/api/index';
 import type {
   ChannelRecommendation,
   GameRecommendation,
@@ -13,7 +13,7 @@ import type {
 class DiscoveryService {
   async getChannelRecommendations(filters?: FilterSettings): Promise<ChannelRecommendation[]> {
     try {
-      return await api.getChannelRecommendations(filters);
+      return await api.discovery.getChannelRecommendations(filters);
     } catch (error) {
       console.error('Error getting channel recommendations:', error);
       return [];
@@ -22,7 +22,7 @@ class DiscoveryService {
 
   async getGameRecommendations(filters?: FilterSettings): Promise<GameRecommendation[]> {
     try {
-      return await api.getGameRecommendations(filters);
+      return await api.discovery.getGameRecommendations(filters);
     } catch (error) {
       console.error('Error getting game recommendations:', error);
       return [];
@@ -41,8 +41,8 @@ class DiscoveryService {
           confidenceThreshold: 0.7
         },
         recommendations: {
-          channels: await api.getChannelRecommendations(),
-          games: await api.getGameRecommendations()
+          channels: await api.discovery.getChannelRecommendations(),
+          games: await api.discovery.getGameRecommendations()
         },
         trending: [],
         stats: {

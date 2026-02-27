@@ -72,7 +72,8 @@ import {
   Database,
   Settings,
   Users,
-  Gamepad2
+  Gamepad2,
+  Video
 } from 'lucide-react';
 import {
   PieChart,
@@ -287,10 +288,21 @@ export default function StorageManagementDashboard() {
     return `${(sizeGB * 1024).toFixed(0)} MB`;
   };
 
-  const formatDuration = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+  const formatDuration = (val: any) => {
+    if (typeof val === 'number') {
+      const hours = Math.floor(val / 3600);
+      const minutes = Math.floor((val % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+    }
+    if (typeof val === 'object' && val !== null) {
+      const hours = val.hours || 0;
+      const minutes = val.minutes || 0;
+      return `${hours}h ${minutes}m`;
+    }
+    if (typeof val === 'string') {
+      return val;
+    }
+    return `0h 0m`;
   };
 
   const getStatusColor = (status: string) => {
@@ -657,21 +669,34 @@ export default function StorageManagementDashboard() {
                             />
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-2">
-                              {file.isProtected && (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <Shield className="h-4 w-4 text-blue-600" />
-                                    </TooltipTrigger>
-                                    <TooltipContent>Protected from cleanup</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
+                            <div className="flex items-center gap-3">
+                              {file.thumbnailUrl ? (
+                                <img
+                                  src={file.thumbnailUrl.replace('%{width}', '320').replace('%{height}', '180').replace('{width}', '320').replace('{height}', '180')}
+                                  alt="Thumbnail"
+                                  className="w-24 h-14 object-cover rounded shadow-sm border border-gray-200"
+                                />
+                              ) : (
+                                <div className="w-24 h-14 bg-gray-100 rounded flex items-center justify-center text-gray-400 border border-gray-200">
+                                  <Video className="w-6 h-6" />
+                                </div>
                               )}
                               <div>
-                                <div className="font-medium truncate max-w-60">{file.filename}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {file.quality} • {formatDuration(file.duration)}
+                                <div className="flex items-center gap-2">
+                                  {file.isProtected && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger>
+                                          <Shield className="h-4 w-4 text-blue-600" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>Protected from cleanup</TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
+                                  <div className="font-medium truncate max-w-[200px] sm:max-w-xs">{file.filename}</div>
+                                </div>
+                                <div className="text-sm text-muted-foreground mt-1">
+                                  {file.quality || 'source'} • {formatDuration(file.duration)}
                                 </div>
                               </div>
                             </div>
@@ -1101,7 +1126,7 @@ export default function StorageManagementDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {analytics?.channelBreakdown.map((channel, index) => (
+                    {analytics?.channelBreakdown.map((channel: any, index: number) => (
                       <TableRow key={channel.channelName || `unknown-channel-${index}`}>
                         <TableCell>
                           <div className="font-medium">{channel.displayName}</div>
@@ -1133,7 +1158,7 @@ export default function StorageManagementDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {analytics?.gameBreakdown.map((game, index) => (
+                    {analytics?.gameBreakdown.map((game: any, index: number) => (
                       <TableRow key={game.gameName || `unknown-game-${index}`}>
                         <TableCell>
                           <div className="font-medium">{game.gameName}</div>

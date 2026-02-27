@@ -10,6 +10,7 @@ const defaultSettings: SettingsState = {
     tempStorageLocation: '',
     concurrentDownloadLimit: 3,
     bandwidthThrottle: 0,
+    defaultQuality: 'source',
   },
   fileOrganization: {
     filenameTemplate: '{date}_{channel}_{title}',

@@ -122,18 +122,40 @@ export class DiscoveryIndexer {
      */
     private async discoverChannelsForGame(twitchGameId: string, gameDbId: number, client: any): Promise<void> {
         try {
-            const vods = await this.twitchAPI.getTopVODs({
+            // Fetch 100 top VODs by views
+            const topVods = await this.twitchAPI.getTopVODs({
                 gameId: twitchGameId,
                 period: 'month',
                 sort: 'views',
-                limit: 30
+                limit: 100
             });
 
-            logger.info(`[DiscoveryIndexer] Got ${vods.length} VODs for game ${twitchGameId}`);
+            // Fetch 100 recent VODs by time to get smaller/variety streamers
+            const recentVods = await this.twitchAPI.getTopVODs({
+                gameId: twitchGameId,
+                period: 'month',
+                sort: 'time',
+                limit: 100
+            });
+
+            // Combine and deduplicate VODs by vod user_id (since we just need distinct channels ideally)
+            const allVods = [...topVods, ...recentVods];
+
+            // Deduplicate by user_id so we don't spam the DB with the same channel multiple times per index
+            const uniqueChannels = new Map();
+            for (const v of allVods) {
+                if (v.user_id && v.user_name && !uniqueChannels.has(v.user_id)) {
+                    uniqueChannels.set(v.user_id, v);
+                }
+            }
+
+            const vodsToProcess = Array.from(uniqueChannels.values());
+
+            logger.info(`[DiscoveryIndexer] Got ${vodsToProcess.length} unique channels to process for game ${twitchGameId}`);
 
             let discoveredCount = 0;
 
-            for (const vod of vods) {
+            for (const vod of vodsToProcess) {
                 if (!vod.user_id || !vod.user_name) continue;
 
                 // Check if channel already exists

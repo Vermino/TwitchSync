@@ -64,6 +64,7 @@ export interface FileItem {
   createdAt: string;
   downloadedAt: string | null;
   quality: string;
+  thumbnailUrl?: string; // Add thumbnail URL support
   filePath?: string;
   checksum?: string;
 }

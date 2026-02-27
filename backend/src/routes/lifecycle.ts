@@ -123,6 +123,8 @@ export function setupLifecycleRoutes(pool: Pool): Router {
           v.duration,
           v.created_at,
           v.updated_at,
+          v.preferred_quality as quality,
+          v.thumbnail_url,
           vfs.file_size_bytes,
           vfs.is_user_protected,
           fvh.created_at as last_verified_at
@@ -151,7 +153,8 @@ export function setupLifecycleRoutes(pool: Pool): Router {
         duration: row.duration || 0,
         createdAt: row.created_at,
         downloadedAt: row.updated_at,
-        quality: row.quality
+        quality: row.quality,
+        thumbnailUrl: row.thumbnail_url
       }));
 
       res.json({

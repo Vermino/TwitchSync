@@ -44,8 +44,8 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
         <div className="space-y-2">
           <Label>
             {settings.schedule_type === 'interval' ? 'Interval (seconds)' :
-             settings.schedule_type === 'cron' ? 'Cron Expression' :
-             'Schedule Value'}
+              settings.schedule_type === 'cron' ? 'Cron Expression' :
+                'Schedule Value'}
           </Label>
           <Input
             type={settings.schedule_type === 'interval' ? 'number' : 'text'}
@@ -53,8 +53,8 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
             onChange={e => onChange('schedule_value', e.target.value)}
             placeholder={
               settings.schedule_type === 'interval' ? '3600' :
-              settings.schedule_type === 'cron' ? '0 */6 * * *' :
-              ''
+                settings.schedule_type === 'cron' ? '0 */6 * * *' :
+                  ''
             }
             disabled={settings.schedule_type === 'manual'}
           />
@@ -84,6 +84,34 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Video Quality</Label>
+          <Select
+            value={settings.quality || 'auto'}
+            onValueChange={value => onChange('quality', value === 'auto' ? undefined : value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select quality" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto (Default Settings)</SelectItem>
+              <SelectItem value="source">Source (Best)</SelectItem>
+              <SelectItem value="1080p60">1080p 60fps</SelectItem>
+              <SelectItem value="1080p">1080p</SelectItem>
+              <SelectItem value="720p60">720p 60fps</SelectItem>
+              <SelectItem value="720p">720p</SelectItem>
+              <SelectItem value="480p">480p</SelectItem>
+              <SelectItem value="360p">360p</SelectItem>
+              <SelectItem value="160p">160p</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-muted-foreground">
+            {settings.quality && settings.quality !== 'auto'
+              ? `Forces exactly ${settings.quality} for this task`
+              : 'Falls back to Channel or Global preferences'}
+          </p>
+        </div>
+
         <div className="space-y-2">
           <Label>Storage Limit (GB)</Label>
           <Input

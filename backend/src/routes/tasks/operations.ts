@@ -48,10 +48,11 @@ export class TaskOperations {
           auto_delete,
           is_active,
           priority,
+          quality,
           next_run,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW(), NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW(), NOW())
         RETURNING id`,
         [
           userId,
@@ -66,7 +67,8 @@ export class TaskOperations {
           data.retention_days,
           data.auto_delete || false,
           data.is_active !== undefined ? data.is_active : true,
-          data.priority || 'low'
+          data.priority || 'low',
+          data.quality || null
         ]
       );
 
