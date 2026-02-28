@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
 import { logger } from '../utils/logger';
 import { twitchAuth } from '../services/auth/twitch';
 
@@ -68,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthState({
           isAuthenticated: true,
           user: data.user,
-          twitchAccount: data.user.twitch_account,
+          twitchAccount: data?.user?.twitch_account || null,
           isLoading: false,
           error: null,
         });
@@ -110,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthState({
         isAuthenticated: true,
         user: data.user,
-        twitchAccount: data.user.twitch_account,
+        twitchAccount: data?.user?.twitch_account || null,
         isLoading: false,
         error: null,
       });
@@ -155,15 +154,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const connectTwitch = async () => {
     try {
       const result = await twitchAuth.getAuthUrl();
-      
+
       if (result.error) {
         // Handle configuration error
         setAuthState(prev => ({
           ...prev,
-          error: result.error
+          error: result.error || null
         }));
         logger.error('Twitch connection error:', result.error);
-        
+
         // Optionally redirect to settings or show instructions
         if (result.redirectTo) {
           // You could navigate to settings here if you have a settings page
@@ -171,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
-      
+
       if (result.url) {
         window.location.href = result.url;
       } else {

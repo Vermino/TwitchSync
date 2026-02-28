@@ -31,7 +31,8 @@ const DiscoveryPreferencesBaseSchema = z.object({
   notify_only: z.boolean(),
   schedule_match: z.boolean(),
   confidence_threshold: z.number().min(0).max(1),
-  tags: z.array(z.string()).optional()
+  tags: z.array(z.string()).optional(),
+  preferred_game_ids: z.array(z.number().int()).optional()
 });
 
 // Full schema with refinement (for creating new preferences)

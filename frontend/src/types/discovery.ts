@@ -28,8 +28,10 @@ export interface DiscoveryPreferences {
   preferredLanguages: string[];
   contentRating: 'all' | 'family' | 'mature';
   notifyOnly: boolean;
+  scheduleMatch: boolean;
   confidenceThreshold: number;
   tags?: string[];
+  gameIds?: number[];
 }
 
 export interface FilterSettings {
@@ -38,8 +40,10 @@ export interface FilterSettings {
   preferredLanguages: string[];
   contentRating: string;
   notifyOnly: boolean;
+  scheduleMatch: boolean;
   confidenceThreshold: number;
   tags?: string[];
+  gameIds?: number[];
 }
 
 // Channel and Game interfaces
@@ -153,6 +157,7 @@ export interface RecommendationCardProps {
 
 export interface FilterPanelProps {
   settings: FilterSettings;
+  availableGames?: Game[];
   onChange: (settings: FilterSettings) => void;
   onApply: () => void;
   isApplying?: boolean;

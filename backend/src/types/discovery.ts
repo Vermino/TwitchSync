@@ -98,6 +98,7 @@ export interface DiscoveryPreferences {
   schedule_match: boolean;
   confidence_threshold: number;
   tags?: string[];
+  preferred_game_ids?: number[];
   created_at: Date;
   updated_at: Date;
 }
@@ -159,6 +160,7 @@ export interface UpdatePreferencesRequest {
   schedule_match?: boolean;
   confidence_threshold?: number;
   tags?: string[];
+  preferred_game_ids?: number[];
 }
 
 export interface TrackPremiereRequest {

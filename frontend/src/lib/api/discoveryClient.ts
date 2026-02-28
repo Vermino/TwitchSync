@@ -33,7 +33,8 @@ export class DiscoveryClient extends BaseApiClient {
         max_viewers: filters.maxViewers,
         languages: filters.preferredLanguages?.join(','),
         tags: filters.tags?.join(','),
-        confidence_threshold: filters.confidenceThreshold
+        confidence_threshold: filters.confidenceThreshold,
+        game_ids: filters.gameIds?.join(',')
       } : {};
       const response = await this.axios.get(
         `${this.baseURL}/discovery/recommendations/channels`,
@@ -53,7 +54,8 @@ export class DiscoveryClient extends BaseApiClient {
         max_viewers: filters.maxViewers,
         languages: filters.preferredLanguages?.join(','),
         tags: filters.tags?.join(','),
-        confidence_threshold: filters.confidenceThreshold
+        confidence_threshold: filters.confidenceThreshold,
+        game_ids: filters.gameIds?.join(',')
       } : {};
       const response = await this.axios.get(
         `${this.baseURL}/discovery/recommendations/games`,
@@ -83,9 +85,21 @@ export class DiscoveryClient extends BaseApiClient {
 
   async updateDiscoveryPreferences(preferences: Partial<DiscoveryPreferences>): Promise<UpdatePreferencesResponse> {
     try {
+      // Map camelCase to snake_case for the backend
+      const mappedPreferences: any = {};
+      if (preferences.minViewers !== undefined) mappedPreferences.min_viewers = preferences.minViewers;
+      if (preferences.maxViewers !== undefined) mappedPreferences.max_viewers = preferences.maxViewers;
+      if (preferences.preferredLanguages !== undefined) mappedPreferences.preferred_languages = preferences.preferredLanguages;
+      if (preferences.contentRating !== undefined) mappedPreferences.content_rating = preferences.contentRating;
+      if (preferences.notifyOnly !== undefined) mappedPreferences.notify_only = preferences.notifyOnly;
+      if (preferences.scheduleMatch !== undefined) mappedPreferences.schedule_match = preferences.scheduleMatch;
+      if (preferences.confidenceThreshold !== undefined) mappedPreferences.confidence_threshold = preferences.confidenceThreshold;
+      if (preferences.tags !== undefined) mappedPreferences.tags = preferences.tags;
+      if (preferences.gameIds !== undefined) mappedPreferences.preferred_game_ids = preferences.gameIds;
+
       const response = await this.axios.put(
         `${this.baseURL}/discovery/preferences`,
-        preferences,
+        mappedPreferences,
         { headers: this.getHeaders() }
       );
       return response.data;

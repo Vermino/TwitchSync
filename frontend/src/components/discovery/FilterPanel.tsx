@@ -10,12 +10,13 @@ import {
   Filter,
   Globe,
   Users,
-  Hash
+  Hash,
+  Gamepad2
 } from 'lucide-react';
 import type { FilterPanelProps } from '@/types/discovery';
 
-const FilterPanel = ({ settings, onChange, onApply, isApplying }: FilterPanelProps) => {
-  const languages = ['EN', 'ES', 'FR', 'DE', 'JP', 'KR', 'PT', 'RU'];
+const FilterPanel = ({ settings, availableGames, onChange, onApply, isApplying }: FilterPanelProps) => {
+  const languages = ['en', 'es', 'fr', 'de', 'ja', 'kr', 'pt', 'ru'];
 
   const handleViewerRangeChange = (value: number[]) => {
     onChange({
@@ -23,6 +24,18 @@ const FilterPanel = ({ settings, onChange, onApply, isApplying }: FilterPanelPro
       minViewers: value[0],
       maxViewers: value[1]
     });
+  };
+
+  const toggleGame = (gameIdString: string) => {
+    const gameId = parseInt(gameIdString, 10);
+    if (isNaN(gameId)) return;
+
+    const currentIds = settings.gameIds || [];
+    const newIds = currentIds.includes(gameId)
+      ? currentIds.filter(id => id !== gameId)
+      : [...currentIds, gameId];
+
+    onChange({ ...settings, gameIds: newIds });
   };
 
   return (
@@ -60,20 +73,66 @@ const FilterPanel = ({ settings, onChange, onApply, isApplying }: FilterPanelPro
             {languages.map(lang => (
               <Badge
                 key={lang}
-                variant={settings.preferredLanguages.includes(lang) ? 'default' : 'outline'}
+                variant={settings.preferredLanguages.includes(lang.toLowerCase()) ? 'default' : 'outline'}
                 className="cursor-pointer"
                 onClick={() => {
-                  const newLangs = settings.preferredLanguages.includes(lang)
-                    ? settings.preferredLanguages.filter(l => l !== lang)
-                    : [...settings.preferredLanguages, lang];
+                  const newLangs = settings.preferredLanguages.includes(lang.toLowerCase())
+                    ? settings.preferredLanguages.filter(l => l !== lang.toLowerCase())
+                    : [...settings.preferredLanguages, lang.toLowerCase()];
                   onChange({ ...settings, preferredLanguages: newLangs });
                 }}
               >
-                {lang}
+                {lang.toUpperCase()}
               </Badge>
             ))}
           </div>
         </div>
+
+        {/* Game Filter */}
+        {availableGames && availableGames.length > 0 && (
+          <div>
+            <h3 className="font-medium mb-2 flex items-center gap-2">
+              <Gamepad2 size={16} />
+              Filter by Games
+            </h3>
+            <div className="grid grid-cols-4 gap-2">
+              {availableGames.map(game => {
+                const isSelected = settings.gameIds?.includes(parseInt(game.id, 10));
+                return (
+                  <div
+                    key={game.id}
+                    className={`relative cursor-pointer transition-all duration-200 rounded-md overflow-hidden border-2 ${isSelected ? 'border-purple-600 scale-105 shadow-md' : 'border-transparent opacity-60 grayscale hover:opacity-100 hover:grayscale-0'}`}
+                    onClick={() => toggleGame(game.id)}
+                    title={game.name}
+                  >
+                    <img
+                      src={game.boxArt.replace('{width}', '100').replace('{height}', '140')}
+                      alt={game.name}
+                      className="w-full aspect-[3/4] object-cover"
+                    />
+                    {isSelected && (
+                      <div className="absolute inset-0 bg-purple-600/10 flex items-center justify-center">
+                        <div className="bg-purple-600 text-white rounded-full p-0.5">
+                          <Filter size={10} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {(settings.gameIds?.length || 0) > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 text-xs h-7 text-purple-600 hover:text-purple-700 p-0"
+                onClick={() => onChange({ ...settings, gameIds: [] })}
+              >
+                Clear game filters
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Tags Settings */}
         <div>
@@ -109,6 +168,15 @@ const FilterPanel = ({ settings, onChange, onApply, isApplying }: FilterPanelPro
                 checked={settings.notifyOnly}
                 onCheckedChange={(checked) =>
                   onChange({ ...settings, notifyOnly: checked })
+                }
+              />
+            </label>
+            <label className="flex items-center justify-between">
+              <span className="text-sm text-gray-600">Strict Schedule Match</span>
+              <Switch
+                checked={settings.scheduleMatch}
+                onCheckedChange={(checked) =>
+                  onChange({ ...settings, scheduleMatch: checked })
                 }
               />
             </label>

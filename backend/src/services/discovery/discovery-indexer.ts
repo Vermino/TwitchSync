@@ -177,14 +177,19 @@ export class DiscoveryIndexer {
                     }
 
                     const insertResult = await client.query(`
-            INSERT INTO channels (twitch_id, username, display_name, profile_image_url, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO channels (twitch_id, username, display_name, profile_image_url, language, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-          `, [vod.user_id, vod.user_name.toLowerCase(), vod.user_name, profileImageUrl]);
+          `, [vod.user_id, vod.user_name.toLowerCase(), vod.user_name, profileImageUrl, vod.language]);
                     channelDbId = insertResult.rows[0].id;
                     discoveredCount++;
                 } else {
                     channelDbId = channelResult.rows[0].id;
+                    // Update language if it's currently null
+                    await client.query(
+                        'UPDATE channels SET language = COALESCE(language, $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                        [vod.language, channelDbId]
+                    );
                 }
 
                 // Upsert channel_game_stats

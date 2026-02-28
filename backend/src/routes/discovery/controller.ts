@@ -34,9 +34,11 @@ export class DiscoveryController {
           content_rating, 
           notify_only, 
           schedule_match, 
-          confidence_threshold
+          confidence_threshold,
+          preferred_game_ids,
+          tags
         )
-        VALUES ($1, 100, 50000, ARRAY['en'], 'all', false, true, 0.7)
+        VALUES ($1, 100, 50000, ARRAY['en'], 'all', false, true, 0.7, ARRAY[]::INTEGER[], ARRAY[]::TEXT[])
         ON CONFLICT (user_id) DO UPDATE SET
           updated_at = CURRENT_TIMESTAMP
         RETURNING *
@@ -78,6 +80,7 @@ export class DiscoveryController {
             schedule_match = COALESCE($7, schedule_match),
             confidence_threshold = COALESCE($8, confidence_threshold),
             tags = COALESCE($9, tags),
+            preferred_game_ids = COALESCE($10, preferred_game_ids),
             updated_at = CURRENT_TIMESTAMP
           WHERE user_id = $1
           RETURNING *
@@ -90,7 +93,8 @@ export class DiscoveryController {
           preferences.notify_only ?? null,
           preferences.schedule_match ?? null,
           preferences.confidence_threshold ?? null,
-          preferences.tags ?? null
+          preferences.tags ?? null,
+          preferences.preferred_game_ids ?? null
         ]);
 
         return updated.rows[0];

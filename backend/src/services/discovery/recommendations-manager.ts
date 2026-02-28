@@ -80,7 +80,14 @@ export class RecommendationsManager {
           queryParams.push(lang.toLowerCase());
           return `$${paramCount}`;
         });
-        whereClauses.push(`(c.language IN (${langParams.join(', ')}) OR c.language IS NULL)`);
+        whereClauses.push(`c.language IN (${langParams.join(', ')})`);
+      }
+
+      // Add specific games filter
+      if (userPrefs.preferred_game_ids && userPrefs.preferred_game_ids.length > 0) {
+        paramCount++;
+        whereClauses.push(`cgs.game_id = ANY($${paramCount}::integer[])`);
+        queryParams.push(userPrefs.preferred_game_ids);
       }
 
       // Add tags filter (overlap using && so if they share any tag it matches)

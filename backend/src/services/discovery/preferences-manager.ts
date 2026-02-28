@@ -18,6 +18,8 @@ export class PreferencesManager {
       notify_only: false,
       schedule_match: true,
       confidence_threshold: 0.7,
+      tags: [],
+      preferred_game_ids: [],
       created_at: new Date(),
       updated_at: new Date()
     };
@@ -36,6 +38,8 @@ export class PreferencesManager {
           notify_only,
           schedule_match,
           confidence_threshold,
+          tags,
+          preferred_game_ids,
           created_at,
           updated_at
         FROM discovery_preferences
@@ -68,9 +72,11 @@ export class PreferencesManager {
           notify_only,
           schedule_match,
           confidence_threshold,
+          tags,
+          preferred_game_ids,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
       `, [
         userId,
@@ -81,6 +87,8 @@ export class PreferencesManager {
         defaults.notify_only,
         defaults.schedule_match,
         defaults.confidence_threshold,
+        defaults.tags,
+        defaults.preferred_game_ids,
         defaults.created_at,
         defaults.updated_at
       ]);
@@ -119,8 +127,10 @@ export class PreferencesManager {
           notify_only = COALESCE($5, notify_only),
           schedule_match = COALESCE($6, schedule_match),
           confidence_threshold = COALESCE($7, confidence_threshold),
+          tags = COALESCE($8, tags),
+          preferred_game_ids = COALESCE($9, preferred_game_ids),
           updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = $8
+        WHERE user_id = $10
         RETURNING *
       `, [
         updates.min_viewers,
@@ -130,6 +140,8 @@ export class PreferencesManager {
         updates.notify_only,
         updates.schedule_match,
         updates.confidence_threshold,
+        updates.tags,
+        updates.preferred_game_ids,
         userId
       ]);
 

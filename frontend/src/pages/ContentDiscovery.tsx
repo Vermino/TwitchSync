@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { discoveryService } from '@/services/discovery';
-import { api } from '@/lib/api';
+import { api } from '@/lib/api/index';
 import DiscoveryHeader from '../components/discovery/DiscoveryHeader';
 import FilterPanel from '../components/discovery/FilterPanel';
 import RecommendationCard from '../components/discovery/RecommendationCard';
@@ -37,10 +37,12 @@ const ContentDiscovery: React.FC = () => {
   const [filterSettings, setFilterSettings] = useState<FilterSettings>({
     minViewers: 100,
     maxViewers: 50000,
-    preferredLanguages: ['EN'],
+    preferredLanguages: ['en'],
     contentRating: 'all',
     notifyOnly: false,
-    confidenceThreshold: 0.7
+    scheduleMatch: true,
+    confidenceThreshold: 0.7,
+    gameIds: []
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -61,14 +63,16 @@ const ContentDiscovery: React.FC = () => {
 
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [trackedGames, setTrackedGames] = useState<any[]>([]);
 
-  const loadRecommendations = async () => {
+  const loadRecommendations = async (currentSettings?: FilterSettings) => {
+    const settings = currentSettings || filterSettings;
     setRecommendations(prev => ({ ...prev, loading: true }));
     setIsRefreshing(true);
     try {
       const [channels, games] = await Promise.all([
-        discoveryService.getChannelRecommendations(filterSettings),
-        discoveryService.getGameRecommendations(filterSettings)
+        discoveryService.getChannelRecommendations(settings),
+        discoveryService.getGameRecommendations(settings)
       ]);
 
       setRecommendations({
@@ -93,44 +97,78 @@ const ContentDiscovery: React.FC = () => {
 
   useEffect(() => {
     let mounted = true;
-    api.getDiscoveryFeed().then(feed => {
-      if (mounted && feed?.preferences) {
-        const prefs = feed.preferences as any;
-        setFilterSettings(prev => ({
-          ...prev,
-          minViewers: prefs.min_viewers ?? prefs.minViewers ?? 0,
-          maxViewers: prefs.max_viewers ?? prefs.maxViewers ?? 1000000,
-          preferredLanguages: prefs.preferred_languages ?? prefs.preferredLanguages ?? ['en'],
-          contentRating: prefs.content_rating ?? prefs.contentRating ?? 'all',
-          notifyOnly: prefs.notify_only ?? prefs.notifyOnly ?? false,
-          confidenceThreshold: prefs.confidence_threshold ?? prefs.confidenceThreshold ?? 0.7
-        }));
+
+    const initializeData = async () => {
+      try {
+        const [feed, gamesResult] = await Promise.all([
+          api.discovery.getDiscoveryFeed(),
+          api.games.getGames()
+        ]);
+
+        if (mounted) {
+          if (feed?.preferences) {
+            const prefs = feed.preferences as any;
+            const newSettings: FilterSettings = {
+              minViewers: prefs.min_viewers ?? prefs.minViewers ?? 0,
+              maxViewers: prefs.max_viewers ?? prefs.maxViewers ?? 1000000,
+              preferredLanguages: prefs.preferred_languages ?? prefs.preferredLanguages ?? ['en'],
+              contentRating: prefs.content_rating ?? prefs.contentRating ?? 'all',
+              notifyOnly: prefs.notify_only ?? prefs.notifyOnly ?? false,
+              scheduleMatch: prefs.schedule_match ?? prefs.scheduleMatch ?? true,
+              confidenceThreshold: prefs.confidence_threshold ?? prefs.confidenceThreshold ?? 0.7,
+              gameIds: prefs.preferred_game_ids ?? prefs.preferredGameIds ?? []
+            };
+            setFilterSettings(newSettings);
+            // Load recommendations with the fresh settings immediately
+            loadRecommendations(newSettings);
+          }
+
+          if (gamesResult) {
+            // Map models to the Game interface expected by FilterPanel
+            const mappedGames = gamesResult.map((g: any) => ({
+              id: g.id.toString(),
+              name: g.name,
+              boxArt: g.box_art_url
+            }));
+            setTrackedGames(mappedGames);
+          }
+
+          setIsInitialized(true);
+        }
+      } catch (e: any) {
+        console.error("Failed to load initial discovery data", e);
+        if (mounted) setIsInitialized(true);
       }
-      if (mounted) setIsInitialized(true);
-    }).catch((e: any) => {
-      console.error("Failed to load initial discovery preferences", e);
-      if (mounted) setIsInitialized(true);
-    });
+    };
+
+    initializeData();
     return () => { mounted = false; };
   }, []);
 
   // Load recommendations exactly once on initialization
+  // No longer need this separate useEffect as we load in initializeData
+  /*
   useEffect(() => {
     if (isInitialized) {
       loadRecommendations();
     }
   }, [isInitialized]);
+  */
 
   const handleApplyFilters = async () => {
     if (!isInitialized) return;
 
     // Auto-save changes to preferences when manually applying
-    api.updateDiscoveryPreferences({
+    api.discovery.updateDiscoveryPreferences({
       minViewers: filterSettings.minViewers,
       maxViewers: filterSettings.maxViewers,
       preferredLanguages: filterSettings.preferredLanguages,
+      contentRating: filterSettings.contentRating as any,
+      notifyOnly: filterSettings.notifyOnly,
+      scheduleMatch: filterSettings.scheduleMatch,
       tags: filterSettings.tags,
-      confidenceThreshold: filterSettings.confidenceThreshold
+      confidenceThreshold: filterSettings.confidenceThreshold,
+      gameIds: filterSettings.gameIds
     }).catch(err => console.error("Failed to persist discovery preferences:", err));
 
     await loadRecommendations();
@@ -141,7 +179,7 @@ const ContentDiscovery: React.FC = () => {
     if (!channel) return;
 
     try {
-      await api.createChannel({
+      await api.channels.createChannel({
         twitch_id: channel.id,
         username: channel.login,
         display_name: channel.display_name,
@@ -173,7 +211,7 @@ const ContentDiscovery: React.FC = () => {
     if (!game) return;
 
     try {
-      await api.createGame({
+      await api.games.createGame({
         twitch_game_id: game.id,
         name: game.name,
         box_art_url: game.box_art_url
@@ -264,7 +302,7 @@ const ContentDiscovery: React.FC = () => {
             Try adjusting your filters or check back later.
           </p>
           <Button
-            onClick={loadRecommendations}
+            onClick={() => loadRecommendations()}
             variant="outline"
             disabled={isRefreshing}
           >
@@ -351,12 +389,13 @@ const ContentDiscovery: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-12 gap-6">
           {/* Sidebar */}
-          <div className="col-span-3 space-y-6">
+          <div className="col-span-12 lg:col-span-3">
             <FilterPanel
               settings={filterSettings}
+              availableGames={trackedGames}
               onChange={setFilterSettings}
               onApply={handleApplyFilters}
-              isApplying={recommendations.loading}
+              isApplying={isRefreshing}
             />
           </div>
 
@@ -372,7 +411,7 @@ const ContentDiscovery: React.FC = () => {
               </div>
               <Button
                 variant="outline"
-                onClick={loadRecommendations}
+                onClick={() => loadRecommendations()}
                 disabled={isRefreshing}
               >
                 <RefreshCw className={`w - 4 h - 4 mr - 2 ${isRefreshing ? 'animate-spin' : ''} `} />
