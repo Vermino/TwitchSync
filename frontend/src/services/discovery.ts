@@ -35,9 +35,10 @@ class DiscoveryService {
         preferences: {
           minViewers: 100,
           maxViewers: 50000,
-          preferredLanguages: ['EN'],
+          preferredLanguages: ['en'],
           contentRating: 'all',
           notifyOnly: false,
+          scheduleMatch: true,
           confidenceThreshold: 0.7
         },
         recommendations: {
@@ -57,9 +58,10 @@ class DiscoveryService {
         preferences: {
           minViewers: 100,
           maxViewers: 50000,
-          preferredLanguages: ['EN'],
+          preferredLanguages: ['en'],
           contentRating: 'all',
           notifyOnly: false,
+          scheduleMatch: true,
           confidenceThreshold: 0.7
         },
         recommendations: {

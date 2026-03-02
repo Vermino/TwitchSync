@@ -53,9 +53,14 @@ backend/temp/
 
 # Debug and test files (temporary)
 backend/check-*.js
+backend/check-*.ts
 backend/debug-*.js
+backend/debug-*.ts
 backend/test-*.js
+backend/test-*.ts
 backend/*test*.js
+backend/sync_states.ts
+backend/backfill-*.ts
 *.py
 test-*.json
 invalid-*.json
