@@ -33,8 +33,6 @@ const Channels = () => {
     queryFn: async () => {
       try {
         const response = await api.getChannels();
-        console.log('Raw channels response:', response);
-        console.log('Auth token in localStorage:', localStorage.getItem('auth_token'));
         // Transform the data to match our interface
         if (Array.isArray(response)) {
           return response.map(channel => ({

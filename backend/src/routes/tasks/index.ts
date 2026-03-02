@@ -13,6 +13,7 @@ import {
   BatchDeleteTasksSchema
 } from './validation';
 import { TasksController } from './controller';
+import { TaskScheduler } from '../../services/taskScheduler';
 
 export function setupTaskRoutes(pool: Pool) {
   const router = Router();
@@ -26,81 +27,49 @@ export function setupTaskRoutes(pool: Pool) {
     cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600')
   });
 
+  const taskScheduler = new TaskScheduler(pool, downloadManager);
   const taskOperations = new TaskOperations(pool, downloadManager);
   const controller = new TasksController(taskOperations);
 
-  // Routes
-  router.get('/',
+  // Scheduler routes (must be before /:id to avoid capture)
+  router.get('/scheduler/status',
     authenticate(pool),
-    controller.getAllTasks
+    (_req, res) => {
+      const status = taskScheduler.getStatus();
+      res.json({ enabled: status.isRunning, ...status });
+    }
   );
 
-  router.post('/',
+  router.post('/scheduler/toggle',
     authenticate(pool),
-    controller.createTask
+    (_req, res) => {
+      const status = taskScheduler.getStatus();
+      if (status.isRunning) {
+        taskScheduler.stop();
+        res.json({ enabled: false, message: 'Task scheduler stopped' });
+      } else {
+        taskScheduler.start();
+        res.json({ enabled: true, message: 'Task scheduler started' });
+      }
+    }
   );
 
-  router.get('/:id',
-    authenticate(pool),
-    controller.getTaskById
-  );
-
-  router.put('/:id',
-    authenticate(pool),
-    validateRequest(UpdateTaskSchema),
-    controller.updateTask
-  );
-
-  router.delete('/:id',
-    authenticate(pool),
-    controller.deleteTask
-  );
-
-  router.get('/:id/history',
-    authenticate(pool),
-    controller.getTaskHistory
-  );
-
-  router.get('/:id/details',
-    authenticate(pool),
-    controller.getTaskDetails
-  );
-
-  router.post('/:id/run',
-    authenticate(pool),
-    controller.manualRunTask
-  );
-
-  // Add new pause endpoint
-  router.post('/:id/status/pause',
-    authenticate(pool),
-    controller.pauseTask
-  );
-
-  // Add new resume endpoint
-  router.post('/:id/status/resume',
-    authenticate(pool),
-    controller.resumeTask
-  );
-
-  // Add activate endpoint
-  router.post('/:id/activate',
-    authenticate(pool),
-    controller.activateTask
-  );
+  // CRUD routes
+  router.get('/', authenticate(pool), controller.getAllTasks);
+  router.post('/', authenticate(pool), controller.createTask);
+  router.get('/:id', authenticate(pool), controller.getTaskById);
+  router.put('/:id', authenticate(pool), validateRequest(UpdateTaskSchema), controller.updateTask);
+  router.delete('/:id', authenticate(pool), controller.deleteTask);
+  router.get('/:id/history', authenticate(pool), controller.getTaskHistory);
+  router.get('/:id/details', authenticate(pool), controller.getTaskDetails);
+  router.post('/:id/run', authenticate(pool), controller.manualRunTask);
+  router.post('/:id/status/pause', authenticate(pool), controller.pauseTask);
+  router.post('/:id/status/resume', authenticate(pool), controller.resumeTask);
+  router.post('/:id/activate', authenticate(pool), controller.activateTask);
 
   // Batch operations
-  router.post('/batch',
-    authenticate(pool),
-    validateRequest(BatchUpdateTasksSchema),
-    controller.batchUpdateTasks
-  );
-
-  router.post('/batch-delete',
-    authenticate(pool),
-    validateRequest(BatchDeleteTasksSchema),
-    controller.batchDeleteTasks
-  );
+  router.post('/batch', authenticate(pool), validateRequest(BatchUpdateTasksSchema), controller.batchUpdateTasks);
+  router.post('/batch-delete', authenticate(pool), validateRequest(BatchDeleteTasksSchema), controller.batchDeleteTasks);
 
   return router;
 }

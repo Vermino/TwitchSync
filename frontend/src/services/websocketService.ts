@@ -41,7 +41,7 @@ export class WebSocketService {
   private reconnectDelay: number = 1000;
   private eventHandlers: Map<string, WebSocketEventHandler[]> = new Map();
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): WebSocketService {
     if (!WebSocketService.instance) {
@@ -51,8 +51,8 @@ export class WebSocketService {
   }
 
   public connect(token: string, userId: number): void {
-    const serverUrl = process.env.REACT_APP_WS_URL || 'http://localhost:3001';
-    
+    const serverUrl = import.meta.env.VITE_WS_URL || 'http://localhost:3501';
+
     this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       auth: {
@@ -61,19 +61,17 @@ export class WebSocketService {
     });
 
     this.setupEventHandlers();
-    
+
     // Authenticate after connection
     this.socket.on('connect', () => {
-      console.log('Connected to WebSocket server');
       this.isConnected = true;
       this.reconnectAttempts = 0;
-      
+
       // Authenticate with server
       this.socket?.emit('authenticate', { userId, token });
     });
 
     this.socket.on('authenticated', (data) => {
-      console.log('WebSocket authenticated:', data);
       this.emitEvent('authenticated', data);
     });
 
@@ -82,8 +80,7 @@ export class WebSocketService {
       this.emitEvent('authentication_failed', data);
     });
 
-    this.socket.on('disconnect', (reason) => {
-      console.log('Disconnected from WebSocket server:', reason);
+    this.socket.on('disconnect', (_reason) => {
       this.isConnected = false;
       this.attemptReconnect();
     });
@@ -100,31 +97,26 @@ export class WebSocketService {
 
     // Download progress updates
     this.socket.on('download_progress', (data: DownloadProgress) => {
-      console.log('Download progress:', data);
       this.emitEvent('download_progress', data);
     });
 
     // Download status changes
     this.socket.on('download_status_change', (data: DownloadStatusChange) => {
-      console.log('Download status change:', data);
       this.emitEvent('download_status_change', data);
     });
 
     // Task progress updates
     this.socket.on('task_progress', (data: TaskProgress) => {
-      console.log('Task progress:', data);
       this.emitEvent('task_progress', data);
     });
 
     // Queue updates
     this.socket.on('queue_updated', (data: any) => {
-      console.log('Queue updated:', data);
       this.emitEvent('queue_updated', data);
     });
 
     // System messages
     this.socket.on('system_message', (data: any) => {
-      console.log('System message:', data);
       this.emitEvent('system_message', data);
     });
   }
@@ -137,9 +129,8 @@ export class WebSocketService {
     }
 
     setTimeout(() => {
-      console.log(`Attempting to reconnect (${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})...`);
       this.reconnectAttempts++;
-      
+
       if (this.socket) {
         this.socket.connect();
       }
@@ -148,14 +139,12 @@ export class WebSocketService {
 
   public joinTask(taskId: number): void {
     if (this.socket && this.isConnected) {
-      console.log(`Joining task ${taskId} room`);
       this.socket.emit('join_task', taskId);
     }
   }
 
   public leaveTask(taskId: number): void {
     if (this.socket && this.isConnected) {
-      console.log(`Leaving task ${taskId} room`);
       this.socket.emit('leave_task', taskId);
     }
   }

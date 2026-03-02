@@ -40,74 +40,31 @@ export class GamesController {
   getAllGames = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 50;
+      const limit = parseInt(req.query.limit as string) || 100;
       const offset = (page - 1) * limit;
 
-      const result = await withTransaction(this.pool, async (client) => {
-        // Get total count
-        const countResult = await client.query(
-          'SELECT COUNT(*) FROM games WHERE is_active = true'
-        );
-        const total = parseInt(countResult.rows[0].count);
+      const countResult = await this.pool.query(
+        'SELECT COUNT(*) FROM games WHERE is_active = true'
+      );
+      const total = parseInt(countResult.rows[0].count);
 
-        // Get paginated games with related data
-        const gamesResult = await client.query(`
-          WITH game_stats AS (
-            SELECT 
-              game_id,
-              COUNT(DISTINCT channel_id) as total_channels,
-              COUNT(*) as total_streams,
-              SUM(duration) as total_duration,
-              AVG(viewer_count) as avg_viewers,
-              MAX(peak_viewers) as peak_viewers
-            FROM channel_game_history
-            WHERE started_at > NOW() - INTERVAL '30 days'
-            GROUP BY game_id
-          )
-          SELECT 
-            g.*,
-            COALESCE(gs.total_channels, 0) as total_channels,
-            COALESCE(gs.total_streams, 0) as total_streams,
-            COALESCE(EXTRACT(EPOCH FROM gs.total_duration)/3600, 0) as total_hours,
-            COALESCE(gs.avg_viewers, 0) as average_viewers,
-            COALESCE(gs.peak_viewers, 0) as peak_viewers,
-            EXISTS (
-              SELECT 1 FROM premiere_events pe 
-              WHERE pe.game_id = g.id 
-              AND pe.start_time > NOW()
-            ) as has_upcoming_premieres
-          FROM games g
-          LEFT JOIN game_stats gs ON g.id = gs.game_id
-          WHERE g.is_active = true
-          ORDER BY 
-            gs.total_streams DESC NULLS LAST,
-            g.name ASC
-          LIMIT $1 OFFSET $2
-        `, [limit, offset]);
+      const gamesResult = await this.pool.query(
+        `SELECT * FROM games WHERE is_active = true ORDER BY name ASC LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      );
 
-        return {
-          games: gamesResult.rows,
-          pagination: {
-            total,
-            page,
-            limit,
-            hasMore: offset + gamesResult.rows.length < total
-          }
-        };
-      });
-
-      // Cache results for 1 minute
       res.set('Cache-Control', 'public, max-age=60');
-      res.json(result);
+      res.json(gamesResult.rows);
     } catch (error) {
       logger.error('Error fetching games:', error);
       next(new GameError('Failed to fetch games', 500));
     }
   };
 
+
   addGame = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const gameData = req.body as CreateGameRequest['body'];
+      const gameData = req.body as CreateGameRequest;
 
       // Validate input data
       validateGameData(gameData);
