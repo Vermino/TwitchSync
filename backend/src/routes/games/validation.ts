@@ -21,9 +21,18 @@ export const SearchGameSchema = z.object({
   })
 });
 
-// Create game request schema
+// Create game request schema (validated directly against req.body)
 export const CreateGameSchema = z.object({
-  body: z.object(gameBaseSchema)
+  twitch_game_id: z.string().min(1, 'Twitch game ID is required').max(50),
+  name: z.string().min(1, 'Name is required').max(200),
+  box_art_url: z.string().url('Invalid box art URL').optional().or(z.literal('')),
+  igdb_id: z.string().optional(),
+  genres: z.array(z.string()).optional(),
+  is_active: z.boolean().optional(),
+  status: z.enum(['active', 'inactive', 'ignored']).optional(),
+  // Extra fields from frontend — accepted and ignored by the controller
+  category: z.string().optional(),
+  tags: z.array(z.string()).optional(),
 });
 
 // Update game request schema
@@ -128,9 +137,9 @@ export interface GameStats {
 }
 
 // Validation helper functions
-export const validateGameData = (data: z.infer<typeof CreateGameSchema>['body']): void => {
+export const validateGameData = (data: z.infer<typeof CreateGameSchema>): void => {
   try {
-    CreateGameSchema.shape.body.parse(data);
+    CreateGameSchema.parse(data);
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('Game validation failed:', {

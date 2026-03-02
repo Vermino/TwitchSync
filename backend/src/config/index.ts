@@ -108,9 +108,17 @@ try {
     criticalMissing.push('database configuration (DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)');
   }
 
+  // Critical: JWT secret — must not be missing or empty string
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
+    criticalMissing.push('JWT_SECRET (required for secure token signing)');
+  } else if (process.env.JWT_SECRET.length < 32) {
+    logger.warn('JWT_SECRET is shorter than 32 characters — consider using a longer random secret for production');
+  }
+
+
   // Warning: Twitch configuration (for development, can work without Twitch features)
-  if (!config.twitch.clientId || config.twitch.clientId === '' || 
-      !config.twitch.clientSecret || config.twitch.clientSecret === '') {
+  if (!config.twitch.clientId || config.twitch.clientId === '' ||
+    !config.twitch.clientSecret || config.twitch.clientSecret === '') {
     warningMissing.push('Twitch API configuration (TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_REDIRECT_URI)');
   }
 

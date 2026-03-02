@@ -42,7 +42,8 @@ interface UseWebSocketOptions {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
+  const token = localStorage.getItem('auth_token');
   const webSocketService = useRef<WebSocketService>(WebSocketService.getInstance());
   const isInitialized = useRef(false);
 
@@ -58,13 +59,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   // Initialize WebSocket connection
   useEffect(() => {
     if (user && token && !isInitialized.current) {
-      console.log('Initializing WebSocket connection...');
       webSocketService.current.connect(token, user.id);
       isInitialized.current = true;
 
       // Set up event handlers
-      const handleAuthenticated = (data: any) => {
-        console.log('WebSocket authenticated:', data);
+      const handleAuthenticated = (_data: any) => {
         onConnectionStatusChange?.(true);
       };
 
@@ -98,7 +97,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       webSocketService.current.addEventListener('download_progress', handleDownloadProgress);
-      
+
       return () => {
         webSocketService.current.removeEventListener('download_progress', handleDownloadProgress);
       };
@@ -113,7 +112,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       webSocketService.current.addEventListener('download_status_change', handleDownloadStatusChange);
-      
+
       return () => {
         webSocketService.current.removeEventListener('download_status_change', handleDownloadStatusChange);
       };
@@ -128,7 +127,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       webSocketService.current.addEventListener('task_progress', handleTaskProgress);
-      
+
       return () => {
         webSocketService.current.removeEventListener('task_progress', handleTaskProgress);
       };
@@ -143,7 +142,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       webSocketService.current.addEventListener('queue_updated', handleQueueUpdated);
-      
+
       return () => {
         webSocketService.current.removeEventListener('queue_updated', handleQueueUpdated);
       };
@@ -158,7 +157,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       webSocketService.current.addEventListener('system_message', handleSystemMessage);
-      
+
       return () => {
         webSocketService.current.removeEventListener('system_message', handleSystemMessage);
       };

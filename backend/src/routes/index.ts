@@ -49,7 +49,7 @@ export function setupRoutes(pool: Pool): Router {
     { path: '/dashboard', handler: setupDashboardRoutes },
     { path: '/system', handler: setupSystemRoutes },
     { path: '/settings', handler: setupSettingsRoutes },
-    { path: '/tasks', handler: (poolArg: Pool) => setupTaskRoutes(poolArg, downloadManager) },
+    { path: '/tasks', handler: (poolArg: Pool) => setupTaskRoutes(poolArg) },
     { path: '/twitch', handler: setupTwitchSearchRoutes },
     { path: '/vods', handler: setupVodRoutes },
     { path: '/queue', handler: setupQueueRoutes },

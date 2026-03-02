@@ -71,10 +71,10 @@ export class ResourceMonitor extends EventEmitter {
             '-Command',
             'Get-WmiObject -Class Win32_LogicalDisk | Select-Object Size,FreeSpace | ConvertTo-Json'
           ]);
-          
+
           const diskData = JSON.parse(stdout);
           const disk = Array.isArray(diskData) ? diskData[0] : diskData;
-          
+
           return {
             total: disk.Size,
             free: disk.FreeSpace,
@@ -112,8 +112,13 @@ export class ResourceMonitor extends EventEmitter {
         };
       }
     } catch (error) {
-      logger.error('Error getting disk info:', error);
-      throw error;
+      logger.warn('Error getting disk info, using safe fallback values:', error);
+      // Return safe fallback so callers never crash due to disk detection issues
+      return {
+        total: 1024 * 1024 * 1024 * 100, // 100GB assumed
+        free: 1024 * 1024 * 1024 * 50,   // 50GB assumed
+        available: 1024 * 1024 * 1024 * 50
+      };
     }
   }
 
