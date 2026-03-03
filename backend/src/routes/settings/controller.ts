@@ -105,41 +105,42 @@ export class SettingsController {
       try {
         // Update downloads settings
         if (settings.downloads) {
+          // JSONB requires valid JSON — numbers can stay as-is, strings must be JSON.stringify()'d
           await client.query(`
             INSERT INTO system_settings (category, key, value)
-            VALUES ('downloads', 'max_concurrent', $1)
+            VALUES ('downloads', 'max_concurrent', $1::jsonb)
             ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
-          `, [settings.downloads.concurrentDownloadLimit.toString()]);
+          `, [settings.downloads.concurrentDownloadLimit]);
 
           await client.query(`
             INSERT INTO system_settings (category, key, value)
-            VALUES ('downloads', 'temp_dir', $1)
+            VALUES ('downloads', 'temp_dir', $1::jsonb)
             ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
-          `, [settings.downloads.tempStorageLocation]);
+          `, [JSON.stringify(settings.downloads.tempStorageLocation)]);
 
           // Save download path to DB
           await client.query(`
             INSERT INTO system_settings (category, key, value)
-            VALUES ('downloads', 'download_path', $1)
+            VALUES ('downloads', 'download_path', $1::jsonb)
             ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
-          `, [settings.downloads.downloadPath]);
+          `, [JSON.stringify(settings.downloads.downloadPath)]);
 
           if (settings.downloads.defaultQuality) {
             await client.query(`
               INSERT INTO system_settings (category, key, value)
-              VALUES ('downloads', 'default_quality', $1)
+              VALUES ('downloads', 'default_quality', $1::jsonb)
               ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
-            `, [`"${settings.downloads.defaultQuality}"`]);
+            `, [JSON.stringify(settings.downloads.defaultQuality)]);
           }
         }
 
         // Update storage settings
         if (settings.storage) {
           await client.query(`
-            UPDATE system_settings 
-            SET value = $1 
-            WHERE category = 'storage' AND key = 'retention_days'
-          `, [settings.storage.minAgeForCleanupDays.toString()]);
+            INSERT INTO system_settings (category, key, value)
+            VALUES ('storage', 'retention_days', $1::jsonb)
+            ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
+          `, [settings.storage.minAgeForCleanupDays]);
         }
 
         // Create download directories
