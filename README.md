@@ -2,7 +2,7 @@
 
 **TwitchSync** is a self-hosted Twitch VOD downloader and stream archiver built for your homelab. Define tasks once and let TwitchSync automatically monitor channels and game categories — downloading VODs the moment streams end, no manual intervention required.
 
-> A modern, server-side alternative to Twitch Leecher. Runs 24/7 in Docker, integrates with Plex, Jellyfin, and Emby.
+> A modern, server-side alternative to Twitch Leecher. Runs 24/7 in Docker and saves VODs to local storage — point your media server at the output folder and your archive is ready to browse.
 
 ---
 
