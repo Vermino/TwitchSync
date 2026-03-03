@@ -21,6 +21,9 @@ export function setupSettingsRoutes(pool: Pool): Router {
   router.post('/select-folder', controller.selectFolder);
   router.get('/browse', controller.browsePath);
 
+  // Trigger filesystem rescan (marks missing files, clears stale storage data)
+  router.post('/rescan', controller.rescanNow);
+
   // Log route registration
   logger.debug('Settings routes registered');
 

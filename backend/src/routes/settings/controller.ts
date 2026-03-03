@@ -21,6 +21,7 @@ export class SettingsController {
     this.runStorageCleanup = this.runStorageCleanup.bind(this);
     this.browsePath = this.browsePath.bind(this);
     this.rescanFilesystem = this.rescanFilesystem.bind(this);
+    this.rescanNow = this.rescanNow.bind(this);
   }
 
   async getSystemSettings(req: Request, res: Response) {
@@ -363,26 +364,31 @@ export class SettingsController {
   }
 
   /**
-   * Background job: check every vod_file_states record marked 'present' and
-   * mark as 'missing' any whose file_path no longer exists on disk.
-   * Runs asynchronously after settings save — does not block the response.
+   * Checks every vod_file_states + completed_vods record against the disk.
+   * Marks missing files in vod_file_states, deletes completed_vods rows,
+   * and resets vods.download_status so the data reflects reality.
+   * Returns { checked, missing }.
    */
-  private async rescanFilesystem(): Promise<void> {
+  private async rescanFilesystem(): Promise<{ checked: number; missing: number }> {
     const client = await this.pool.connect();
     try {
-      // Fetch all records currently believed to be on disk
+      // Union both tables so we check all known file paths
       const result = await client.query(`
-        SELECT vod_id, file_path
-        FROM vod_file_states
-        WHERE file_state = 'present' AND file_path IS NOT NULL
+        SELECT vfs.vod_id, vfs.file_path
+        FROM vod_file_states vfs
+        WHERE vfs.file_state = 'present' AND vfs.file_path IS NOT NULL
+        UNION
+        SELECT cv.vod_id, cv.file_path
+        FROM completed_vods cv
+        WHERE cv.file_path IS NOT NULL
       `);
 
       if (result.rows.length === 0) {
-        logger.debug('Filesystem rescan: no present records to check');
-        return;
+        logger.info('Filesystem rescan: nothing to check — DB already clean');
+        return { checked: 0, missing: 0 };
       }
 
-      logger.info(`Filesystem rescan: checking ${result.rows.length} file(s) on disk`);
+      logger.info(`Filesystem rescan: checking ${result.rows.length} file path(s)`);
 
       const missingIds: number[] = [];
       await Promise.all(result.rows.map(async (row) => {
@@ -394,29 +400,54 @@ export class SettingsController {
       }));
 
       if (missingIds.length > 0) {
+        // Mark vod_file_states as missing
         await client.query(`
           UPDATE vod_file_states
           SET file_state = 'missing', updated_at = NOW()
           WHERE vod_id = ANY($1::int[])
         `, [missingIds]);
 
-        // Also reset vods.download_status back to pending so they can be re-queued
+        // Delete completed_vods rows — these drive file_size in Task Manager
+        await client.query(`
+          DELETE FROM completed_vods WHERE vod_id = ANY($1::int[])
+        `, [missingIds]);
+
+        // Reset vods table so they show as pending again (re-downloadable)
         await client.query(`
           UPDATE vods
-          SET download_status = 'pending', updated_at = NOW()
+          SET download_status = 'pending',
+              download_path = NULL,
+              file_size = NULL,
+              updated_at = NOW()
           WHERE id = ANY($1::int[]) AND download_status = 'completed'
         `, [missingIds]);
 
-        logger.info(`Filesystem rescan complete: marked ${missingIds.length}/${result.rows.length} file(s) as missing`);
+        logger.info(`Filesystem rescan done: ${missingIds.length}/${result.rows.length} missing — DB cleared`);
       } else {
-        logger.info(`Filesystem rescan complete: all ${result.rows.length} file(s) verified on disk`);
+        logger.info(`Filesystem rescan done: all ${result.rows.length} file(s) confirmed on disk`);
       }
+
+      return { checked: result.rows.length, missing: missingIds.length };
     } catch (err) {
       logger.error('rescanFilesystem failed:', err);
+      throw err;
     } finally {
       client.release();
     }
   }
+
+  /** HTTP handler for POST /api/settings/rescan — runs synchronously and returns result */
+  async rescanNow(req: Request, res: Response) {
+    try {
+      const result = await this.rescanFilesystem();
+      res.json({ success: true, checked: result.checked, missing: result.missing });
+    } catch (err: any) {
+      logger.error('rescanNow failed:', err);
+      res.status(500).json({ error: 'Filesystem rescan failed' });
+    }
+  }
+
+
 }
 
 export const createSettingsController = (pool: Pool) => new SettingsController(pool);
