@@ -8,7 +8,7 @@ version: '3.8'
 #   docker compose up -d --build
 #
 # Access:
-#   Web UI + API: http://YOUR_SERVER_IP   (nginx on port 80)
+#   Web UI + API: http://YOUR_SERVER_IP:2261   (nginx on port 2261)
 
 services:
 
@@ -20,7 +20,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "80:80"
+      - "2261:80"
     depends_on:
       backend:
         condition: service_healthy

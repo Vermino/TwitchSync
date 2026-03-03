@@ -73,8 +73,8 @@ This is the most important part. The redirect URL tells Twitch where to send use
 
 | Scenario | Redirect URL to use |
 |---|---|
-| **Local dev** (browser & backend on same machine) | `http://localhost:3501/auth/twitch/callback` |
-| **Docker homelab** (accessing by IP) | `http://YOUR_SERVER_IP:3501/auth/twitch/callback` |
+| **Local dev** (browser & backend on same machine) | `http://localhost:2261/auth/twitch/callback` |
+| **Docker homelab** (accessing by IP) | `http://YOUR_SERVER_IP:2261/auth/twitch/callback` |
 | **Docker homelab** (with domain/reverse proxy) | `https://twitchsync.yourdomain.com/auth/twitch/callback` |
 
 > ⚠️ **Common mistake:** Using `localhost` in your Twitch app while running TwitchSync in Docker on a homelab. The OAuth callback comes from Twitch's servers back to **your browser**, so the URL must be the actual IP or domain your browser can reach — not `localhost` unless you're running everything on the same PC you browse from.
@@ -159,8 +159,7 @@ docker-compose up -d
 
 | Service | URL |
 |---|---|
-| **Web UI** | `http://YOUR_SERVER_IP:3000` |
-| **API** | `http://YOUR_SERVER_IP:3501` |
+| **Web UI + API** | `http://YOUR_SERVER_IP:2261` |
 
 ---
 
