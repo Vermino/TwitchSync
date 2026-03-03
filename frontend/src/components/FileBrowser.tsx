@@ -36,7 +36,10 @@ const FileBrowser: React.FC<FileBrowserProps> = ({ initialPath, onSelect, onClos
         try {
             const params = new URLSearchParams();
             if (targetPath) params.set('path', targetPath);
-            const res = await fetch(`/api/settings/browse?${params}`);
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch(`/api/settings/browse?${params}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ error: 'Failed to browse' }));
                 throw new Error(err.error || 'Failed to browse');
