@@ -20,6 +20,7 @@ export class SettingsController {
     this.selectFolder = this.selectFolder.bind(this);
     this.runStorageCleanup = this.runStorageCleanup.bind(this);
     this.browsePath = this.browsePath.bind(this);
+    this.rescanFilesystem = this.rescanFilesystem.bind(this);
   }
 
   async getSystemSettings(req: Request, res: Response) {
@@ -156,6 +157,13 @@ export class SettingsController {
         }
 
         await client.query('COMMIT');
+
+        // Kick off async filesystem rescan in background — don't await, just fire it
+        // This marks any DB records whose files no longer exist on disk as 'missing'
+        setImmediate(() => this.rescanFilesystem().catch((err: Error) =>
+          logger.error('Background filesystem rescan error:', err.message)
+        ));
+
         res.json({ message: 'Settings updated successfully' });
       } catch (error) {
         await client.query('ROLLBACK');
@@ -351,6 +359,62 @@ export class SettingsController {
     } catch (error) {
       logger.error('Error checking disk space:', error);
       return { totalSpace: 0, usedSpace: 0, freeSpace: 0 };
+    }
+  }
+
+  /**
+   * Background job: check every vod_file_states record marked 'present' and
+   * mark as 'missing' any whose file_path no longer exists on disk.
+   * Runs asynchronously after settings save — does not block the response.
+   */
+  private async rescanFilesystem(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      // Fetch all records currently believed to be on disk
+      const result = await client.query(`
+        SELECT vod_id, file_path
+        FROM vod_file_states
+        WHERE file_state = 'present' AND file_path IS NOT NULL
+      `);
+
+      if (result.rows.length === 0) {
+        logger.debug('Filesystem rescan: no present records to check');
+        return;
+      }
+
+      logger.info(`Filesystem rescan: checking ${result.rows.length} file(s) on disk`);
+
+      const missingIds: number[] = [];
+      await Promise.all(result.rows.map(async (row) => {
+        try {
+          await fs.access(row.file_path);
+        } catch {
+          missingIds.push(row.vod_id);
+        }
+      }));
+
+      if (missingIds.length > 0) {
+        await client.query(`
+          UPDATE vod_file_states
+          SET file_state = 'missing', updated_at = NOW()
+          WHERE vod_id = ANY($1::int[])
+        `, [missingIds]);
+
+        // Also reset vods.download_status back to pending so they can be re-queued
+        await client.query(`
+          UPDATE vods
+          SET download_status = 'pending', updated_at = NOW()
+          WHERE id = ANY($1::int[]) AND download_status = 'completed'
+        `, [missingIds]);
+
+        logger.info(`Filesystem rescan complete: marked ${missingIds.length}/${result.rows.length} file(s) as missing`);
+      } else {
+        logger.info(`Filesystem rescan complete: all ${result.rows.length} file(s) verified on disk`);
+      }
+    } catch (err) {
+      logger.error('rescanFilesystem failed:', err);
+    } finally {
+      client.release();
     }
   }
 }
