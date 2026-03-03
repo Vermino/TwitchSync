@@ -17,8 +17,9 @@ export function setupSettingsRoutes(pool: Pool): Router {
   router.get('/storage', controller.getStorageStats);
   router.post('/storage/cleanup', controller.runStorageCleanup);
 
-  // Folder selection (only works in electron)
+  // Folder selection / browser
   router.post('/select-folder', controller.selectFolder);
+  router.get('/browse', controller.browsePath);
 
   // Log route registration
   logger.debug('Settings routes registered');

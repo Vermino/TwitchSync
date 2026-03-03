@@ -19,6 +19,7 @@ export class SettingsController {
     this.getStorageStats = this.getStorageStats.bind(this);
     this.selectFolder = this.selectFolder.bind(this);
     this.runStorageCleanup = this.runStorageCleanup.bind(this);
+    this.browsePath = this.browsePath.bind(this);
   }
 
   async getSystemSettings(req: Request, res: Response) {
@@ -28,15 +29,19 @@ export class SettingsController {
         SELECT 
           (SELECT value FROM system_settings WHERE category = 'downloads' AND key = 'max_concurrent')::int as concurrent_downloads,
           (SELECT value FROM system_settings WHERE category = 'downloads' AND key = 'temp_dir') as temp_storage_location,
+          (SELECT value FROM system_settings WHERE category = 'downloads' AND key = 'download_path') as download_path,
           (SELECT value FROM system_settings WHERE category = 'downloads' AND key = 'default_quality') as default_quality,
           (SELECT value FROM system_settings WHERE category = 'storage' AND key = 'retention_days')::int as retention_days
       `);
 
+      // Resolve download path: DB value → STORAGE_PATH env → sensible default
+      const defaultDownloadPath = process.env.STORAGE_PATH || path.join(os.homedir(), 'TwitchSync', 'Downloads');
+
       // Convert system settings to the expected format
       const settings = {
         downloads: {
-          downloadPath: path.join(os.homedir(), 'TwitchSync', 'Downloads'),
-          tempStorageLocation: result.rows[0].temp_storage_location || path.join(os.homedir(), 'TwitchSync', 'Temp'),
+          downloadPath: result.rows[0].download_path || defaultDownloadPath,
+          tempStorageLocation: result.rows[0].temp_storage_location || process.env.TEMP_DIR || path.join(os.homedir(), 'TwitchSync', 'Temp'),
           concurrentDownloadLimit: result.rows[0].concurrent_downloads || 3,
           bandwidthThrottle: 0,
           defaultQuality: String(result.rows[0].default_quality || 'source').replace(/^"|"$/g, '')
@@ -101,16 +106,23 @@ export class SettingsController {
         // Update downloads settings
         if (settings.downloads) {
           await client.query(`
-            UPDATE system_settings 
-            SET value = $1 
-            WHERE category = 'downloads' AND key = 'max_concurrent'
+            INSERT INTO system_settings (category, key, value)
+            VALUES ('downloads', 'max_concurrent', $1)
+            ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
           `, [settings.downloads.concurrentDownloadLimit.toString()]);
 
           await client.query(`
-            UPDATE system_settings 
-            SET value = $1 
-            WHERE category = 'downloads' AND key = 'temp_dir'
+            INSERT INTO system_settings (category, key, value)
+            VALUES ('downloads', 'temp_dir', $1)
+            ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
           `, [settings.downloads.tempStorageLocation]);
+
+          // Save download path to DB
+          await client.query(`
+            INSERT INTO system_settings (category, key, value)
+            VALUES ('downloads', 'download_path', $1)
+            ON CONFLICT (category, key) DO UPDATE SET value = EXCLUDED.value
+          `, [settings.downloads.downloadPath]);
 
           if (settings.downloads.defaultQuality) {
             await client.query(`
@@ -177,19 +189,76 @@ export class SettingsController {
 
   async selectFolder(req: Request, res: Response) {
     try {
-      // Return a default path for now
-      const defaultPath = path.join(os.homedir(), 'TwitchSync');
-
-      try {
-        await fs.mkdir(defaultPath, { recursive: true });
-      } catch (error) {
-        logger.error('Error creating default folder:', error);
-      }
-
+      const defaultPath = process.env.STORAGE_PATH || path.join(os.homedir(), 'TwitchSync');
       res.json({ path: defaultPath });
     } catch (error) {
       logger.error('Error selecting folder:', error);
       res.status(500).json({ error: 'Failed to select folder' });
+    }
+  }
+
+  async browsePath(req: Request, res: Response) {
+    try {
+      const requestedPath = req.query.path as string;
+      const isWindows = process.platform === 'win32';
+
+      // Start at root or requested path
+      let browsePath: string;
+      if (!requestedPath || requestedPath === '/') {
+        browsePath = isWindows ? '' : '/';
+      } else {
+        browsePath = requestedPath;
+      }
+
+      // On Windows with empty path, list drives
+      if (isWindows && !browsePath) {
+        const { stdout } = await execAsync('wmic logicaldisk get Name /format:csv');
+        const drives = stdout
+          .trim()
+          .split('\n')
+          .filter(l => l.trim() && !l.startsWith('Node'))
+          .map(l => l.trim().split(',').pop()?.trim())
+          .filter(Boolean)
+          .map(drive => ({ name: drive + '\\', path: drive + '\\', type: 'drive' }));
+        return res.json({ path: '', entries: drives, separator: '\\' });
+      }
+
+      // List directory contents
+      let entries: { name: string; path: string; type: string }[] = [];
+      const items = await fs.readdir(browsePath, { withFileTypes: true });
+
+      for (const item of items) {
+        if (item.isDirectory()) {
+          entries.push({
+            name: item.name,
+            path: path.join(browsePath, item.name),
+            type: 'directory'
+          });
+        }
+      }
+
+      // Sort alphabetically, case-insensitive
+      entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+      // Compute parent path
+      const parent = path.dirname(browsePath);
+      const hasParent = parent !== browsePath;
+
+      res.json({
+        path: browsePath,
+        parent: hasParent ? parent : null,
+        entries,
+        separator: isWindows ? '\\' : '/'
+      });
+    } catch (error: any) {
+      logger.error('Error browsing path:', error);
+      if (error.code === 'EACCES') {
+        res.status(403).json({ error: 'Permission denied' });
+      } else if (error.code === 'ENOENT') {
+        res.status(404).json({ error: 'Path not found' });
+      } else {
+        res.status(500).json({ error: 'Failed to browse path' });
+      }
     }
   }
 
