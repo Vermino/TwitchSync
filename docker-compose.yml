@@ -1,65 +1,77 @@
 version: '3.8'
 
+# TwitchSync Docker Compose
+#
+# Quick start:
+#   cp .env.example .env
+#   # Edit .env — set your Twitch credentials, JWT_SECRET, and storage path
+#   docker compose up -d --build
+#
+# Access:
+#   Web UI + API: http://YOUR_SERVER_IP   (nginx on port 80)
+
 services:
+
+  # ── Frontend (nginx) ────────────────────────────────────────────────────────
+  # Serves the React app and proxies /api, /auth, /socket.io to the backend.
+  # This means the browser only ever talks to one URL — no CORS issues.
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
-    environment:
-      - VITE_API_URL=http://backend:3501
+      - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
-      - twitch-sync-network
+      - twitchsync-net
 
+  # ── Backend (Node / Express) ────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "3501:3501"
+    env_file: .env
     environment:
-      - NODE_ENV=production
       - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=twitchsync
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID}
-      - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET}
-      # Must match the redirect URL registered in the Twitch Developer Console
-      # For homelab: replace with your server IP or domain
-      # e.g. http://192.168.1.100:3501/auth/twitch/callback
-      - TWITCH_REDIRECT_URI=${TWITCH_REDIRECT_URI}
-      - JWT_SECRET=${JWT_SECRET}
-      # Path inside the container where VODs are saved
-      # Change the host-side path (left of :) to your storage location
-      - STORAGE_PATH=/data/vods
     volumes:
-      # ⬇ Change /your/homelab/storage/vods to wherever you want VODs stored
-      - /your/homelab/storage/vods:/data/vods
+      # VOD storage — change the left side to your host path
+      # e.g. /mnt/media/TwitchSync:/data/vods
+      - ${VOD_STORAGE_HOST_PATH:-./vod-storage}:/data/vods
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3501/api/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
-      - twitch-sync-network
+      - twitchsync-net
 
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
   db:
     image: postgres:14-alpine
-    ports:
-      - "5435:5432"
+    env_file: .env
     environment:
-      - POSTGRES_DB=twitchsync
+      - POSTGRES_DB=${DB_NAME:-twitchsync}
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME:-twitchsync}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     networks:
-      - twitch-sync-network
+      - twitchsync-net
 
 networks:
-  twitch-sync-network:
+  twitchsync-net:
     driver: bridge
 
 volumes:
