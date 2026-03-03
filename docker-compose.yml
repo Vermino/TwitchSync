@@ -6,14 +6,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "3000:3000"
     environment:
-      - VITE_API_URL=http://backend:3000
+      - VITE_API_URL=http://backend:3501
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     networks:
       - twitch-sync-network
 
@@ -22,9 +19,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3501:3501"
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - DB_HOST=db
       - DB_PORT=5432
       - DB_NAME=twitchsync
@@ -32,11 +29,19 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID}
       - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET}
+      # Must match the redirect URL registered in the Twitch Developer Console
+      # For homelab: replace with your server IP or domain
+      # e.g. http://192.168.1.100:3501/auth/twitch/callback
+      - TWITCH_REDIRECT_URI=${TWITCH_REDIRECT_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      # Path inside the container where VODs are saved
+      # Change the host-side path (left of :) to your storage location
+      - STORAGE_PATH=/data/vods
+    volumes:
+      # ⬇ Change /your/homelab/storage/vods to wherever you want VODs stored
+      - /your/homelab/storage/vods:/data/vods
     depends_on:
       - db
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
     networks:
       - twitch-sync-network
 
