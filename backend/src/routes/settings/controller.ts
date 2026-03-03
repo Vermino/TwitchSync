@@ -212,15 +212,18 @@ export class SettingsController {
       const requestedPath = req.query.path as string;
       const isWindows = process.platform === 'win32';
 
-      // Start at root or requested path
+      // Determine the path to browse
       let browsePath: string;
-      if (!requestedPath || requestedPath === '/') {
+
+      if (!requestedPath || requestedPath === '/' || requestedPath === '') {
+        // Explicit root request
         browsePath = isWindows ? '' : '/';
       } else {
-        browsePath = requestedPath;
+        // Always resolve to absolute — converts ./storage, relative paths, etc.
+        browsePath = path.resolve(requestedPath);
       }
 
-      // On Windows with empty path, list drives
+      // On Windows with empty path (root), list drives
       if (isWindows && !browsePath) {
         const { stdout } = await execAsync('wmic logicaldisk get Name /format:csv');
         const drives = stdout
@@ -230,7 +233,7 @@ export class SettingsController {
           .map(l => l.trim().split(',').pop()?.trim())
           .filter(Boolean)
           .map(drive => ({ name: drive + '\\', path: drive + '\\', type: 'drive' }));
-        return res.json({ path: '', entries: drives, separator: '\\' });
+        return res.json({ path: '', parent: null, entries: drives, separator: '\\' });
       }
 
       // List directory contents
@@ -250,13 +253,22 @@ export class SettingsController {
       // Sort alphabetically, case-insensitive
       entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 
-      // Compute parent path
-      const parent = path.dirname(browsePath);
-      const hasParent = parent !== browsePath;
+      // Compute parent — on Windows go back to drive list when at drive root (e.g. C:\)
+      const parentRaw = path.dirname(browsePath);
+      let parent: string | null;
+      if (isWindows && parentRaw === browsePath) {
+        // At drive root — parent is the drive list (empty string)
+        parent = '';
+      } else if (!isWindows && browsePath === '/') {
+        // At filesystem root on Linux
+        parent = null;
+      } else {
+        parent = parentRaw;
+      }
 
       res.json({
         path: browsePath,
-        parent: hasParent ? parent : null,
+        parent,
         entries,
         separator: isWindows ? '\\' : '/'
       });
