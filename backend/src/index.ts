@@ -53,7 +53,7 @@ const reliabilityManager = createReliabilityManager(pool, downloadManager, {
   },
   cleanup: {
     enabled: process.env.CLEANUP_ENABLED !== 'false',
-    intervalMs: parseInt(process.env.CLEANUP_INTERVAL || '3600000'),
+    intervalMs: parseInt(process.env.RELIABILITY_CLEANUP_INTERVAL_MS || '3600000'),
     tempFileMaxAge: parseInt(process.env.TEMP_FILE_MAX_AGE || '86400000'),
     logFileMaxAge: parseInt(process.env.LOG_FILE_MAX_AGE || '604800000'),
     emergencyCleanup: process.env.EMERGENCY_CLEANUP_ENABLED !== 'false',
@@ -70,8 +70,8 @@ const reliabilityManager = createReliabilityManager(pool, downloadManager, {
 
 // Create task scheduler instance
 const taskScheduler = createTaskScheduler(
-  pool, 
-  downloadManager, 
+  pool,
+  downloadManager,
   parseInt(process.env.TASK_SCHEDULER_INTERVAL_MS || '60000') // Default 1 minute
 );
 

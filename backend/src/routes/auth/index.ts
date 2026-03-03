@@ -20,9 +20,9 @@ export function setupAuthRoutes(pool: Pool): Router {
       const redirectUri = process.env.TWITCH_REDIRECT_URI;
 
       // Check if we have valid credentials
-      if (!clientId || !redirectUri || 
-          clientId.includes('your_twitch_client_id') || 
-          clientId.includes('dev_test_client')) {
+      if (!clientId || !redirectUri ||
+        clientId.includes('your_twitch_client_id') ||
+        clientId.includes('dev_test_client')) {
         return res.status(400).json({
           error: 'Invalid Twitch configuration',
           message: 'Please configure valid Twitch credentials',
@@ -41,7 +41,7 @@ export function setupAuthRoutes(pool: Pool): Router {
       });
 
       const authUrl = `https://id.twitch.tv/oauth2/authorize?${params.toString()}`;
-      
+
       res.json({ url: authUrl });
     } catch (error) {
       logger.error('Error generating auth URL:', error);
@@ -117,10 +117,10 @@ export function setupAuthRoutes(pool: Pool): Router {
         // Check if we have valid credentials before making API calls
         const clientId = process.env.TWITCH_CLIENT_ID;
         const clientSecret = process.env.TWITCH_CLIENT_SECRET;
-        
-        if (!clientId || !clientSecret || 
-            clientId.includes('your_twitch_client_id') || 
-            clientId.includes('dev_test_client')) {
+
+        if (!clientId || !clientSecret ||
+          clientId.includes('your_twitch_client_id') ||
+          clientId.includes('dev_test_client')) {
           return res.status(400).json({
             error: 'Invalid Twitch configuration',
             message: 'Please configure valid Twitch credentials to complete authentication',
@@ -215,10 +215,10 @@ export function setupAuthRoutes(pool: Pool): Router {
 
           // Generate JWT
           const token = jwt.sign(
-            { 
-              userId: user.id, 
+            {
+              userId: user.id,
               twitchId: user.twitch_id,
-              username: user.username 
+              username: user.username
             },
             process.env.JWT_SECRET!,
             { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
@@ -254,7 +254,7 @@ export function setupAuthRoutes(pool: Pool): Router {
           });
         }
 
-        res.status(500).json({ 
+        res.status(500).json({
           error: 'Authentication failed',
           message: 'An error occurred during authentication. Please try again.'
         });
@@ -288,10 +288,10 @@ export function setupAuthRoutes(pool: Pool): Router {
         // Check if we have valid credentials before making API calls
         const clientId = process.env.TWITCH_CLIENT_ID;
         const clientSecret = process.env.TWITCH_CLIENT_SECRET;
-        
-        if (!clientId || !clientSecret || 
-            clientId.includes('your_twitch_client_id') || 
-            clientId.includes('dev_test_client')) {
+
+        if (!clientId || !clientSecret ||
+          clientId.includes('your_twitch_client_id') ||
+          clientId.includes('dev_test_client')) {
           return res.status(400).json({
             error: 'Invalid Twitch configuration',
             message: 'Please configure valid Twitch credentials to complete authentication',
@@ -398,12 +398,12 @@ export function setupAuthRoutes(pool: Pool): Router {
           // Add code to processed set
           processedCodes.add(code);
 
-          // Create JWT token
+          // Create JWT token - must match TokenPayload in middleware/auth.ts
           const token = jwt.sign(
             {
-              id: user.id,
-              twitch_id: user.twitch_id,
-              type: 'access'
+              userId: user.id,
+              twitchId: user.twitch_id,
+              username: user.username
             },
             process.env.JWT_SECRET!,
             { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
