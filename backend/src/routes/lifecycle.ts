@@ -108,9 +108,10 @@ export function setupLifecycleRoutes(pool: Pool): Router {
     const userId = parseInt(req.user!.id);
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
+    const { promises: fsPromises } = await import('fs');
 
     try {
-      // Get VODs ordered by actual file size
+      // Get VODs ordered by actual file size, including file_path for verification
       const result = await pool.query(`
         SELECT 
           v.id,
@@ -126,6 +127,7 @@ export function setupLifecycleRoutes(pool: Pool): Router {
           v.preferred_quality as quality,
           v.thumbnail_url,
           vfs.file_size_bytes,
+          vfs.file_path,
           vfs.is_user_protected,
           fvh.created_at as last_verified_at
         FROM vods v
@@ -139,23 +141,47 @@ export function setupLifecycleRoutes(pool: Pool): Router {
         LIMIT $2 OFFSET $3
       `, [userId, limit, offset]);
 
-      const files = result.rows.map(row => ({
-        id: row.id.toString(),
-        vodId: row.id.toString(),
-        filename: `${row.title || `VOD_${row.twitch_id}`}.mp4`,
-        sizeGB: parseInt(row.file_size_bytes || '0') / (1024 * 1024 * 1024),
-        status: 'downloaded',
-        isProtected: row.is_user_protected || false,
-        lastVerified: row.last_verified_at || row.created_at || null,
-        channelName: row.channel_name || '',
-        channelDisplayName: row.channel_display_name || '',
-        gameName: row.game_name || 'Unknown',
-        duration: row.duration || 0,
-        createdAt: row.created_at,
-        downloadedAt: row.updated_at,
-        quality: row.quality,
-        thumbnailUrl: row.thumbnail_url
+      // Verify each file actually exists on disk — mark missing ones in DB
+      const missingIds: number[] = [];
+      const verifiedRows = await Promise.all(result.rows.map(async (row) => {
+        if (!row.file_path) return null; // no path recorded, skip
+        try {
+          await fsPromises.access(row.file_path);
+          return row; // file exists
+        } catch {
+          missingIds.push(row.id);
+          return null; // file doesn't exist
+        }
       }));
+
+      // Update missing files in DB so they don't show again
+      if (missingIds.length > 0) {
+        await pool.query(`
+          UPDATE vod_file_states SET file_state = 'missing', updated_at = NOW()
+          WHERE vod_id = ANY($1::int[])
+        `, [missingIds]);
+        logger.info(`Marked ${missingIds.length} VOD file(s) as missing after filesystem check`);
+      }
+
+      const files = verifiedRows
+        .filter((row): row is NonNullable<typeof row> => row !== null)
+        .map(row => ({
+          id: row.id.toString(),
+          vodId: row.id.toString(),
+          filename: `${row.title || `VOD_${row.twitch_id}`}.mp4`,
+          sizeGB: parseInt(row.file_size_bytes || '0') / (1024 * 1024 * 1024),
+          status: 'downloaded',
+          isProtected: row.is_user_protected || false,
+          lastVerified: row.last_verified_at || row.created_at || null,
+          channelName: row.channel_name || '',
+          channelDisplayName: row.channel_display_name || '',
+          gameName: row.game_name || 'Unknown',
+          duration: row.duration || 0,
+          createdAt: row.created_at,
+          downloadedAt: row.updated_at,
+          quality: row.quality,
+          thumbnailUrl: row.thumbnail_url
+        }));
 
       res.json({
         files,
@@ -170,6 +196,7 @@ export function setupLifecycleRoutes(pool: Pool): Router {
       res.status(500).json({ error: 'Failed to fetch largest files' });
     }
   }));
+
 
   /**
    * GET /api/lifecycle/vods/:vodId/file-state - Get file state for specific VOD
