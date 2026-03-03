@@ -170,9 +170,18 @@ export class SettingsController {
   }
 
   async getStorageStats(req: Request, res: Response) {
+    const client = await this.pool.connect();
     try {
-      // Get download path
-      const downloadPath = path.join(os.homedir(), 'TwitchSync', 'Downloads');
+      // Read download path from system_settings (same source as Settings page)
+      const result = await client.query(`
+        SELECT value FROM system_settings
+        WHERE category = 'downloads' AND key = 'download_path'
+      `);
+      const rawVal = result.rows[0]?.value;
+      // JSONB string values are stored quoted, strip outer quotes if present
+      const downloadPath = rawVal
+        ? String(rawVal).replace(/^"|"$/g, '')
+        : process.env.STORAGE_PATH || path.join(os.homedir(), 'TwitchSync', 'Downloads');
 
       try {
         await fs.mkdir(downloadPath, { recursive: true });

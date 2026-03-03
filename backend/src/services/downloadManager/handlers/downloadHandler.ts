@@ -273,25 +273,23 @@ export class DownloadHandler extends EventEmitter {
         `, [vod.id]);
         return;
       }
-      // Get download path from user settings with new fields
+      // Get download path from system_settings (configured via Settings page)
       const settingsResult = await client.query(`
-        SELECT 
-          us.settings->'downloads'->>'downloadPath' as download_path,
-          us.settings->'downloads'->>'tempStorageLocation' as temp_path,
-          (us.settings->'downloads'->>'concurrentDownloadLimit')::int as concurrent_limit,
-          (us.settings->'downloads'->>'bandwidthThrottle')::int as bandwidth_limit,
-          us.settings as user_settings
-        FROM user_settings us
-        INNER JOIN tasks t ON t.user_id = us.user_id
-        WHERE t.id = $1
-      `, [vod.task_id]);
+        SELECT
+          MAX(CASE WHEN key = 'download_path' THEN value #>> '{}' END) as download_path,
+          MAX(CASE WHEN key = 'temp_dir'       THEN value #>> '{}' END) as temp_dir,
+          MAX(CASE WHEN key = 'max_concurrent' THEN (value::text)::int END) as concurrent_limit
+        FROM system_settings
+        WHERE category = 'downloads'
+      `);
 
       const settings = settingsResult.rows[0];
-      const downloadPath = settings?.download_path || 'C:\\Users\\jesse\\TwitchSync\\Downloads';
-      const tempPath = settings?.temp_path || this.tempDir;
-      const bandwidthLimit = settings?.bandwidth_limit || 0;
+      const downloadPath = settings?.download_path
+        || process.env.STORAGE_PATH
+        || require('path').join(require('os').homedir(), 'TwitchSync', 'Downloads');
+      const tempPath = settings?.temp_dir || this.tempDir;
+      const bandwidthLimit = 0;
       const concurrentLimit = settings?.concurrent_limit || 3;
-      const userSettings = settings?.user_settings || {};
 
       // Ensure download directory exists
       await fs.mkdir(downloadPath, { recursive: true });
