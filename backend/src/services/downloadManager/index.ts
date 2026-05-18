@@ -1,0 +1,484 @@
+// Filepath: backend/src/services/downloadManager/index.ts
+
+import { Pool } from 'pg';
+import { EventEmitter } from 'events';
+import { logger } from '../../utils/logger';
+import { ResourceMonitor } from './utils/resourceMonitor';
+import { FileSystemManager } from './utils/fileSystem';
+import { DownloadHandler } from './handlers/downloadHandler';
+import { TaskHandler } from './handlers/taskHandler';
+import { QueueProcessor } from './queue/queueProcessor';
+import {
+  DownloadManagerConfig,
+  QueueStatus,
+  DownloadState,
+  SystemResources,
+  DownloadMetrics,
+  DownloadPriority
+} from './types';
+
+export class DownloadManager extends EventEmitter {
+  private static instance: DownloadManager | null = null;
+  private isShuttingDown: boolean = false;
+
+  // Initialize properties with default values
+  private resourceMonitor: ResourceMonitor = new ResourceMonitor('');
+  private fileSystem: FileSystemManager = new FileSystemManager('');
+  private downloadHandler: DownloadHandler = new DownloadHandler(this.pool, '', 3);
+  private taskHandler: TaskHandler = new TaskHandler(this.pool, this.downloadHandler);
+  private queueProcessor: QueueProcessor = new QueueProcessor(
+    this.pool,
+    this.downloadHandler,
+    this.resourceMonitor,
+    3
+  );
+  private metrics: DownloadMetrics = {
+    totalBytesDownloaded: 0,
+    totalDownloads: 0,
+    failedDownloads: 0,
+    averageSpeed: 0,
+    peakMemoryUsage: 0,
+    startTime: Date.now()
+  };
+
+  private constructor(
+    private pool: Pool,
+    private config: DownloadManagerConfig
+  ) {
+    super();
+    this.initializeComponents();
+    this.setupEventListeners();
+    this.initializeMetrics();
+  }
+
+  public static getInstance(
+    pool: Pool,
+    config: DownloadManagerConfig
+  ): DownloadManager {
+    if (!DownloadManager.instance) {
+      DownloadManager.instance = new DownloadManager(pool, config);
+    }
+    return DownloadManager.instance;
+  }
+
+  private initializeComponents(): void {
+    // Initialize utility components
+    this.resourceMonitor = new ResourceMonitor(this.config.tempDir);
+    this.fileSystem = new FileSystemManager(this.config.tempDir);
+
+    // Initialize core components
+    this.downloadHandler = new DownloadHandler(
+      this.pool,
+      this.config.tempDir,
+      this.config.maxConcurrent
+    );
+
+    this.taskHandler = new TaskHandler(
+      this.pool,
+      this.downloadHandler
+    );
+
+    this.queueProcessor = new QueueProcessor(
+      this.pool,
+      this.downloadHandler,
+      this.resourceMonitor,
+      this.config.maxConcurrent
+    );
+  }
+
+  private setupEventListeners(): void {
+    // Resource monitoring events
+    this.resourceMonitor.on('warning', (warning) => {
+      this.emit('resource:warning', warning);
+      logger.warn('Resource warning:', warning);
+    });
+
+    this.resourceMonitor.on('critical', (critical) => {
+      this.emit('resource:critical', critical);
+      logger.error('Resource critical:', critical);
+
+      if (critical.action === 'shutdown') {
+        this.stopProcessing().catch(err => {
+          logger.error('Error during emergency shutdown:', err);
+        });
+      }
+    });
+
+    // Download events
+    this.downloadHandler.on('download:start', (vodId) => {
+      this.emit('download:start', vodId);
+    });
+
+    this.downloadHandler.on('download:complete', (vodId) => {
+      this.emit('download:complete', vodId);
+      this.updateMetrics({ totalDownloads: this.metrics.totalDownloads + 1 });
+    });
+
+    this.downloadHandler.on('download:error', (error) => {
+      this.emit('download:error', error);
+      this.updateMetrics({ failedDownloads: this.metrics.failedDownloads + 1 });
+    });
+
+    // Task events
+    this.taskHandler.on('task:progress', (progress) => {
+      this.emit('task:progress', progress);
+    });
+
+    this.taskHandler.on('task:complete', (result) => {
+      this.emit('task:complete', result);
+    });
+
+    this.taskHandler.on('task:error', (error) => {
+      this.emit('task:error', error);
+    });
+  }
+
+  private initializeMetrics(): void {
+    this.metrics = {
+      totalBytesDownloaded: 0,
+      totalDownloads: 0,
+      failedDownloads: 0,
+      averageSpeed: 0,
+      peakMemoryUsage: 0,
+      startTime: Date.now()
+    };
+  }
+
+  // Public API methods
+  public async startProcessing(intervalSeconds: number = 30): Promise<void> {
+    logger.info('Starting download manager...');
+
+    await this.queueProcessor.startProcessing(intervalSeconds);
+    this.resourceMonitor.startMonitoring();
+
+    logger.info('Download manager started successfully');
+  }
+
+  public async stopProcessing(): Promise<void> {
+    logger.info('Stopping download manager...');
+    this.isShuttingDown = true;
+
+    try {
+      await this.queueProcessor.stopProcessing();
+      this.resourceMonitor.stopMonitoring();
+
+      logger.info('Download manager stopped successfully');
+    } catch (error) {
+      logger.error('Error stopping download manager:', error);
+      throw error;
+    } finally {
+      this.isShuttingDown = false;
+    }
+  }
+
+  public async executeTask(taskId: number, mode: 'scan' | 'activate' = 'scan'): Promise<void> {
+    logger.info(`Starting ${mode} execution for task ${taskId}`);
+    
+    // Start task execution in background to prevent HTTP timeouts
+    setImmediate(() => {
+      this.taskHandler.executeTask(taskId, mode)
+        .then(() => {
+          if (mode === 'activate') {
+            logger.info(`Task ${taskId} downloads started, triggering immediate queue processing`);
+            // Process the queue immediately when activating downloads
+            if (!this.isShuttingDown) {
+              this.queueProcessor.triggerImmediateProcessing();
+            }
+            logger.info(`Task ${taskId} activation completed successfully`);
+          } else {
+            logger.info(`Task ${taskId} VOD scanning completed successfully`);
+          }
+        })
+        .catch(error => {
+          logger.error(`Task ${taskId} ${mode} execution failed:`, error);
+        });
+    });
+    
+    // Return immediately to prevent HTTP timeout
+    logger.info(`Task ${taskId} ${mode} execution started in background`);
+  }
+
+  public async addToQueue(vodId: number, priority?: DownloadPriority): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(`
+        UPDATE vods 
+        SET status = 'queued',
+            download_status = 'queued',
+            download_priority = $2,
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vodId, priority || 'normal']);
+
+      await client.query(`
+        UPDATE tasks t
+        SET status = 'downloading',
+            is_active = true,
+            updated_at = NOW()
+        FROM vods v
+        WHERE v.id = $1
+          AND v.task_id = t.id
+      `, [vodId]);
+
+      await client.query(`
+        UPDATE task_monitoring tm
+        SET status = 'downloading',
+            status_message = 'Download queued manually',
+            updated_at = NOW()
+        FROM vods v
+        WHERE v.id = $1
+          AND v.task_id = tm.task_id
+      `, [vodId]);
+      
+      logger.info(`Added VOD ${vodId} to download queue with priority ${priority || 'normal'}`);
+    } catch (error) {
+      logger.error(`Error adding VOD ${vodId} to queue:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (!this.isShuttingDown) {
+      await this.queueProcessor.triggerImmediateProcessing();
+    }
+  }
+
+  public async retryFailedDownload(vodId: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(`
+        UPDATE vods 
+        SET status = 'queued',
+            download_status = 'queued',
+            error_message = NULL,
+            retry_count = retry_count + 1,
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vodId]);
+
+      await client.query(`
+        UPDATE tasks t
+        SET status = 'downloading',
+            is_active = true,
+            updated_at = NOW()
+        FROM vods v
+        WHERE v.id = $1
+          AND v.task_id = t.id
+      `, [vodId]);
+
+      await client.query(`
+        UPDATE task_monitoring tm
+        SET status = 'downloading',
+            status_message = 'Retry queued manually',
+            updated_at = NOW()
+        FROM vods v
+        WHERE v.id = $1
+          AND v.task_id = tm.task_id
+      `, [vodId]);
+      
+      logger.info(`Retrying failed download for VOD ${vodId}`);
+    } catch (error) {
+      logger.error(`Error retrying download for VOD ${vodId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (!this.isShuttingDown) {
+      await this.queueProcessor.triggerImmediateProcessing();
+    }
+  }
+
+  public async cancelDownload(vodId: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      const vodResult = await client.query(`
+        SELECT task_id
+        FROM vods
+        WHERE id = $1
+      `, [vodId]);
+
+      const taskId = vodResult.rows[0]?.task_id ?? null;
+
+      // Update database status
+      await client.query(`
+        UPDATE vods 
+        SET status = 'cancelled',
+            download_status = 'cancelled',
+            error_message = COALESCE(error_message, 'cancelled by user'),
+            updated_at = NOW()
+        WHERE id = $1
+      `, [vodId]);
+
+      const wasActive = this.downloadHandler.requestCancellation(vodId);
+
+      if (!wasActive && taskId) {
+        await this.reconcileTaskState(client, taskId);
+      }
+      
+      logger.info(`Cancelled download for VOD ${vodId}`);
+    } catch (error) {
+      logger.error(`Error cancelling download for VOD ${vodId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async reconcileTaskState(client: any, taskId: number): Promise<void> {
+    const summaryResult = await client.query(`
+      SELECT
+        COUNT(*)::int as total_vods,
+        COUNT(*) FILTER (WHERE download_status IN ('queued', 'downloading'))::int as active_vods,
+        COUNT(*) FILTER (WHERE download_status IN ('pending', 'paused'))::int as waiting_vods,
+        COUNT(*) FILTER (WHERE download_status = 'completed')::int as completed_vods,
+        COUNT(*) FILTER (WHERE download_status = 'failed')::int as failed_vods,
+        COUNT(*) FILTER (WHERE download_status = 'cancelled')::int as cancelled_vods
+      FROM vods
+      WHERE task_id = $1
+    `, [taskId]);
+
+    const summary = summaryResult.rows[0] ?? {
+      total_vods: 0,
+      active_vods: 0,
+      waiting_vods: 0,
+      completed_vods: 0,
+      failed_vods: 0,
+      cancelled_vods: 0,
+    };
+
+    const totalVods = Number(summary.total_vods || 0);
+    const activeVods = Number(summary.active_vods || 0);
+    const waitingVods = Number(summary.waiting_vods || 0);
+    const completedVods = Number(summary.completed_vods || 0);
+    const failedVods = Number(summary.failed_vods || 0);
+    const cancelledVods = Number(summary.cancelled_vods || 0);
+
+    let taskStatus: 'running' | 'downloading' | 'completed' = 'running';
+    let monitoringStatus = 'running';
+    let statusMessage = 'Waiting for downloads';
+
+    if (activeVods > 0) {
+      taskStatus = 'downloading';
+      monitoringStatus = 'downloading';
+      statusMessage = `Downloads in progress: ${activeVods} active`;
+    } else if (waitingVods > 0) {
+      statusMessage = `Waiting to download: ${waitingVods} pending`;
+    } else if (totalVods > 0) {
+      taskStatus = 'completed';
+      monitoringStatus = 'completed';
+      statusMessage = `Downloads finished: ${completedVods}/${totalVods} completed, ${failedVods} failed, ${cancelledVods} cancelled`;
+    }
+
+    const progressPercentage = totalVods > 0
+      ? Math.round((completedVods / totalVods) * 100)
+      : 0;
+
+    await client.query(`
+      UPDATE tasks
+      SET status = $2::task_status,
+          updated_at = NOW()
+      WHERE id = $1
+    `, [taskId, taskStatus]);
+
+    await client.query(`
+      UPDATE task_monitoring
+      SET status = $2,
+          status_message = $3,
+          progress_percentage = $4,
+          items_total = $5,
+          items_completed = $6,
+          items_failed = $7,
+          updated_at = NOW()
+      WHERE task_id = $1
+    `, [
+      taskId,
+      monitoringStatus,
+      statusMessage,
+      progressPercentage,
+      totalVods,
+      completedVods,
+      failedVods + cancelledVods,
+    ]);
+  }
+
+  public async getTaskDetails(taskId: number): Promise<any> {
+    // Directly fetch task details from the database instead of delegating
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT t.*, 
+               COUNT(v.id) as total_vods,
+               SUM(v.file_size) as total_storage_used
+        FROM tasks t
+        LEFT JOIN vods v ON v.task_id = t.id
+        WHERE t.id = $1
+        GROUP BY t.id
+      `, [taskId]);
+
+      if (result.rows.length === 0) {
+        throw new Error(`Task not found with ID ${taskId}`);
+      }
+
+      return {
+        ...result.rows[0],
+        progress: await this.getTaskProgress(taskId)
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  private async getTaskProgress(taskId: number): Promise<any> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT status, progress_percentage, items_completed, items_total
+        FROM task_monitoring
+        WHERE task_id = $1
+      `, [taskId]);
+
+      return result.rows[0] || {
+        status: 'pending',
+        progress_percentage: 0,
+        items_completed: 0,
+        items_total: 0
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  public async getQueueStatus(): Promise<QueueStatus> {
+    return this.queueProcessor.getQueueStatus();
+  }
+
+  public async getSystemResources(): Promise<SystemResources> {
+    return this.resourceMonitor.getSystemResources();
+  }
+
+  public getMetrics(): DownloadMetrics {
+    return { ...this.metrics };
+  }
+
+  public getActiveDownloads(): Map<number, DownloadState> {
+    return this.downloadHandler.getActiveDownloads();
+  }
+
+  private updateMetrics(update: Partial<DownloadMetrics>): void {
+    Object.assign(this.metrics, update);
+    this.emit('metrics:update', this.metrics);
+  }
+
+  public async destroy(): Promise<void> {
+    logger.info('Destroying download manager...');
+
+    await this.stopProcessing();
+    this.removeAllListeners();
+    DownloadManager.instance = null;
+
+    logger.info('Download manager destroyed');
+  }
+}
+
+export default DownloadManager;

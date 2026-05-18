@@ -1,0 +1,75 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Testing
+coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/e2e/.auth/
+
+# Production
+build/
+dist/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backend specific
+backend/dist/
+backend/node_modules/
+
+# Frontend specific
+frontend/dist/
+frontend/node_modules/
+frontend/build/
+
+# Docker volumes
+pgdata/
+backend/temp/
+
+# Claude Code files
+.claude/settings.local.json
+
+# Debug and test files (temporary)
+backend/check-*.js
+backend/check-*.ts
+backend/debug-*.js
+backend/debug-*.ts
+backend/test-*.js
+backend/test-*.ts
+backend/*test*.js
+backend/sync_states.ts
+backend/backfill-*.ts
+*.py
+test-*.json
+invalid-*.json
+minimal-*.json
+TCK-*
+TICKET-*
+
+# Windows artifacts
+nul

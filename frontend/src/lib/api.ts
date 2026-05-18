@@ -1,0 +1,1055 @@
+// Filepath: frontend/src/lib/api.ts
+
+import axios from 'axios';
+import type { Channel, Game, Task } from '@/types';
+import { SettingsState } from '../pages/settings/types';
+import type {
+  ChannelRecommendation,
+  DiscoveryFeedResponse,
+  DiscoveryPreferences,
+  DiscoveryStats,
+  FilterSettings,
+  GameRecommendation,
+  TrackPremiereResponse,
+  TrendingCategory,
+  UpdatePreferencesResponse
+} from '@/types/discovery';
+import {
+  CreateTaskRequest,
+  TaskDetails,
+  TaskProgress,
+  TaskStorage,
+  UpdateTaskRequest
+} from "@/types";
+import { DashboardStats } from "../types";
+
+class ApiClient {
+  private static instance: ApiClient;
+  private baseURL = '/api';
+  private authURL = '/auth';
+
+  private constructor() {
+    // Add request interceptor for auth token
+    axios.interceptors.request.use(
+      (config) => {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+
+    // Add response interceptor for error handling
+    axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/login';
+        }
+        // Extract and throw the error message
+        if (error.response?.data?.error) {
+          throw new Error(error.response.data.error);
+        }
+        if (error.response?.data?.details) {
+          const details = error.response.data.details;
+          const messages = details.map((detail: any) => detail.message);
+          throw new Error(messages.join(', '));
+        }
+        throw error;
+      }
+    );
+  }
+
+  public static getInstance(): ApiClient {
+    if (!ApiClient.instance) {
+      ApiClient.instance = new ApiClient();
+    }
+    return ApiClient.instance;
+  }
+
+  // Task Methods
+  async getTasks(): Promise<Task[]> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks`,
+        { headers: this.getHeaders() }
+      );
+      const tasks = Array.isArray(response.data) ? response.data : [];
+      // Map flat backend fields into nested TaskProgress structure
+      return tasks.map((task: any) => ({
+        ...task,
+        progress: {
+          percentage: Number(task.progress_percentage) || 0,
+          status_message: task.status_message || undefined,
+          current_progress: {
+            completed: Number(task.items_completed) || 0,
+            total: Number(task.items_total) || 0,
+          }
+        }
+      }));
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // [Previous methods remain exactly the same]
+  // Add Authentication Methods
+  async twitchCallback(code: string) {
+    try {
+      const response = await axios.post(
+        `${this.authURL}/twitch/callback`,
+        { code },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error during Twitch callback:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async checkAuth() {
+    try {
+      const response = await axios.get(`${this.authURL}/me`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async logout() {
+    try {
+      const response = await axios.post(
+        `${this.authURL}/logout`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error during logout:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async revokeTwitchAccess() {
+    try {
+      const response = await axios.post(
+        `${this.authURL}/twitch/revoke`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error revoking Twitch access:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Dashboard Methods
+  async getDashboardStats(): Promise<DashboardStats> {
+    try {
+      const response = await axios.get(`${this.baseURL}/dashboard/stats`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Settings Methods
+  async getSystemSettings(): Promise<SettingsState> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/settings/system`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching system settings:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async updateSystemSettings(settings: SettingsState): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/settings/system`,
+        settings,
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error updating system settings:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getStorageStats(): Promise<{ totalSpace: number; usedSpace: number; freeSpace: number }> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/settings/storage`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching storage stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async selectFolder(): Promise<{ path: string }> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/settings/select-folder`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error selecting folder:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async runStorageCleanup(): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/settings/storage/cleanup`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error running storage cleanup:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Twitch Search Methods
+  async searchTwitchChannels(query: string) {
+    try {
+      const response = await axios.get(`${this.baseURL}/channels/search`, {
+        params: { query },
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error searching Twitch channels:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async searchTwitchGames(query: string) {
+    try {
+      const response = await axios.get(`${this.baseURL}/twitch/games/search`, {
+        params: { query },
+        headers: this.getHeaders()
+      });
+      return response.data.map((game: any) => ({
+        ...game,
+        box_art_url: game.box_art_url || null,
+        category: game.category || game.name.split(' ')[0].toLowerCase(),
+        tags: game.tags || [],
+        status: game.status || 'active',
+        is_active: true
+      }));
+    } catch (error) {
+      console.error('Error searching Twitch games:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Channel Methods
+  async getChannels(): Promise<Channel[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/channels`, {
+        headers: this.getHeaders()
+      });
+
+      const channelsData = response.data.channels || response.data;
+      if (Array.isArray(channelsData)) {
+        return channelsData.map(channel => ({
+          id: channel.id,
+          twitch_id: channel.twitch_id,
+          username: channel.username,
+          display_name: channel.display_name || channel.username,
+          profile_image_url: channel.profile_image_url,
+          description: channel.description || '',
+          follower_count: channel.follower_count || 0,
+          is_active: channel.is_active || true,
+          is_live: channel.is_live || false,
+          last_stream_date: channel.last_stream_date,
+          last_game_id: channel.last_game_id,
+          last_game_name: channel.last_game_name,
+          last_game_box_art: channel.last_game_box_art,
+          most_played_game: channel.most_played_game || undefined,
+          premieres: channel.premieres || [],
+          created_at: channel.created_at || new Date().toISOString()
+        }));
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching channels:', error);
+      throw error;
+    }
+  }
+
+  async createChannel(data: {
+    twitch_id: string;
+    username: string;
+    display_name?: string;
+    profile_image_url?: string;
+    description?: string;
+    follower_count?: number;
+  }): Promise<Channel> {
+    try {
+      if (!data.username) {
+        throw new Error('Username is required');
+      }
+
+      const response = await axios.post(
+        `${this.baseURL}/channels`,
+        {
+          twitch_id: data.twitch_id,
+          username: data.username,
+          display_name: data.display_name || data.username,
+          profile_image_url: data.profile_image_url || null,
+          description: data.description || '',
+          follower_count: data.follower_count || 0,
+          is_active: true
+        },
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error creating channel:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async updateChannel(id: number, data: { is_active?: boolean }): Promise<Channel> {
+    try {
+      const response = await axios.put(
+        `${this.baseURL}/channels/${id}`,
+        data,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error updating channel:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async deleteChannel(id: number): Promise<void> {
+    try {
+      await axios.delete(`${this.baseURL}/channels/${id}`, {
+        headers: this.getHeaders()
+      });
+    } catch (error) {
+      console.error('Error deleting channel:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Game Methods
+  async getGames(): Promise<Game[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/games`, {
+        headers: this.getHeaders()
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error('Error fetching games:', error);
+      throw error;
+    }
+  }
+
+  async createGame(data: {
+    twitch_game_id: string;
+    name: string;
+    box_art_url?: string;
+    category?: string;
+    tags?: string[];
+    status?: string;
+    is_active?: boolean;
+  }): Promise<Game> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/games`,
+        {
+          twitch_game_id: data.twitch_game_id,
+          name: data.name,
+          box_art_url: data.box_art_url,
+          category: data.category || data.name.split(' ')[0].toLowerCase(),
+          tags: data.tags || [],
+          status: data.status || 'active',
+          is_active: data.is_active !== undefined ? data.is_active : true
+        },
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error creating game:', error);
+      throw error;
+    }
+  }
+
+  async updateGame(id: number, data: { is_active?: boolean }): Promise<Game> {
+    try {
+      const response = await axios.put(
+        `${this.baseURL}/games/${id}`,
+        data,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error updating game:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async deleteGame(id: number): Promise<void> {
+    try {
+      await axios.delete(`${this.baseURL}/games/${id}`, {
+        headers: this.getHeaders()
+      });
+    } catch (error) {
+      console.error('Error deleting game:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Task Methods
+  async createTask(data: CreateTaskRequest): Promise<Task> {
+    try {
+      // Create task data with defaults
+      const taskData = {
+        name: data.name || '',
+        description: data.description || '',
+        task_type: data.task_type || 'combined',
+        channel_ids: data.channel_ids || [],
+        game_ids: data.game_ids || [],
+        schedule_type: data.schedule_type || 'interval',
+        schedule_value: data.schedule_value || '3600',
+        storage_limit_gb: Number(data.storage_limit_gb) || 0,
+        retention_days: Number(data.retention_days) || 7,
+        auto_delete: Boolean(data.auto_delete),
+        priority: data.priority || 'low',
+        quality: data.quality,
+        is_active: true,
+        conditions: data.conditions || {},
+        restrictions: data.restrictions || {}
+      };
+
+      // Basic validation for retention days
+      if (taskData.retention_days < 1 || taskData.retention_days > 365) {
+        throw new Error('Retention days must be between 1 and 365');
+      }
+
+      const response = await axios.post(
+        `${this.baseURL}/tasks`,
+        taskData,
+        { headers: this.getHeaders() }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Error creating task:', error);
+      throw error;
+    }
+  }
+
+  async updateTask(id: number, data: UpdateTaskRequest): Promise<Task> {
+    try {
+      // Format numerical fields
+      const updateData = {
+        ...data,
+        storage_limit_gb: data.storage_limit_gb !== undefined ? Number(data.storage_limit_gb) : undefined,
+        retention_days: data.retention_days !== undefined ? Number(data.retention_days) : undefined
+      };
+
+      if (updateData.retention_days && (updateData.retention_days < 1 || updateData.retention_days > 365)) {
+        throw new Error('Retention days must be between 1 and 365');
+      }
+
+      const response = await axios.put(
+        `${this.baseURL}/tasks/${id}`,
+        updateData,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error updating task:', error);
+      throw error;
+    }
+  }
+
+  async getTask(id: number, path: string): Promise<void> {
+    try {
+      await axios.put(
+        `${this.baseURL}/tasks/${id}/path`,
+        { path },
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error updating task path:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getTaskDetails(id: number): Promise<TaskDetails> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/details`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching task details:', error);
+      throw error;
+    }
+  }
+
+  async getDeleteTaskInfo(id: number): Promise<{ files_to_delete: number, freed_bytes: number, queued_vods: number, task_name: string }> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/delete-info`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error getting delete info:', error);
+      throw error;
+    }
+  }
+
+  async deleteTask(id: number): Promise<void> {
+    try {
+      await axios.delete(
+        `${this.baseURL}/tasks/${id}`,
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      throw error;
+    }
+  }
+
+  async updateTaskPath(id: number, path: string): Promise<void> {
+    try {
+      await axios.put(
+        `${this.baseURL}/tasks/${id}/path`,
+        { path },
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error updating task path:', error);
+      throw error;
+    }
+  }
+
+  // Task Progress Methods
+  async getTaskProgress(id: number): Promise<TaskProgress> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/progress`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching task progress:', error);
+      throw error;
+    }
+  }
+
+  async getTaskStorage(id: number): Promise<TaskStorage> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/${id}/storage`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching task storage:', error);
+      throw error;
+    }
+  }
+
+  async runTask(id: number): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/tasks/${id}/run`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error running task:', error);
+      throw error;
+    }
+  }
+
+  async activateTask(taskId: number): Promise<Task> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/tasks/${taskId}/activate`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error activating task:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async pauseTask(taskId: number): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/tasks/${taskId}/status/pause`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error pausing task:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async resumeTask(taskId: number): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/tasks/${taskId}/status/resume`,
+        {},
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error resuming task:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async toggleTaskScheduler(): Promise<{ enabled: boolean; message: string }> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/tasks/scheduler/toggle`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error toggling task scheduler:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getTaskSchedulerStatus(): Promise<{ enabled: boolean; intervalMs: number }> {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/tasks/scheduler/status`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error getting task scheduler status:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Discovery Methods
+  async getDiscoveryFeed(): Promise<DiscoveryFeedResponse> {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/feed`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching discovery feed:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getDiscoveryPreferences(): Promise<DiscoveryPreferences> {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/preferences`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching discovery preferences:', error);
+      throw this.handleError(error);
+    }
+  }
+
+
+
+  async getChannelRecommendations(filters?: Partial<FilterSettings>): Promise<ChannelRecommendation[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/recommendations/channels`, {
+        headers: this.getHeaders(),
+        params: {
+          min_viewers: filters?.minViewers,
+          max_viewers: filters?.maxViewers,
+          languages: filters?.preferredLanguages?.join(','),
+          tags: filters?.tags?.join(','),
+          confidence_threshold: filters?.confidenceThreshold
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching channel recommendations:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getGameRecommendations(filters?: Partial<FilterSettings>): Promise<GameRecommendation[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/recommendations/games`, {
+        headers: this.getHeaders(),
+        params: {
+          min_viewers: filters?.minViewers,
+          max_viewers: filters?.maxViewers,
+          languages: filters?.preferredLanguages?.join(','),
+          tags: filters?.tags?.join(','),
+          confidence_threshold: filters?.confidenceThreshold
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching game recommendations:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async trackChannel(channelId: string, options: {
+    quality?: 'best' | 'high' | 'medium' | 'low';
+    notifications?: boolean;
+    autoArchive?: boolean;
+  } = {}): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/channels/track/${channelId}`,
+        options,
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error tracking channel:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async trackGame(gameId: string, options: {
+    notifications?: boolean;
+    autoArchive?: boolean;
+  } = {}): Promise<void> {
+    try {
+      await axios.post(
+        `${this.baseURL}/games/track/${gameId}`,
+        options,
+        { headers: this.getHeaders() }
+      );
+    } catch (error) {
+      console.error('Error tracking game:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getTrendingCategories(): Promise<TrendingCategory[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/trending`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching trending categories:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async trackPremiereEvent(id: string, config: {
+    quality: string;
+    retention: number;
+    notify: boolean;
+  }): Promise<TrackPremiereResponse> {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/discovery/premieres/${id}/track`,
+        config,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error tracking premiere event:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async updateDiscoveryPreferences(preferences: Partial<DiscoveryPreferences>): Promise<UpdatePreferencesResponse> {
+    try {
+      // Map frontend camelCase to backend snake_case for validation payload
+      const payload: any = {};
+      if (preferences.minViewers !== undefined) payload.min_viewers = preferences.minViewers;
+      if (preferences.maxViewers !== undefined) payload.max_viewers = preferences.maxViewers;
+      if (preferences.preferredLanguages !== undefined) payload.preferred_languages = preferences.preferredLanguages;
+      if (preferences.contentRating !== undefined) payload.content_rating = preferences.contentRating;
+      if (preferences.notifyOnly !== undefined) payload.notify_only = preferences.notifyOnly;
+      if (preferences.confidenceThreshold !== undefined) payload.confidence_threshold = preferences.confidenceThreshold;
+      if (preferences.tags !== undefined) payload.tags = preferences.tags;
+
+      const response = await axios.put(
+        `${this.baseURL}/discovery/preferences`,
+        payload,
+        {
+          headers: this.getHeaders(),
+          timeout: 10000 // DB updates shouldn't take forever, but longer than default
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error updating discovery preferences:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getDiscoveryStats(): Promise<DiscoveryStats> {
+    try {
+      const response = await axios.get(`${this.baseURL}/discovery/stats`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching discovery stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // VOD Methods
+  async getVods() {
+    try {
+      const response = await axios.get(`${this.baseURL}/vods`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching VODs:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Settings Methods
+  async getUserSettings() {
+    try {
+      const response = await axios.get(`${this.baseURL}/settings`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching user settings:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async updateUserSettings(settings: {
+    notifications?: Record<string, boolean>;
+    discovery?: Record<string, any>;
+    schedule?: Record<string, any>;
+  }) {
+    try {
+      const response = await axios.put(
+        `${this.baseURL}/settings`,
+        settings,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error updating user settings:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Lifecycle Management Methods
+  async getStorageAnalytics() {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/storage/analytics`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching storage analytics:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getVerificationStats() {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/verification/stats`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching verification stats:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async bulkVerifyFiles() {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/verification/bulk-verify`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error starting bulk verification:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async executeStorageCleanup() {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/storage/cleanup`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error executing storage cleanup:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async protectVod(vodId: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/vods/${vodId}/protect`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error protecting VOD:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async unprotectVod(vodId: string) {
+    try {
+      const response = await axios.delete(
+        `${this.baseURL}/lifecycle/vods/${vodId}/protect`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error unprotecting VOD:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getVodFileState(vodId: string) {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/lifecycle/vods/${vodId}/file-state`,
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching VOD file state:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async verifyVodFile(vodId: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/vods/${vodId}/verify`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error verifying VOD file:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async redownloadVod(vodId: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/lifecycle/vods/${vodId}/redownload`,
+        {},
+        { headers: this.getHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error redownloading VOD:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getLargestFiles(limit = 50) {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/files/largest`, {
+        params: { limit },
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching largest files:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getCleanupAnalysis() {
+    try {
+      const response = await axios.get(`${this.baseURL}/lifecycle/storage/cleanup-analysis`, {
+        headers: this.getHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching cleanup analysis:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  // Utility Methods
+  private getHeaders() {
+    const token = localStorage.getItem('auth_token');
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : ''
+    };
+  }
+
+  private handleError(error: any): never {
+    console.error('API Error:', error);
+
+    if (axios.isAxiosError(error)) {
+      if (error.response?.data?.details) {
+        const details = error.response.data.details;
+        const messages = details.map((detail: any) => detail.message);
+        throw new Error(messages.join(', '));
+      }
+      throw new Error(error.response?.data?.message || error.message);
+    }
+
+    throw error instanceof Error ? error : new Error('An unknown error occurred');
+  }
+}
+
+export const api = ApiClient.getInstance();
+export default api;

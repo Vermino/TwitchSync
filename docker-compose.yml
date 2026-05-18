@@ -1,0 +1,74 @@
+services:
+
+  # ── Frontend (nginx) ────────────────────────────────────────────────────────
+  # Serves the React app and proxies /api, /auth/twitch, /socket.io to backend.
+  # Single public entry point — all traffic goes through port 2261.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-2261}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - twitchsync-net
+
+  # ── Backend (Node / Express) ────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DOWNLOAD_PATH=/data/vods
+      - STORAGE_PATH=/data/vods
+      - TEMP_PATH=/tmp/twitchsync
+      - TEMP_DOWNLOAD_PATH=/tmp/twitchsync/downloads
+      - TEMP_DIR=/tmp/downloads
+    volumes:
+      # VOD storage mount — set VOD_STORAGE_HOST_PATH in .env or here
+      # e.g. VOD_STORAGE_HOST_PATH=/mnt/media/TwitchSync
+      - ${VOD_STORAGE_HOST_PATH:-vod_storage}:/data/vods
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # node-based check — no extra packages needed in the alpine image
+      test: [ "CMD", "node", "-e", "require('http').get('http://localhost:3501/api/health/status', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - twitchsync-net
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  db:
+    image: postgres:14-alpine
+    environment:
+      # Uses DB_* vars from .env — consistent with the backend
+      - POSTGRES_DB=${DB_NAME:-twitchsync}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-twitchsync} -d ${DB_NAME:-twitchsync}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - twitchsync-net
+
+networks:
+  twitchsync-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  vod_storage:
